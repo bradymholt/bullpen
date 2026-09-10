@@ -2,17 +2,23 @@
   "name": "bullpen",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
-  "engines": { "node": ">=22.16" },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.16"
+  },
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "npm run dev -w @bullpen/server",
     "dev:web": "npm run dev -w @bullpen/web",
     "build": "npm run build -w @bullpen/web && npm run build -w @bullpen/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "start": "node --experimental-strip-types packages/server/src/index.ts"
   },
   "devDependencies": {
+    "concurrently": "^9.1.0",
     "typescript": "^5.7.0"
   }
 }

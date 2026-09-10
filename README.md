@@ -7,12 +7,35 @@ from a webhook, and watch them work.
 Agents run through [`@anthropic-ai/claude-agent-sdk`](https://code.claude.com/docs/en/agent-sdk),
 which drives the real `claude` binary, so a Claude subscription works without an API key.
 
-## Quick start
+## Run it locally
+
+Needs Node 22.16+. Nothing else — if you already use Claude Code on this machine, your
+existing login is picked up automatically.
 
 ```bash
 npm install
-npm run dev:server    # http://localhost:3000
-npm run dev:web       # http://localhost:5173 (proxies /api and /ws)
+npm run dev
+```
+
+Then open **http://localhost:5173**. That starts the API on `:3000` and Vite on `:5173`
+with hot reload, proxying `/api` and `/ws` to the server.
+
+To run it the way the container does — one process, one port, no Vite:
+
+```bash
+npm run build && npm start
+```
+
+Then open **http://localhost:3000**.
+
+Other useful commands:
+
+```bash
+npm test
+```
+
+```bash
+npm run typecheck
 ```
 
 ## Docker
@@ -21,6 +44,10 @@ npm run dev:web       # http://localhost:5173 (proxies /api and /ws)
 cp .env.example .env   # then fill in CLAUDE_CODE_OAUTH_TOKEN
 docker compose up -d
 ```
+
+The container can't reach your Mac's Keychain, so it needs an explicit credential —
+see below. The image builds `better-sqlite3` from source (it publishes no prebuilds),
+so the first build takes a couple of minutes.
 
 ## Claude credentials
 
