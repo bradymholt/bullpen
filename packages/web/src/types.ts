@@ -49,4 +49,15 @@ export type RunEvent = {
 
 export type SocketMessage =
   | { type: "event"; runId: string; seq: number; ts: number; eventType: string; payload: any }
-  | { type: "status"; runId: string; status: string };
+  | { type: "status"; runId: string; status: string }
+  | { type: "approval"; runId: string; id: string; status: string };
+
+export type Approval = {
+  id: string;
+  runId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  title: string | null;
+  description: string | null;
+  status: string;
+};

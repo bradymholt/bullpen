@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgentEditor } from "./AgentEditor.tsx";
+import { ApprovalCard } from "./ApprovalCard.tsx";
 import { api } from "./api.ts";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
@@ -25,7 +26,7 @@ export function App() {
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const { run, events, partial } = useRun(view.kind === "run" ? view.id : null);
+  const { run, events, partial, approvals } = useRun(view.kind === "run" ? view.id : null);
 
   const refresh = () => {
     api.agents().then(setAgents);
@@ -56,7 +57,7 @@ export function App() {
       <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-neutral-800 p-4">
         <h1 className="text-lg font-semibold tracking-tight">Bullpen</h1>
 
-        <div className="mt-6 flex items-center justify-between">
+        <div className="mt-6 flex shrink-0 items-center justify-between">
           <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Agents</h2>
           <button
             onClick={() => setView({ kind: "agent", agent: null })}
@@ -67,7 +68,7 @@ export function App() {
         </div>
 
         {agents.map((a) => (
-          <div key={a.id} className="mt-2 rounded border border-neutral-800 bg-neutral-900 p-3">
+          <div key={a.id} className="mt-2 shrink-0 rounded border border-neutral-800 bg-neutral-900 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate font-medium">{a.name}</div>
@@ -91,12 +92,12 @@ export function App() {
           </div>
         ))}
 
-        <h2 className="mt-6 text-xs font-medium uppercase tracking-wide text-neutral-500">Runs</h2>
+        <h2 className="mt-6 shrink-0 text-xs font-medium uppercase tracking-wide text-neutral-500">Runs</h2>
         {runs.map((r) => (
           <button
             key={r.id}
             onClick={() => setView({ kind: "run", id: r.id })}
-            className={`mt-1 block w-full truncate rounded px-2 py-1.5 text-left text-xs hover:bg-neutral-900 ${
+            className={`mt-1 block w-full shrink-0 truncate rounded px-2 py-1.5 text-left text-xs hover:bg-neutral-900 ${
               view.kind === "run" && view.id === r.id ? "bg-neutral-900" : ""
             }`}
           >
@@ -137,16 +138,37 @@ export function App() {
               {run.branch && <span className="font-mono text-xs text-neutral-500">{run.branch}</span>}
               {run.numTurns != null && <span className="text-xs text-neutral-500">{run.numTurns} turns</span>}
               {isLive && (
-                <button
-                  onClick={() => api.stop(run.id)}
-                  className="ml-auto rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
-                >
-                  Stop
-                </button>
+                <>
+                  <select
+                    defaultValue=""
+                    onChange={(e) => e.target.value && api.setMode(run.id, e.target.value)}
+                    className="ml-auto rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
+                  >
+                    <option value="" disabled>
+                      Change mode…
+                    </option>
+                    <option value="supervised">supervised</option>
+                    <option value="acceptEdits">auto-accept edits</option>
+                    <option value="full">full access</option>
+                  </select>
+                  <button
+                    onClick={() => api.stop(run.id)}
+                    className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+                  >
+                    Stop
+                  </button>
+                </>
               )}
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <Timeline events={events} partial={partial} />
+              {approvals.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {approvals.map((a) => (
+                    <ApprovalCard key={a.id} approval={a} onDecided={() => {}} />
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
-import type { Run, RunEvent, SocketMessage } from "./types.ts";
+import type { Approval, Run, RunEvent, SocketMessage } from "./types.ts";
 
 /**
  * Replay-then-live: the socket asks for everything past the highest seq we
@@ -11,6 +11,7 @@ export function useRun(runId: string | null) {
   const [run, setRun] = useState<Run | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [partial, setPartial] = useState("");
+  const [approvals, setApprovals] = useState<Approval[]>([]);
   const seqRef = useRef(0);
 
   useEffect(() => {
@@ -20,12 +21,16 @@ export function useRun(runId: string | null) {
     setEvents([]);
     setPartial("");
 
+    const loadApprovals = () => api.approvals(runId).then((a) => !closed && setApprovals(a));
+
     api.run(runId).then(({ run, events }) => {
       if (closed) return;
       setRun(run);
       setEvents(events);
       seqRef.current = events.at(-1)?.seq ?? 0;
     });
+    setApprovals([]);
+    void loadApprovals();
 
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
     ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", runId, sinceSeq: seqRef.current }));
@@ -35,7 +40,14 @@ export function useRun(runId: string | null) {
         setRun((r) => (r ? { ...r, status: msg.status } : r));
         return;
       }
+      if (msg.type === "approval") {
+        void loadApprovals();
+        return;
+      }
       if (msg.type !== "event" || msg.seq <= seqRef.current) return;
+      if (msg.eventType === "approval.requested" || msg.eventType === "approval.decided") {
+        void loadApprovals();
+      }
       seqRef.current = msg.seq;
 
       if (msg.eventType === "stream_event") {
@@ -55,5 +67,5 @@ export function useRun(runId: string | null) {
     };
   }, [runId]);
 
-  return { run, events, partial };
+  return { run, events, partial, approvals };
 }

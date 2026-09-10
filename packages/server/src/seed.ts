@@ -13,7 +13,7 @@ export function seedScratchAgent(): void {
       name: "Scratch",
       description: "Throwaway agent for exercising the run loop.",
       prompt: "Say hello, then create a file called hello.txt containing a haiku about bullpens.",
-      permissionMode: "full",
+      permissionMode: "supervised",
       workspaceKind: "persistent",
       workspaceConfig: { kind: "persistent" },
     })

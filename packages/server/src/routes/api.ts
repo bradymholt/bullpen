@@ -6,11 +6,13 @@ import { config, detectClaudeCredential } from "../config.ts";
 import { db } from "../db/index.ts";
 import { agents, runs, type Agent } from "../db/schema.ts";
 import { eventsSince } from "../runs/eventLog.ts";
+import { decideApproval, pendingApprovals } from "../runs/approvals.ts";
 import {
   agentHasActiveRun,
   getAgent,
   listAgents,
   sendToRun,
+  setRunPermissionMode,
   startRun,
   stopRun,
 } from "../runs/RunManager.ts";
@@ -115,6 +117,22 @@ api.post("/agents/:id/run", async (c) => {
 api.post("/runs/:id/messages", async (c) => {
   const body = await c.req.json<{ text: string }>();
   const ok = sendToRun(c.req.param("id"), body.text);
+  return ok ? c.json({ ok: true }) : c.json({ error: "run is not live" }, 409);
+});
+
+api.get("/runs/:id/approvals", (c) => c.json(pendingApprovals(c.req.param("id"))));
+
+api.post("/approvals/:approvalId", async (c) => {
+  const body = await c.req.json<{ allow: boolean; reason?: string }>().catch(() => null);
+  if (!body || typeof body.allow !== "boolean") return c.json({ error: "allow must be a boolean" }, 400);
+  const ok = decideApproval(c.req.param("approvalId"), body.allow, body.reason);
+  return ok ? c.json({ ok: true }) : c.json({ error: "no pending approval with that id" }, 409);
+});
+
+api.post("/runs/:id/permission-mode", async (c) => {
+  const body = await c.req.json<{ mode: string }>().catch(() => null);
+  if (!body?.mode) return c.json({ error: "mode is required" }, 400);
+  const ok = await setRunPermissionMode(c.req.param("id"), body.mode);
   return ok ? c.json({ ok: true }) : c.json({ error: "run is not live" }, 409);
 });
 

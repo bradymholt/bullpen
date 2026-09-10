@@ -1,4 +1,4 @@
-import type { Agent, AgentInput, Run, RunEvent } from "./types.ts";
+import type { Agent, AgentInput, Approval, Run, RunEvent } from "./types.ts";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -35,6 +35,19 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text }),
+    }).then(json<{ ok: true }>),
+  approvals: (runId: string) => fetch(`/api/runs/${runId}/approvals`).then(json<Approval[]>),
+  decide: (approvalId: string, allow: boolean, reason?: string) =>
+    fetch(`/api/approvals/${approvalId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allow, reason }),
+    }).then(json<{ ok: true }>),
+  setMode: (runId: string, mode: string) =>
+    fetch(`/api/runs/${runId}/permission-mode`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode }),
     }).then(json<{ ok: true }>),
   stop: (runId: string) => fetch(`/api/runs/${runId}/stop`, { method: "POST" }).then(json<{ ok: true }>),
 };

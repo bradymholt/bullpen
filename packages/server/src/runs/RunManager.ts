@@ -5,6 +5,7 @@ import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
 import { resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
+import { dropPending, makeCanUseTool } from "./approvals.ts";
 import { startRunner, type RunnerHandle } from "./ClaudeRunner.ts";
 import { appendEvent } from "./eventLog.ts";
 
@@ -94,6 +95,11 @@ export function startRun(opts: {
       strictMcpConfig: !agent.inheritMachineMcp,
       env: agent.env as Record<string, string>,
       maxTurns: agent.maxTurns ?? undefined,
+      canUseTool: makeCanUseTool(runId, (hasPending) => {
+        const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
+        if (!current || !ACTIVE_STATUSES.includes(current.status as RunStatus)) return;
+        setStatus(runId, hasPending ? "awaiting_approval" : "running");
+      }),
     },
     (message) => onMessage(runId, message),
   );
@@ -157,6 +163,7 @@ export async function stopRun(runId: string): Promise<boolean> {
   const handle = live.get(runId);
   if (!handle) return false;
   stopping.add(runId);
+  dropPending(runId);
   await handle.stop();
   setStatus(runId, "cancelled", { endedAt: Math.floor(Date.now() / 1000) });
   return true;
@@ -185,6 +192,15 @@ export function recoverOrphanedRuns(): number {
       .run();
   }
   return orphans.length;
+}
+
+export async function setRunPermissionMode(runId: string, mode: string): Promise<boolean> {
+  const handle = live.get(runId);
+  if (!handle) return false;
+  const sdkMode = toSdkPermissionMode(mode);
+  await handle.setPermissionMode(sdkMode);
+  appendEvent(runId, "permission.mode", { mode, sdkMode });
+  return true;
 }
 
 /**
