@@ -18,6 +18,10 @@ export type Agent = {
   env: Record<string, string>;
   cron: string | null;
   cronTimezone: string | null;
+  webhookMode: string;
+  webhookEvents: string[];
+  allowPromptOverride: boolean;
+  concurrency: string;
   maxTurns: number | null;
   enabled: boolean;
 };
@@ -60,4 +64,13 @@ export type Approval = {
   title: string | null;
   description: string | null;
   status: string;
+};
+
+export type Delivery = {
+  id: string;
+  ts: number;
+  event: string | null;
+  accepted: boolean;
+  reason: string | null;
+  runId: string | null;
 };

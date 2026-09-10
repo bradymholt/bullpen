@@ -58,6 +58,8 @@ export function startRun(opts: {
   agent: Agent;
   trigger: "manual" | "cron" | "webhook";
   prompt?: string;
+  /** Runs after the workspace exists, before the agent starts. */
+  onWorkspace?: (path: string) => void;
 }): string {
   const { agent, trigger } = opts;
   const runId = randomUUID();
@@ -68,6 +70,8 @@ export function startRun(opts: {
     agentName: agent.name,
     runId,
   });
+
+  opts.onWorkspace?.(workspace.path);
 
   db.insert(runs)
     .values({

@@ -1,4 +1,4 @@
-import type { Agent, AgentInput, Approval, Run, RunEvent } from "./types.ts";
+import type { Agent, AgentInput, Approval, Delivery, Run, RunEvent } from "./types.ts";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -19,6 +19,9 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     }).then(json<Agent>),
+  schedule: (id: string) =>
+    fetch(`/api/agents/${id}/schedule`).then(json<{ next: string[] }>),
+  deliveries: (id: string) => fetch(`/api/agents/${id}/deliveries`).then(json<Delivery[]>),
   deleteAgent: (id: string) =>
     fetch(`/api/agents/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),

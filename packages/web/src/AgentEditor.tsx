@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
+import { TriggerSettings } from "./TriggerSettings.tsx";
 import type { Agent, AgentInput, WorkspaceConfig } from "./types.ts";
 
 const MODES = [
@@ -189,6 +190,8 @@ export function AgentEditor({
         Off by default. On, the agent also picks up servers from ~/.claude.json, the repo&rsquo;s
         .mcp.json, and claude.ai connectors.
       </p>
+
+      <TriggerSettings agent={agent} draft={draft} set={set} />
 
       {error && <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
 

@@ -11,6 +11,7 @@ import { api } from "./routes/api.ts";
 import { eventsSince } from "./runs/eventLog.ts";
 import { recoverOrphanedRuns, shutdownLiveRuns } from "./runs/RunManager.ts";
 import { seedScratchAgent } from "./seed.ts";
+import { startScheduler, stopScheduler } from "./triggers/cron.ts";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[bullpen] unhandled rejection:", reason);
@@ -20,6 +21,8 @@ runMigrations();
 const recovered = recoverOrphanedRuns();
 if (recovered > 0) console.warn(`[bullpen] marked ${recovered} orphaned run(s) interrupted`);
 seedScratchAgent();
+const scheduled = startScheduler();
+if (scheduled > 0) console.log(`[bullpen] scheduled ${scheduled} cron agent(s)`);
 
 const app = new Hono();
 app.route("/api", api);
@@ -81,6 +84,7 @@ wss.on("connection", (ws) => {
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     void (async () => {
+      stopScheduler();
       const stopped = await shutdownLiveRuns();
       if (stopped > 0) console.log(`[bullpen] stopped ${stopped} live run(s) on ${signal}`);
       server.close(() => process.exit(0));

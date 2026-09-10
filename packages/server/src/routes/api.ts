@@ -1,7 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { agentInputSchema, agentPatchSchema } from "../agentSchema.ts";
+import { agentCreateSchema, agentPatchSchema } from "../agentSchema.ts";
+import { nextRuns, rescheduleAgent } from "../triggers/cron.ts";
+import {
+  alreadyDelivered,
+  decideDelivery,
+  recordDelivery,
+  writePayload,
+} from "../triggers/webhook.ts";
 import { config, detectClaudeCredential } from "../config.ts";
 import {
   commit as gitCommit,
@@ -11,7 +18,7 @@ import {
   status as gitStatus,
 } from "../git.ts";
 import { db } from "../db/index.ts";
-import { agents, runs, type Agent } from "../db/schema.ts";
+import { agents, runs, webhookDeliveries, type Agent } from "../db/schema.ts";
 import { eventsSince } from "../runs/eventLog.ts";
 import { decideApproval, pendingApprovals } from "../runs/approvals.ts";
 import {
@@ -40,13 +47,94 @@ function redact(agent: Agent): Agent {
 
 api.get("/agents", (c) => c.json(listAgents().map(redact)));
 
+api.get("/agents/:id/schedule", (c) => {
+  const agent = getAgent(c.req.param("id"));
+  if (!agent?.cron) return c.json({ error: "agent has no cron expression" }, 409);
+  try {
+    return c.json({ next: nextRuns(agent.cron, agent.cronTimezone) });
+  } catch (e) {
+    return c.json({ error: String(e) }, 400);
+  }
+});
+
+api.get("/agents/:id/deliveries", (c) =>
+  c.json(
+    db
+      .select()
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.agentId, c.req.param("id")))
+      .orderBy(desc(webhookDeliveries.ts))
+      .limit(20)
+      .all(),
+  ));
+
+/**
+ * The one endpoint reachable without a UI session, so it carries its own
+ * per-agent secret. Raw bytes are read before any parsing: GitHub signs those.
+ */
+api.post("/hooks/:id", async (c) => {
+  const agentId = c.req.param("id");
+  const agent = getAgent(agentId);
+  const headers = Object.fromEntries(
+    ["x-bullpen-token", "x-hub-signature-256", "x-github-event", "x-github-delivery", "x-bullpen-idempotency-key", "content-type"].map(
+      (h) => [h, c.req.header(h)],
+    ),
+  );
+  const sourceIp = c.req.header("x-forwarded-for") ?? undefined;
+  const deliveryKey = headers["x-bullpen-idempotency-key"] ?? headers["x-github-delivery"];
+
+  if (!agent) {
+    // Same answer as a bad secret, so the endpoint can't enumerate agent ids.
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  const rawBody = await c.req.text();
+  const decision = decideDelivery({ agent, rawBody, headers });
+
+  if (!decision.ok) {
+    recordDelivery({
+      agentId,
+      sourceIp,
+      deliveryKey,
+      event: headers["x-github-event"],
+      accepted: false,
+      reason: decision.reason,
+    });
+    return c.json({ error: decision.reason }, decision.status as 400);
+  }
+
+  const duplicate = alreadyDelivered(agentId, deliveryKey);
+  if (duplicate) return c.json({ runId: duplicate, duplicate: true }, 202);
+
+  if (agent.concurrency === "skip" && agentHasActiveRun(agentId)) {
+    recordDelivery({ agentId, sourceIp, deliveryKey, accepted: false, reason: "run already active" });
+    return c.json({ error: "agent already has an active run" }, 409);
+  }
+
+  const runId = startRun({
+    agent,
+    trigger: "webhook",
+    prompt: decision.prompt,
+    onWorkspace: (path) => writePayload(path, rawBody),
+  });
+  recordDelivery({
+    agentId,
+    sourceIp,
+    deliveryKey,
+    event: headers["x-github-event"],
+    accepted: true,
+    runId,
+  });
+  return c.json({ runId }, 202);
+});
+
 api.get("/agents/:id", (c) => {
   const agent = getAgent(c.req.param("id"));
   return agent ? c.json(redact(agent)) : c.json({ error: "not found" }, 404);
 });
 
 api.post("/agents", async (c) => {
-  const parsed = agentInputSchema.safeParse(await c.req.json().catch(() => ({})));
+  const parsed = agentCreateSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "invalid agent", issues: parsed.error.issues }, 400);
 
   const id = randomUUID();
@@ -58,6 +146,7 @@ api.post("/agents", async (c) => {
       webhookSecret: randomBytes(32).toString("base64url"),
     })
     .run();
+  rescheduleAgent(id);
   return c.json(redact(getAgent(id)!), 201);
 });
 
@@ -87,6 +176,7 @@ api.patch("/agents/:id", async (c) => {
     })
     .where(eq(agents.id, id))
     .run();
+  rescheduleAgent(id);
   return c.json(redact(getAgent(id)!));
 });
 
@@ -94,6 +184,7 @@ api.delete("/agents/:id", (c) => {
   const id = c.req.param("id");
   if (!getAgent(id)) return c.json({ error: "not found" }, 404);
   db.delete(agents).where(eq(agents.id, id)).run();
+  rescheduleAgent(id);
   return c.json({ ok: true });
 });
 
