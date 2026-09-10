@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { agentCreateSchema, agentPatchSchema } from "../agentSchema.ts";
@@ -178,6 +178,38 @@ api.patch("/agents/:id", async (c) => {
     .run();
   rescheduleAgent(id);
   return c.json(redact(getAgent(id)!));
+});
+
+api.post("/agents/:id/webhook-secret", (c) => {
+  const id = c.req.param("id");
+  if (!getAgent(id)) return c.json({ error: "not found" }, 404);
+  const webhookSecret = randomBytes(32).toString("base64url");
+  db.update(agents).set({ webhookSecret }).where(eq(agents.id, id)).run();
+  return c.json({ webhookSecret });
+});
+
+/** Fires the agent's own webhook the way an outside caller would. */
+api.post("/agents/:id/test-fire", async (c) => {
+  const agent = getAgent(c.req.param("id"));
+  if (!agent?.webhookSecret) return c.json({ error: "not found" }, 404);
+  const body = await c.req.text();
+  const payload = body || "{}";
+
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (agent.webhookMode === "hmac") {
+    headers["x-hub-signature-256"] = `sha256=${createHmac("sha256", agent.webhookSecret).update(payload).digest("hex")}`;
+  } else {
+    headers["x-bullpen-token"] = agent.webhookSecret;
+  }
+  const event = (agent.webhookEvents as string[])[0];
+  if (event) headers["x-github-event"] = event;
+
+  const res = await fetch(new URL(`/api/hooks/${agent.id}`, c.req.url), {
+    method: "POST",
+    headers,
+    body: payload,
+  });
+  return c.json({ status: res.status, body: await res.json().catch(() => null) });
 });
 
 api.delete("/agents/:id", (c) => {

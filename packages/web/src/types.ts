@@ -18,6 +18,7 @@ export type Agent = {
   env: Record<string, string>;
   cron: string | null;
   cronTimezone: string | null;
+  webhookSecret: string | null;
   webhookMode: string;
   webhookEvents: string[];
   allowPromptOverride: boolean;

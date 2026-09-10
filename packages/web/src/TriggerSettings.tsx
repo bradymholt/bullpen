@@ -17,6 +17,10 @@ export function TriggerSettings({
   const [next, setNext] = useState<string[] | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [testBody, setTestBody] = useState('{"word":"hello"}');
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   // Saved cron only: the preview describes what will actually fire.
   useEffect(() => {
@@ -33,8 +37,14 @@ export function TriggerSettings({
       .catch((e) => setScheduleError(String(e)));
   }, [agent?.id, agent?.cron, agent?.cronTimezone]);
 
-  useEffect(() => {
+  const loadDeliveries = () => {
     if (agent) void api.deliveries(agent.id).then(setDeliveries);
+  };
+  useEffect(() => {
+    setSecret(agent?.webhookSecret ?? null);
+    setRevealed(false);
+    setTestResult(null);
+    loadDeliveries();
   }, [agent?.id]);
 
   const hookUrl = agent ? `${location.origin}/api/hooks/${agent.id}` : null;
@@ -93,6 +103,41 @@ export function TriggerSettings({
             </p>
           </div>
 
+          <div>
+            <span className={label}>Secret</span>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={revealed ? (secret ?? "") : "\u2022".repeat(24)}
+                className={`${field} font-mono text-xs text-neutral-400`}
+              />
+              <button
+                onClick={() => setRevealed((r) => !r)}
+                className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+              >
+                {revealed ? "Hide" : "Reveal"}
+              </button>
+              <button
+                onClick={() => secret && void navigator.clipboard.writeText(secret)}
+                className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+              >
+                Copy
+              </button>
+              <button
+                onClick={async () => {
+                  if (!agent) return;
+                  if (!confirm("Rotate the secret? Anything already using the old one stops working.")) return;
+                  const { webhookSecret } = await api.rotateSecret(agent.id);
+                  setSecret(webhookSecret);
+                  setRevealed(true);
+                }}
+                className="shrink-0 rounded border border-neutral-700 px-2 text-xs text-amber-400 hover:bg-neutral-800"
+              >
+                Rotate
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <span className={label}>Verification</span>
@@ -130,6 +175,38 @@ export function TriggerSettings({
             Off, the payload is interpolated as data via <code>{"{{payload.x}}"}</code>. On, whoever
             can call the webhook chooses what the agent does.
           </p>
+
+          <div>
+            <span className={label}>Test fire</span>
+            <div className="flex gap-2">
+              <input
+                value={testBody}
+                onChange={(e) => setTestBody(e.target.value)}
+                className={`${field} font-mono text-xs`}
+              />
+              <button
+                onClick={async () => {
+                  if (!agent) return;
+                  setTestResult("firing…");
+                  try {
+                    const r = await api.testFire(agent.id, testBody);
+                    setTestResult(`${r.status} ${JSON.stringify(r.body)}`);
+                  } catch (e) {
+                    setTestResult(String(e));
+                  }
+                  loadDeliveries();
+                }}
+                className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-800"
+              >
+                Send
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-neutral-600">
+              Signs the request the same way a real caller would, using the settings above. Save
+              first if you just changed them.
+            </p>
+            {testResult && <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>}
+          </div>
 
           {deliveries.length > 0 && (
             <div>

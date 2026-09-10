@@ -22,6 +22,14 @@ export const api = {
   schedule: (id: string) =>
     fetch(`/api/agents/${id}/schedule`).then(json<{ next: string[] }>),
   deliveries: (id: string) => fetch(`/api/agents/${id}/deliveries`).then(json<Delivery[]>),
+  rotateSecret: (id: string) =>
+    fetch(`/api/agents/${id}/webhook-secret`, { method: "POST" }).then(json<{ webhookSecret: string }>),
+  testFire: (id: string, body: string) =>
+    fetch(`/api/agents/${id}/test-fire`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    }).then(json<{ status: number; body: unknown }>),
   deleteAgent: (id: string) =>
     fetch(`/api/agents/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
