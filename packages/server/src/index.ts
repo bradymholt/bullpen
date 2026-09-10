@@ -6,23 +6,23 @@ import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { config, detectClaudeCredential } from "./config.ts";
 import { runMigrations } from "./db/migrate.ts";
+import { hub } from "./hub.ts";
+import { api } from "./routes/api.ts";
+import { eventsSince } from "./runs/eventLog.ts";
+import { recoverOrphanedRuns, shutdownLiveRuns } from "./runs/RunManager.ts";
+import { seedScratchAgent } from "./seed.ts";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[bullpen] unhandled rejection:", reason);
 });
 
 runMigrations();
+const recovered = recoverOrphanedRuns();
+if (recovered > 0) console.warn(`[bullpen] marked ${recovered} orphaned run(s) interrupted`);
+seedScratchAgent();
 
 const app = new Hono();
-
-app.get("/api/health", (c) => {
-  const credential = detectClaudeCredential();
-  return c.json({
-    ok: credential.source !== "none",
-    dataDir: config.dataDir,
-    claudeCredential: credential,
-  });
-});
+app.route("/api", api);
 
 const webDist = resolve(import.meta.dirname, "../../web/dist");
 if (existsSync(webDist)) {
@@ -34,21 +34,57 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   const credential = detectClaudeCredential();
   console.log(`[bullpen] listening on http://localhost:${info.port}`);
   console.log(`[bullpen] data dir ${config.dataDir}`);
-  if (credential.source === "none") {
-    console.warn(`[bullpen] no Claude credential: ${credential.detail}`);
-  } else {
-    console.log(`[bullpen] claude credential: ${credential.source} (${credential.detail})`);
-  }
+  console.log(
+    credential.source === "none"
+      ? `[bullpen] no Claude credential: ${credential.detail}`
+      : `[bullpen] claude credential: ${credential.source} (${credential.detail})`,
+  );
 });
 
 const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
-  if (new URL(req.url ?? "/", "http://localhost").pathname !== "/ws") {
-    socket.destroy();
-    return;
-  }
+  if (new URL(req.url ?? "/", "http://localhost").pathname !== "/ws") return socket.destroy();
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
 });
+
 wss.on("connection", (ws) => {
-  ws.send(JSON.stringify({ type: "hello" }));
+  ws.on("message", (raw) => {
+    let msg: { type?: string; runId?: string; sinceSeq?: number };
+    try {
+      msg = JSON.parse(String(raw));
+    } catch {
+      return;
+    }
+    if (msg.type !== "subscribe" || !msg.runId) return;
+
+    hub.unsubscribeSocket(ws);
+    // Replay first, then live: a client that drops mid-run resumes exactly
+    // where it left off, and never sees an event twice.
+    for (const e of eventsSince(msg.runId, msg.sinceSeq ?? 0)) {
+      ws.send(
+        JSON.stringify({
+          type: "event",
+          runId: e.runId,
+          seq: e.seq,
+          ts: e.ts,
+          eventType: e.type,
+          payload: e.payload,
+        }),
+      );
+    }
+    hub.subscribe(ws, msg.runId);
+  });
+
+  ws.on("close", () => hub.unsubscribeSocket(ws));
 });
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    void (async () => {
+      const stopped = await shutdownLiveRuns();
+      if (stopped > 0) console.log(`[bullpen] stopped ${stopped} live run(s) on ${signal}`);
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 5000).unref();
+    })();
+  });
+}

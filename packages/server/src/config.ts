@@ -1,10 +1,11 @@
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
-export type ClaudeCredential =
-  | { source: "oauth-token"; detail: "CLAUDE_CODE_OAUTH_TOKEN" }
-  | { source: "config-dir"; detail: string }
-  | { source: "api-key"; detail: "ANTHROPIC_API_KEY" }
-  | { source: "none"; detail: string };
+export type ClaudeCredential = {
+  source: "oauth-token" | "api-key" | "config-dir" | "existing-login" | "none";
+  detail: string;
+};
 
 const dataDir = resolve(process.env.BULLPEN_DATA ?? "./data");
 
@@ -18,20 +19,30 @@ export const config = {
 };
 
 /**
- * The Agent SDK resolves credentials itself; this only reports which one it
- * will land on so a misconfigured container fails loudly at /api/health
- * instead of on the first run.
+ * Best-effort: the SDK resolves credentials itself and can reach places we
+ * can't inspect — notably the macOS Keychain, where a working login leaves no
+ * .credentials.json behind. So a Claude Code config dir counts as evidence,
+ * and only the total absence of one is reported as unconfigured.
  */
 export function detectClaudeCredential(): ClaudeCredential {
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     return { source: "oauth-token", detail: "CLAUDE_CODE_OAUTH_TOKEN" };
   }
-  if (process.env.CLAUDE_CONFIG_DIR) {
-    return { source: "config-dir", detail: process.env.CLAUDE_CONFIG_DIR };
-  }
   if (process.env.ANTHROPIC_API_KEY) {
     return { source: "api-key", detail: "ANTHROPIC_API_KEY" };
   }
+
+  const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+  if (existsSync(join(configDir, ".credentials.json"))) {
+    return { source: "config-dir", detail: join(configDir, ".credentials.json") };
+  }
+  if (existsSync(configDir) || existsSync(join(homedir(), ".claude.json"))) {
+    return {
+      source: "existing-login",
+      detail: `${configDir} exists; credentials may live in the OS keychain`,
+    };
+  }
+
   return {
     source: "none",
     detail: "set CLAUDE_CODE_OAUTH_TOKEN (see `claude setup-token`), CLAUDE_CONFIG_DIR, or ANTHROPIC_API_KEY",
