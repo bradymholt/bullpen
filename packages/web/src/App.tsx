@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AgentEditor } from "./AgentEditor.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
+import { GitPanel } from "./GitPanel.tsx";
 import { api } from "./api.ts";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
@@ -169,6 +170,7 @@ export function App() {
                   ))}
                 </div>
               )}
+              {run.branch && <GitPanel runId={run.id} />}
             </div>
           </>
         )}

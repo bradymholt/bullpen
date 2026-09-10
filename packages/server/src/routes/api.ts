@@ -3,6 +3,13 @@ import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { agentInputSchema, agentPatchSchema } from "../agentSchema.ts";
 import { config, detectClaudeCredential } from "../config.ts";
+import {
+  commit as gitCommit,
+  diff as gitDiff,
+  openPullRequest,
+  push as gitPush,
+  status as gitStatus,
+} from "../git.ts";
 import { db } from "../db/index.ts";
 import { agents, runs, type Agent } from "../db/schema.ts";
 import { eventsSince } from "../runs/eventLog.ts";
@@ -118,6 +125,64 @@ api.post("/runs/:id/messages", async (c) => {
   const body = await c.req.json<{ text: string }>();
   const ok = sendToRun(c.req.param("id"), body.text);
   return ok ? c.json({ ok: true }) : c.json({ error: "run is not live" }, 409);
+});
+
+/** Git actions only make sense on a git workspace with a branch to push. */
+function gitRun(id: string) {
+  const run = db.select().from(runs).where(eq(runs.id, id)).get();
+  if (!run?.workspacePath || !run.branch) return null;
+  return run;
+}
+
+api.get("/runs/:id/git", (c) => {
+  const run = gitRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not a git workspace" }, 409);
+  try {
+    return c.json({ branch: run.branch, files: gitStatus(run.workspacePath!), diff: gitDiff(run.workspacePath!) });
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+api.post("/runs/:id/git/commit", async (c) => {
+  const run = gitRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not a git workspace" }, 409);
+  const body = await c.req.json<{ message: string }>().catch(() => null);
+  if (!body?.message) return c.json({ error: "message is required" }, 400);
+  try {
+    return c.json({ sha: gitCommit(run.workspacePath!, body.message) });
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+api.post("/runs/:id/git/push", (c) => {
+  const run = gitRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not a git workspace" }, 409);
+  try {
+    gitPush(run.workspacePath!, run.branch!);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+api.post("/runs/:id/git/pr", async (c) => {
+  const run = gitRun(c.req.param("id"));
+  if (!run) return c.json({ error: "not a git workspace" }, 409);
+  const body = await c.req.json<{ title: string; body?: string }>().catch(() => null);
+  if (!body?.title) return c.json({ error: "title is required" }, 400);
+  try {
+    const pr = await openPullRequest({
+      cwd: run.workspacePath!,
+      branch: run.branch!,
+      title: body.title,
+      ...(body.body ? { body: body.body } : {}),
+    });
+    return c.json(pr);
+  } catch (e) {
+    return c.json({ error: String(e) }, 500);
+  }
 });
 
 api.get("/runs/:id/approvals", (c) => c.json(pendingApprovals(c.req.param("id"))));
