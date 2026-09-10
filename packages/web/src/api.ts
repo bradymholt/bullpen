@@ -1,4 +1,4 @@
-import type { Agent, Run, RunEvent } from "./types.ts";
+import type { Agent, AgentInput, Run, RunEvent } from "./types.ts";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -7,6 +7,21 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   agents: () => fetch("/api/agents").then(json<Agent[]>),
+  createAgent: (input: AgentInput) =>
+    fetch("/api/agents", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }).then(json<Agent>),
+  updateAgent: (id: string, input: AgentInput) =>
+    fetch(`/api/agents/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }).then(json<Agent>),
+  deleteAgent: (id: string) =>
+    fetch(`/api/agents/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
   run: (id: string) => fetch(`/api/runs/${id}`).then(json<{ run: Run; events: RunEvent[] }>),
   startRun: (agentId: string, prompt?: string) =>

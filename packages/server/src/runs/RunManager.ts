@@ -64,6 +64,7 @@ export function startRun(opts: {
 
   const workspace = resolveWorkspace(agent.workspaceConfig as WorkspaceSpec, {
     agentId: agent.id,
+    agentName: agent.name,
     runId,
   });
 

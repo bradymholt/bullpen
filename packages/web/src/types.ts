@@ -1,3 +1,7 @@
+export type WorkspaceConfig =
+  | { kind: "persistent" }
+  | { kind: "git"; repoUrl: string; baseBranch?: string };
+
 export type Agent = {
   id: string;
   name: string;
@@ -6,8 +10,19 @@ export type Agent = {
   prompt: string;
   permissionMode: string;
   workspaceKind: string;
+  workspaceConfig: WorkspaceConfig;
+  allowedTools: string[];
+  disallowedTools: string[];
+  mcpServers: Record<string, unknown>;
+  inheritMachineMcp: boolean;
+  env: Record<string, string>;
+  cron: string | null;
+  cronTimezone: string | null;
+  maxTurns: number | null;
   enabled: boolean;
 };
+
+export type AgentInput = Partial<Omit<Agent, "id" | "workspaceKind">>;
 
 export type Run = {
   id: string;
@@ -17,6 +32,7 @@ export type Run = {
   prompt: string;
   claudeSessionId: string | null;
   workspacePath: string | null;
+  branch: string | null;
   costUsd: number | null;
   numTurns: number | null;
   error: string | null;
