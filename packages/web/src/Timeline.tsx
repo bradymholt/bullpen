@@ -9,6 +9,21 @@ function toItems(events: RunEvent[]): Item[] {
     const k = String(e.seq);
     if (e.type === "run.started") {
       items.push({ key: k, kind: "meta", body: `Started in ${e.payload.cwd}` });
+    } else if (e.type === "mcp.status") {
+      const servers = e.payload.servers as { name: string; status: string; error?: string; toolCount?: number }[];
+      items.push({
+        key: k,
+        kind: servers.some((s) => s.status === "failed" || s.status === "needs-auth") ? "error" : "meta",
+        body: servers
+          .map((s) => `${s.name}: ${s.status}${s.error ? ` (${s.error})` : ""}${s.toolCount != null ? ` · ${s.toolCount} tools` : ""}`)
+          .join("\n"),
+      });
+    } else if (e.type === "approval.decided") {
+      items.push({
+        key: k,
+        kind: "meta",
+        body: `${e.payload.allow ? "Allowed" : "Denied"} ${e.payload.toolName}`,
+      });
     } else if (e.type === "run.interrupted") {
       items.push({ key: k, kind: "error", body: `Interrupted — ${e.payload.reason}` });
     } else if (e.type === "user.message") {

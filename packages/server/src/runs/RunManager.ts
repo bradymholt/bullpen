@@ -4,6 +4,7 @@ import type { PermissionMode, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
+import { interpolateSecrets, summarizeMcpStatus } from "../mcp.ts";
 import { resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
 import { dropPending, makeCanUseTool } from "./approvals.ts";
 import { startRunner, type RunnerHandle } from "./ClaudeRunner.ts";
@@ -95,7 +96,7 @@ export function startRun(opts: {
       permissionMode: toSdkPermissionMode(agent.permissionMode),
       allowedTools: agent.allowedTools as string[],
       disallowedTools: agent.disallowedTools as string[],
-      mcpServers: agent.mcpServers as never,
+      mcpServers: interpolateSecrets(agent.mcpServers, agent.env as Record<string, string>) as never,
       strictMcpConfig: !agent.inheritMachineMcp,
       env: agent.env as Record<string, string>,
       maxTurns: agent.maxTurns ?? undefined,
@@ -139,6 +140,10 @@ function onMessage(runId: string, message: SDKMessage): void {
 
   if (message.type === "system" && message.subtype === "init") {
     db.update(runs).set({ claudeSessionId: message.session_id }).where(eq(runs.id, runId)).run();
+    // MCP startup is non-blocking, so a server that failed to connect leaves
+    // the agent quietly short of tools unless someone surfaces it.
+    const servers = summarizeMcpStatus(message);
+    if (servers.length > 0) appendEvent(runId, "mcp.status", { servers });
   }
 
   if (message.type === "result") {
