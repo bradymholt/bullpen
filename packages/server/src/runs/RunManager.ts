@@ -5,7 +5,7 @@ import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
 import { interpolateSecrets, summarizeMcpStatus } from "../mcp.ts";
-import { resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
+import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
 import { dropPending, makeCanUseTool } from "./approvals.ts";
 import { startRunner, type RunnerHandle } from "./ClaudeRunner.ts";
 import { appendEvent } from "./eventLog.ts";
@@ -26,11 +26,16 @@ const PERMISSION_MODES: Record<string, PermissionMode> = {
   acceptEdits: "acceptEdits",
   plan: "plan",
   full: "bypassPermissions",
+  auto: "auto",
   locked: "dontAsk",
 };
 
 export function toSdkPermissionMode(mode: string): PermissionMode {
   return PERMISSION_MODES[mode] ?? "default";
+}
+
+export function isPermissionMode(mode: string): boolean {
+  return mode in PERMISSION_MODES;
 }
 
 const live = new Map<string, RunnerHandle>();
@@ -57,20 +62,24 @@ function setStatus(runId: string, status: RunStatus, patch: Partial<typeof runs.
 
 export function startRun(opts: {
   agent: Agent;
-  trigger: "manual" | "cron" | "webhook";
+  trigger: "manual" | "cron" | "webhook" | "poll";
   prompt?: string;
+  /** Overrides the agent's saved mode for this run only. */
+  permissionMode?: string;
+  /** Ignores the agent's workspace and runs in a directory used once. */
+  ephemeralWorkspace?: boolean;
   /** Runs after the workspace exists, before the agent starts. */
   onWorkspace?: (path: string) => void;
 }): string {
   const { agent, trigger } = opts;
   const runId = randomUUID();
   const prompt = opts.prompt ?? agent.prompt;
+  const permissionMode = opts.permissionMode ?? agent.permissionMode;
 
-  const workspace = resolveWorkspace(agent.workspaceConfig as WorkspaceSpec, {
-    agentId: agent.id,
-    agentName: agent.name,
-    runId,
-  });
+  const workspace = resolveWorkspace(
+    opts.ephemeralWorkspace ? { kind: "ephemeral" } : (agent.workspaceConfig as WorkspaceSpec),
+    { agentId: agent.id, agentName: agent.name, runId },
+  );
 
   opts.onWorkspace?.(workspace.path);
 
@@ -81,23 +90,25 @@ export function startRun(opts: {
       status: "running",
       trigger,
       prompt,
+      permissionMode,
       workspacePath: workspace.path,
       ...(workspace.branch ? { branch: workspace.branch } : {}),
     })
     .run();
 
-  appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, cwd: workspace.path });
+  appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, permissionMode, cwd: workspace.path });
 
   const handle = startRunner(
     {
       cwd: workspace.path,
       prompt,
       model: agent.model ?? undefined,
-      permissionMode: toSdkPermissionMode(agent.permissionMode),
+      permissionMode: toSdkPermissionMode(permissionMode),
       allowedTools: agent.allowedTools as string[],
       disallowedTools: agent.disallowedTools as string[],
       mcpServers: interpolateSecrets(agent.mcpServers, agent.env as Record<string, string>) as never,
       strictMcpConfig: !agent.inheritMachineMcp,
+      inheritUserSettings: agent.inheritUserSettings,
       env: agent.env as Record<string, string>,
       maxTurns: agent.maxTurns ?? undefined,
       canUseTool: makeCanUseTool(runId, (hasPending) => {
@@ -130,6 +141,8 @@ export function startRun(opts: {
     .finally(() => {
       live.delete(runId);
       stopping.delete(runId);
+      // Only for a one-off dir: a clone is kept so its diff can still be reviewed.
+      if (opts.ephemeralWorkspace) removeWorkspace(workspace.path);
     });
 
   return runId;
@@ -203,13 +216,26 @@ export function recoverOrphanedRuns(): number {
   return orphans.length;
 }
 
-export async function setRunPermissionMode(runId: string, mode: string): Promise<boolean> {
+/**
+ * The harness refuses to widen into bypassPermissions on a session that wasn't
+ * launched with it, so this reports the refusal rather than leaving the UI
+ * claiming a mode the run never entered.
+ */
+export async function setRunPermissionMode(
+  runId: string,
+  mode: string,
+): Promise<{ ok: true } | { ok: false; live: boolean; error?: string }> {
   const handle = live.get(runId);
-  if (!handle) return false;
+  if (!handle) return { ok: false, live: false };
   const sdkMode = toSdkPermissionMode(mode);
-  await handle.setPermissionMode(sdkMode);
+  try {
+    await handle.setPermissionMode(sdkMode);
+  } catch (err) {
+    return { ok: false, live: true, error: err instanceof Error ? err.message : String(err) };
+  }
+  db.update(runs).set({ permissionMode: mode }).where(eq(runs.id, runId)).run();
   appendEvent(runId, "permission.mode", { mode, sdkMode });
-  return true;
+  return { ok: true };
 }
 
 /**

@@ -14,8 +14,8 @@ export function seedScratchAgent(): void {
       description: "Throwaway agent for exercising the run loop.",
       prompt: "Say hello, then create a file called hello.txt containing a haiku about bullpens.",
       permissionMode: "supervised",
-      workspaceKind: "persistent",
-      workspaceConfig: { kind: "persistent" },
+      workspaceKind: "scratch",
+      workspaceConfig: { kind: "scratch" },
     })
     .run();
 }

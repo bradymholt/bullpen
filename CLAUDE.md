@@ -15,6 +15,10 @@ npm run build && npm start   # single port, the way the container runs
 Local runs need no credential setup: the SDK finds the existing `~/.claude` login. The
 container does need one — see README.
 
+Both `dev` and `start` read the repo-root `.env` via `--env-file-if-exists`, so `GITHUB_TOKEN`
+and `BULLPEN_DATA` no longer depend on which shell launched the server. `BULLPEN_DATA` expands a
+leading `~/` itself; env files don't.
+
 Regenerate migrations after touching `db/schema.ts`:
 
 ```bash
@@ -38,6 +42,39 @@ same code path — keep it that way.
 **Always streaming-input mode.** `ClaudeRunner` passes an `AsyncIterable` prompt, never a
 string. The SDK exposes `interrupt()`, `setPermissionMode()` and `setModel()` *only* in that
 mode, so a string prompt silently costs the stop button and mid-run mode changes.
+
+**Three workspace kinds, two old spellings.** `scratch` (a per-agent directory kept between runs,
+and the answer for agents that never touch code), `existing` (a path you name, used in place — the
+agent edits a live working tree and is never cleaned up), and `clone` (fresh clone on a new branch
+per run, deleted after). Stored records may still say `persistent` and `git`; both parse and mean
+`scratch` and `clone`. `removeWorkspace` only deletes below `workspacesDir`, which is what keeps an
+`existing` directory safe.
+
+**Agent workspaces must live outside any checkout.** `dataDir` defaults to `~/.bullpen`, not
+`./data`. Claude Code collects CLAUDE.md from every parent of its cwd, so a workspace under
+`packages/server/data/` hands an agent cloned into some other repo *bullpen's own* instructions
+as project context — it then reports being in the wrong directory, and it's right.
+
+**Skills need `settingSources: ["project", "user"]`, and that switches off approvals.** Skills in
+`~/.claude/skills` are invisible under `["project"]` alone, but adding `"user"` also loads
+`~/.claude/settings.json` — and a `permissions.allow` entry there auto-approves that tool without
+ever reaching `canUseTool`. Measured on a bare `Bash` allow rule: 1 approval prompt became 0.
+`inheritUserSettings` is on by default because the skills are the point, so an agent's real
+permission surface is `~/.claude/settings.json` plus its own — turn it off for an agent whose
+approvals must actually be asked.
+
+**`auto` never reaches the approval UI.** A classifier decides each call and a denial is final —
+the agent is told to stop and explain, and `canUseTool` is never invoked. Measured: the same curl
+that `default` escalated, `auto` approved with zero escalations. So it is closer to `full` than to
+`supervised`, and it is the only sane mode for an unattended run, since a pending approval has no
+timeout and a cron agent has nobody to answer it.
+
+**A run cannot widen into `full` mid-flight.** The harness rejects
+`setPermissionMode("bypassPermissions")` unless the session was launched with
+`--dangerously-skip-permissions` — "Cannot set permission mode to bypassPermissions because the
+session was not launched with ...". Every other mode switches fine. The run-view dropdown
+therefore offers `full` only when the run already started there, and `setRunPermissionMode`
+returns the refusal instead of a bare boolean so the UI can't claim a mode the run never entered.
 
 **`canUseTool` must never resolve to `null`.** There is no timeout on a permission prompt; a
 null reply blocks that tool for the life of the process. An abort resolves to an explicit deny.
@@ -66,6 +103,26 @@ at run start, so the stored JSON stays credential-free.
 from `~/.claude.json` (read regardless of `settingSources`), the cloned repo's `.mcp.json`, and
 claude.ai connectors. That makes agents non-deterministic and leaks one agent's MCP credentials
 to another.
+
+**Webhook shape is per-agent, and header names are lowercased before lookup.** `presetFor()`
+resolves `webhookMode` to a signature header, prefix, event header and handshake header — `github`
+(`x-hub-signature-256`, `sha256=`), `asana` (`x-hook-signature`, bare hex, echoes `x-hook-secret`),
+`token`, or `custom` from the agent's own fields. The route now forwards every request header, so
+a configured name that isn't lowercased silently matches nothing — that cost a debugging round.
+`hmac` is the pre-preset spelling of `github` and `token` of a bare `custom`; both still parse, so
+old records round-trip. The event allowlist is GitHub's alone — it is the only sender that names
+its event in a header — so `webhookEvents` does nothing for the others.
+
+**Slack signs `v0:{timestamp}:{body}`, not the body.** Same algorithm, different input, so a
+body-only HMAC never matches — that is why a generic custom preset can't carry Slack. It also needs
+a five-minute skew window, `X-Slack-Retry-Num` dropped rather than run twice, `event_id` as the
+dedup key (Slack puts it in the body), the event name read from `event.type`, and the
+`url_verification` challenge echoed *in the body* where Asana echoes a header. Signature is checked
+before the challenge is answered, so the signing secret must be pasted in first.
+
+**An Asana handshake is only honoured while the agent has no secret.** Asana picks the secret and
+asks for it back; accepting that unconditionally would let anyone who knows the URL replace a live
+hook's secret and then sign their own payloads. Clear the secret to re-register.
 
 **MCP allow rules need a literal server name.** `mcp__linear__*` works; `mcp__*` is ignored with
 a startup warning and grants nothing.

@@ -11,6 +11,7 @@ describe("permission mode mapping", () => {
     expect(toSdkPermissionMode("supervised")).toBe("default");
     expect(toSdkPermissionMode("acceptEdits")).toBe("acceptEdits");
     expect(toSdkPermissionMode("plan")).toBe("plan");
+    expect(toSdkPermissionMode("auto")).toBe("auto");
     expect(toSdkPermissionMode("full")).toBe("bypassPermissions");
     expect(toSdkPermissionMode("locked")).toBe("dontAsk");
   });

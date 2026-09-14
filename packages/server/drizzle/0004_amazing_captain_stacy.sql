@@ -1,0 +1,1 @@
+ALTER TABLE `agents` DROP COLUMN `webhook_event_header`;

@@ -18,15 +18,29 @@ export const agents = sqliteTable("agents", {
   disallowedTools: text("disallowed_tools", { mode: "json" }).notNull().default(sql`'[]'`),
   mcpServers: text("mcp_servers", { mode: "json" }).notNull().default(sql`'{}'`),
   inheritMachineMcp: integer("inherit_machine_mcp", { mode: "boolean" }).notNull().default(false),
+  inheritUserSettings: integer("inherit_user_settings", { mode: "boolean" }).notNull().default(false),
   env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
   maxTurns: integer("max_turns"),
+
+  pollUrl: text("poll_url"),
+  pollHeaders: text("poll_headers", { mode: "json" }).notNull().default(sql`'{}'`),
+  /** Dot path into a JSON response; blank hashes the whole body. */
+  pollPath: text("poll_path"),
+  /** Hash of the last response, so an unchanged endpoint costs no model turn. */
+  pollState: text("poll_state"),
+  pollStatus: text("poll_status"),
+  pollCheckedAt: integer("poll_checked_at"),
 
   cron: text("cron"),
   cronTimezone: text("cron_timezone"),
   webhookSecret: text("webhook_secret"),
   webhookMode: text("webhook_mode").notNull().default("token"),
   webhookEvents: text("webhook_events", { mode: "json" }).notNull().default(sql`'[]'`),
-  allowPromptOverride: integer("allow_prompt_override", { mode: "boolean" }).notNull().default(false),
+  /** Dot path into the payload, matched against filterValues before firing. */
+  filterPath: text("filter_path"),
+  filterValues: text("filter_values", { mode: "json" }).notNull().default(sql`'[]'`),
+  webhookSignatureHeader: text("webhook_signature_header"),
+  webhookSignaturePrefix: text("webhook_signature_prefix"),
   concurrency: text("concurrency").notNull().default("skip"),
 
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -41,6 +55,8 @@ export const runs = sqliteTable(
     agentId: text("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
     status: text("status").notNull(),
     trigger: text("trigger").notNull(),
+    /** Effective mode for this run: the agent's, an override, or a mid-run change. */
+    permissionMode: text("permission_mode"),
     prompt: text("prompt").notNull(),
     title: text("title"),
     claudeSessionId: text("claude_session_id"),

@@ -10,6 +10,7 @@ export type RunnerSpec = {
   disallowedTools?: string[];
   mcpServers?: Options["mcpServers"];
   strictMcpConfig: boolean;
+  inheritUserSettings: boolean;
   env?: Record<string, string>;
   maxTurns?: number | undefined;
   resumeSessionId?: string | undefined;
@@ -52,7 +53,7 @@ export function startRunner(spec: RunnerSpec, onMessage: (m: SDKMessage) => void
         ...(spec.canUseTool ? { canUseTool: spec.canUseTool } : {}),
         ...(spec.maxTurns ? { maxTurns: spec.maxTurns } : {}),
         ...(spec.resumeSessionId ? { resume: spec.resumeSessionId } : {}),
-        settingSources: ["project"],
+        settingSources: spec.inheritUserSettings ? ["project", "user"] : ["project"],
         includePartialMessages: true,
         abortController: abort,
         env: { ...process.env, ...spec.env } as Record<string, string>,

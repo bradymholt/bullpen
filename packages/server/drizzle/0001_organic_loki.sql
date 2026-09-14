@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `inherit_user_settings` integer DEFAULT false NOT NULL;

@@ -76,7 +76,17 @@ function settle(id: string, status: "allowed" | "denied") {
     .run();
 }
 
-export function decideApproval(id: string, allow: boolean, reason?: string): boolean {
+/**
+ * AskUserQuestion has no dialog channel here — the harness reads the answers
+ * back out of the tool input the permission component returns, keyed by the
+ * question text. So answering is an approval that rewrites its own input.
+ */
+export function decideApproval(
+  id: string,
+  allow: boolean,
+  reason?: string,
+  answers?: Record<string, string | string[]>,
+): boolean {
   const row = db.select().from(approvals).where(eq(approvals.id, id)).get();
   if (!row || row.status !== "pending") return false;
 
@@ -92,11 +102,18 @@ export function decideApproval(id: string, allow: boolean, reason?: string): boo
   appendEvent(row.runId, "approval.decided", { id, toolName: row.toolName, allow, reason });
   hub.broadcast(row.runId, { type: "approval", runId: row.runId, id, status: allow ? "allowed" : "denied" });
 
-  entry.resolve(
-    allow
-      ? { behavior: "allow" }
-      : { behavior: "deny", message: reason ?? "Denied from the bullpen dashboard." },
-  );
+  if (allow && answers && Object.keys(answers).length > 0) {
+    entry.resolve({
+      behavior: "allow",
+      updatedInput: { ...(row.input as object), answers },
+    });
+  } else {
+    entry.resolve(
+      allow
+        ? { behavior: "allow" }
+        : { behavior: "deny", message: reason ?? "Denied from the bullpen dashboard." },
+    );
+  }
   return true;
 }
 

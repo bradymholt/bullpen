@@ -1,0 +1,1 @@
+ALTER TABLE `agents` DROP COLUMN `allow_prompt_override`;

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, type Agent } from "../db/schema.ts";
 import { agentHasActiveRun, startRun } from "../runs/RunManager.ts";
+import { pollOnce } from "./poll.ts";
 
 const jobs = new Map<string, Cron>();
 
@@ -25,6 +26,14 @@ function schedule(agent: Agent): void {
         if (!fresh?.enabled || !fresh.cron) return;
         // Checked against the DB, not croner's in-process guard: a run can
         // outlive the process that started it.
+        // A polling agent uses the same schedule to check, not to run: the
+        // run only happens when the endpoint actually changed.
+        if (fresh.pollUrl) {
+          void pollOnce(fresh).catch((err: unknown) =>
+            console.error(`[poll] ${fresh.name}: ${String(err)}`),
+          );
+          return;
+        }
         if (agentHasActiveRun(fresh.id)) {
           console.log(`[cron] ${fresh.name}: skipped, a run is already active`);
           return;

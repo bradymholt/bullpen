@@ -1,10 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, rmSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { config } from "./config.ts";
 
 export type WorkspaceSpec =
+  | { kind: "ephemeral" }
+  | { kind: "scratch" }
   | { kind: "persistent" }
+  | { kind: "existing"; path: string }
+  | { kind: "clone"; repoUrl: string; baseBranch?: string }
   | { kind: "git"; repoUrl: string; baseBranch?: string };
 
 export type Workspace = { path: string; branch?: string };
@@ -33,17 +38,39 @@ export function git(cwd: string, args: string[]): string {
 }
 
 /**
- * `persistent` doubles as the "no workspace" answer: agents that never touch a
+ * `scratch` doubles as the "no workspace" answer: agents that never touch a
  * repo still need a cwd, and one that survives runs lets a digest agent keep
- * notes between them.
+ * notes between them. `existing` is used in place and never cleaned up —
+ * removeWorkspace only deletes below workspacesDir.
  */
 export function resolveWorkspace(
   spec: WorkspaceSpec,
   ctx: { agentId: string; agentName: string; runId: string },
 ): Workspace {
-  if (spec.kind === "persistent") {
+  // One-off runs get their own directory and leave nothing behind.
+  if (spec.kind === "ephemeral") {
+    const path = join(config.workspacesDir, ctx.runId);
+    mkdirSync(path, { recursive: true });
+    return { path };
+  }
+
+  if (spec.kind === "persistent" || spec.kind === "scratch") {
     const path = join(config.agentDataDir, ctx.agentId);
     mkdirSync(path, { recursive: true });
+    return { path };
+  }
+
+  if (spec.kind === "existing") {
+    const path = resolve(
+      spec.path.startsWith("~/") ? join(homedir(), spec.path.slice(2)) : spec.path,
+    );
+    let stat;
+    try {
+      stat = statSync(path);
+    } catch {
+      throw new Error(`workspace directory does not exist: ${path}`);
+    }
+    if (!stat.isDirectory()) throw new Error(`workspace path is not a directory: ${path}`);
     return { path };
   }
 

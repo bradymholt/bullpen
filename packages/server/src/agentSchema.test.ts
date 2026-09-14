@@ -25,31 +25,56 @@ describe("agent schema", () => {
     const parsed = agentPatchSchema.parse({
       webhookEvents: ["issues", "pull_request"],
       webhookMode: "hmac",
-      allowPromptOverride: true,
       concurrency: "allow",
     });
     expect(parsed).toEqual({
       webhookEvents: ["issues", "pull_request"],
       webhookMode: "hmac",
-      allowPromptOverride: true,
       concurrency: "allow",
     });
   });
 
-  it("defaults a new agent to the safe end of every switch", () => {
+  it("defaults a new agent to the safe end of every switch but permission mode", () => {
     const parsed = agentCreateSchema.parse({ name: "Fresh" });
     expect(parsed).toMatchObject({
-      permissionMode: "supervised",
+      // `auto` on purpose: an unattended run that stops for approval never resumes.
+      permissionMode: "auto",
       inheritMachineMcp: false,
-      allowPromptOverride: false,
       concurrency: "skip",
-      webhookMode: "token",
-      workspaceConfig: { kind: "persistent" },
+      webhookMode: "custom",
+      workspaceConfig: { kind: "scratch" },
     });
   });
 
-  it("requires a repo url for a git workspace", () => {
-    expect(agentCreateSchema.safeParse({ name: "x", workspaceConfig: { kind: "git" } }).success).toBe(false);
+  it("takes an id on create so a webhook URL can be shown before saving, but never on patch", () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    expect(agentCreateSchema.parse({ name: "Fresh", id })).toMatchObject({ id });
+    expect(agentCreateSchema.safeParse({ name: "Fresh", id: "../etc/passwd" }).success).toBe(false);
+    expect(agentPatchSchema.parse({ id, name: "Renamed" })).toEqual({ name: "Renamed" });
+  });
+
+  it("takes a webhook secret on create, but never on patch", () => {
+    const secret = "a".repeat(43);
+    expect(agentCreateSchema.parse({ name: "Fresh", webhookSecret: secret })).toMatchObject({
+      webhookSecret: secret,
+    });
+    expect(agentCreateSchema.safeParse({ name: "Fresh", webhookSecret: "short" }).success).toBe(false);
+    expect(agentPatchSchema.parse({ webhookSecret: secret, name: "Renamed" })).toEqual({ name: "Renamed" });
+  });
+
+  it("requires a repo url to clone and a path to use an existing directory", () => {
+    expect(agentCreateSchema.safeParse({ name: "x", workspaceConfig: { kind: "clone" } }).success).toBe(false);
+    expect(agentCreateSchema.safeParse({ name: "x", workspaceConfig: { kind: "existing" } }).success).toBe(false);
+    expect(
+      agentCreateSchema.safeParse({ name: "x", workspaceConfig: { kind: "existing", path: "~/dev/x" } }).success,
+    ).toBe(true);
+  });
+
+  it("still accepts the pre-rename workspace kinds", () => {
+    expect(agentCreateSchema.safeParse({ name: "x", workspaceConfig: { kind: "persistent" } }).success).toBe(true);
+    expect(
+      agentCreateSchema.safeParse({ name: "x", workspaceConfig: { kind: "git", repoUrl: "u" } }).success,
+    ).toBe(true);
   });
 
   it("rejects an unknown permission mode", () => {
