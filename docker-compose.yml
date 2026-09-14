@@ -1,10 +1,14 @@
 services:
   bullpen:
+    # Built here for local work; the server pulls the same tag from GHCR.
     build: .
-    image: bullpen
+    image: ghcr.io/bradymholt/bullpen:latest
+    pull_policy: missing
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Loopback only: the dashboard has no auth, so nothing but this box
+      # should reach it. Put a proxy in front for the webhook path alone.
+      - "127.0.0.1:4322:4322"
     volumes:
       - bullpen-data:/data
     environment:

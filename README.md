@@ -49,6 +49,20 @@ The container can't reach your Mac's Keychain, so it needs an explicit credentia
 see below. The image builds `better-sqlite3` from source (it publishes no prebuilds),
 so the first build takes a couple of minutes.
 
+### Deploying to a server
+
+`docker compose up -d --build` on the box works, but `better-sqlite3` compiles from source
+and wants more RAM than a small server has. The `image` workflow builds `linux/amd64` in CI
+and pushes to `ghcr.io/<owner>/bullpen:latest`, so a deploy is:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The published port is bound to `127.0.0.1` on purpose — the dashboard has no auth. Reach it
+over an SSH tunnel (`ssh -L 4322:localhost:4322 …`) or Tailscale, and if webhooks need to
+arrive from the internet, put a proxy in front that forwards `/api/hooks/*` and nothing else.
+
 ## Claude credentials
 
 Pick one, in order of preference:

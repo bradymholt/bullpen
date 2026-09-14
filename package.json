@@ -15,7 +15,7 @@
     "build": "npm run build -w @bullpen/web && npm run build -w @bullpen/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "start": "node --experimental-strip-types packages/server/src/index.ts"
+    "start": "node --env-file-if-exists=.env --experimental-strip-types packages/server/src/index.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

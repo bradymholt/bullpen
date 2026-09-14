@@ -7,14 +7,23 @@ export type ClaudeCredential = {
   detail: string;
 };
 
-const dataDir = resolve(process.env.BULLPEN_DATA ?? "./data");
+/**
+ * Outside the checkout on purpose: a workspace nested under a repo inherits
+ * that repo's CLAUDE.md, so an agent cloned into ./data reads the host
+ * project's instructions as its own. The container sets BULLPEN_DATA=/data.
+ */
+function expandHome(path: string): string {
+  return path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path;
+}
+
+const dataDir = resolve(expandHome(process.env.BULLPEN_DATA || join(homedir(), ".bullpen")));
 
 export const config = {
   dataDir,
   dbPath: resolve(dataDir, "bullpen.db"),
   workspacesDir: resolve(dataDir, "workspaces"),
   agentDataDir: resolve(dataDir, "agent-data"),
-  port: Number(process.env.PORT ?? 3000),
+  port: Number(process.env.PORT ?? 4322),
   githubToken: process.env.GITHUB_TOKEN || undefined,
 };
 
