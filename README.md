@@ -17,7 +17,7 @@ npm install
 npm run dev
 ```
 
-Then open **http://localhost:5173**. That starts the API on `:3000` and Vite on `:5173`
+Then open **http://localhost:5173**. That starts the API on `:4322` and Vite on `:5173`
 with hot reload, proxying `/api` and `/ws` to the server.
 
 To run it the way the container does — one process, one port, no Vite:
@@ -26,7 +26,7 @@ To run it the way the container does — one process, one port, no Vite:
 npm run build && npm start
 ```
 
-Then open **http://localhost:3000**.
+Then open **http://localhost:4322**.
 
 Other useful commands:
 
@@ -64,16 +64,62 @@ Pick one, in order of preference:
 
 - **Agents** are saved definitions — prompt, model, permission mode, tools, MCP servers, env.
   A **run** is one execution of one.
-- **Workspaces** are either a fresh git clone on its own branch per run, or a persistent
-  directory that survives runs (also the answer for agents that never touch code).
+- **Workspaces** are a scratch directory kept between runs (also the answer for agents that never
+  touch code), an existing directory you name — your real checkout, edited in place — or a fresh
+  clone on its own branch per run.
 - **Permissions** route through the SDK's `canUseTool`: supervised runs pause on a tool call
   and wait for you to allow or deny it. Modes are supervised / auto-accept edits / plan /
-  full access / locked.
-- **Triggers**: run by hand, on a cron with a per-agent timezone, or from a webhook —
-  plain token or GitHub HMAC, with an event allowlist and a delivery log.
+  auto / full access / locked. `auto` is the default — a classifier rules on each call and
+  never prompts, which is what an unattended cron or webhook run needs.
+- **Triggers**: run by hand, on a cron with a per-agent timezone, or from a webhook — GitHub,
+  Slack, Asana (each verified the way that service actually signs), a plain token header, or
+  custom header names for anything else, with an event allowlist and a delivery log.
 - **Git**: review the diff a run produced, then commit, push, and open a PR.
 - **Live view**: every run streams over one WebSocket. Reconnecting replays from the event
   log, so a dropped tab or a server restart loses nothing.
+
+## Connect a GitHub webhook
+
+**In bullpen** — open the agent, set **Trigger** to Webhook, and set **Sender** to
+`GitHub — X-Hub-Signature-256`. Copy the **Webhook URL** and reveal the **Secret**; you need
+both in a moment. Fill in **Only these events** with the events you want (`issues`,
+`pull_request`) — leaving it empty means every event fires the agent.
+
+**In the repo** — Settings → Webhooks → Add webhook, then:
+
+| Field | What to enter |
+|---|---|
+| **Payload URL** | The webhook URL from bullpen |
+| **Content type** | **`application/json`** — the dropdown defaults to `application/x-www-form-urlencoded`, which bullpen rejects |
+| **Secret** | The secret from bullpen |
+| **SSL verification** | Leave **Enable SSL verification** on |
+| **Which events…** | **Let me select individual events**, ticking the same ones you listed in bullpen. "Just the push event" is the default and rarely what you want |
+| **Active** | Leave checked |
+
+Then **Add webhook**. GitHub immediately sends a `ping`, which bullpen answers without starting
+a run — a green tick on the hook means the URL and secret are both right.
+
+> **Content type is the one that bites.** GitHub defaults to form-encoded, which wraps the JSON
+> in a `payload=` field. Bullpen answers that with a message naming the fix, and the delivery
+> shows up in **Recent deliveries** as a drop — so if nothing runs, look there first.
+
+**GitHub has to be able to reach this box.** Its servers can't route to localhost or a tailnet
+address, so either expose just the hooks path publicly:
+
+```bash
+tailscale funnel --set-path=/api/hooks 4322
+```
+
+…or skip webhooks entirely and have a cron agent poll the GitHub API instead, which needs no
+public surface at all. The URL bullpen shows you is built from your browser's address, so
+substitute the public hostname when pasting it into GitHub.
+
+Before pointing anything real at it, hit **Test fire** in the agent editor: it signs a request
+exactly the way GitHub would, using the settings you just saved.
+
+> **An agent that pushes to the repo whose webhook triggered it will re-trigger itself.** There
+> is no loop guard yet. Don't give a repo-cloning agent a `push` trigger on the same repo it
+> commits to.
 
 ## Layout
 
@@ -90,9 +136,6 @@ Pick one, in order of preference:
   their values.
 - **Allow rules for MCP need a real server name.** `mcp__linear__*` works; `mcp__*` is ignored
   with a warning and grants nothing.
-- **GitHub webhooks need to reach this box.** A tailnet or LAN address won't work from
-  GitHub's servers — either expose just `/api/hooks/*` (Tailscale Funnel, Cloudflare Tunnel),
-  or skip webhooks and poll the API from a cron agent instead.
 - **Cron doesn't catch up.** A fire missed while the container was down is skipped, not
   replayed.
 
