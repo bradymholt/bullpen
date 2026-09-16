@@ -1,9 +1,9 @@
 name: deploy
 
-# Runs after `image` has pushed main's sha, or by hand for a sha that already has an image.
+# Runs after `build` has pushed main's sha, or by hand for a sha that already has an image.
 on:
   workflow_run:
-    workflows: [image]
+    workflows: [build]
     types: [completed]
     branches: [main]
   workflow_dispatch:
