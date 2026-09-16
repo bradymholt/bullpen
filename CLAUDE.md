@@ -168,6 +168,17 @@ import: on a laptop the agents still land, and the note says what did not. Onboa
 step for the same reason there is nothing to list there: connectors come with the login, and the
 config cache that names them is empty until an agent has run.
 
+**MCP OAuth goes through `claude mcp login --no-browser`, under a pty, with bullpen delivering
+the redirect.** Writing tokens ourselves would mean matching the harness's credential-store format
+(`mcpOAuth["name|hash"]`, keychain on a Mac, `.credentials.json` elsewhere), so `mcpLogin.ts` runs
+the CLI instead and relays: parse the authorization URL out of its output (an OSC 8 hyperlink
+printed twice back to back — `parseAuthUrl`), show it, and when the user pastes the
+`http://localhost:<port>/callback?code=…` URL their browser died on, write it to the CLI's stdin
+*and* GET it against `127.0.0.1:<port>`, which reaches the CLI's callback listener because bullpen
+shares its network namespace. The CLI refuses a non-tty stdin, hence the pty: util-linux `script`
+in the container, Python's `pty` on macOS (BSD `script` wants a real tty of its own). Everything
+else — token storage, refresh, the "needs-auth" status — stays the harness's.
+
 **Usage comes from the harness's own OAuth login, and on a Mac that login is one of several
 Keychain items.** `usage.ts` reads `GET api.anthropic.com/api/oauth/usage` with the
 `claudeAiOauth.accessToken` from `CLAUDE_CONFIG_DIR/.credentials.json`, or on macOS from the

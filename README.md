@@ -242,7 +242,9 @@ exactly the way GitHub would, using the settings you just saved.
   or `CLAUDE_CONFIG_DIR/.claude.json` in the container) and are listed under Settings. An agent
   gets them only with "Use the shared MCP servers" checked — and then gets all of them, plus the
   repo's `.mcp.json` and claude.ai connectors. Reference secrets as `${NAME}` and define them
-  in global, space, or agent env; the API never returns their values. To move servers from your
+  in global, space, or agent env; the API never returns their values. Servers that use OAuth
+  (Datadog, Cloudflare, claude.ai connectors) get an **Authorize** button under Settings: open the
+  link, approve, paste back the `localhost` URL the browser lands on. To move servers from your
   Mac to a headless box, **Export** with a passphrase (the servers ride along encrypted with the
   other secrets) and **Import** on the box; on a Mac, import reports them but leaves your own
   `~/.claude.json` alone. claude.ai connectors need no setup — they come with the login.
