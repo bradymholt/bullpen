@@ -256,8 +256,10 @@ level up.
 **A browser is opt-in at build (`WITH_BROWSER=1`, on in CI).** `npx @playwright/mcp` fetches the
 server, never a browser, and Chromium needs OS libraries the slim image lacks — so the image
 installs `@playwright/mcp` globally and the headless Chromium shell through the Playwright version
-that package pins (a mismatched Playwright looks for a different Chromium build). Under Docker's
-default seccomp profile Chromium's sandbox cannot start, hence `--no-sandbox` in the server config.
+that package pins (a mismatched Playwright looks for a different Chromium build). The MCP server
+defaults to the `chrome` channel — Google Chrome at /opt/google/chrome, which is not there — so the
+config needs `--browser chromium`; and under Docker's default seccomp profile Chromium's sandbox
+cannot start, hence `--no-sandbox`.
 
 **`gh` is in the image; `gog` only if `GOG_URL` was passed at build.** The SDK brings the
 `claude` binary and nothing else; the agents' `gh api` calls need the CLI installed separately.
