@@ -1,0 +1,53 @@
+name: deploy
+
+# Runs after `image` has pushed main's sha, or by hand for a sha that already has an image.
+on:
+  workflow_run:
+    workflows: [image]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Git sha to deploy (an image for it must exist)
+        required: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      VERSION: ${{ inputs.version || github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERSION }}
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - run: gem install kamal --no-document
+
+      # A key authorized for the deploy user on the box; nothing else uses it.
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.KAMAL_SSH_KEY }}
+
+      # Pinned rather than scanned, so a swapped box fails instead of being trusted.
+      - run: |
+          mkdir -p ~/.ssh
+          echo "${{ vars.KAMAL_HOST_KEY }}" >> ~/.ssh/known_hosts
+
+      # .kamal/secrets reads the registry password from GITHUB_TOKEN; the job's
+      # token can pull this repo's package.
+      - run: kamal deploy --skip-push --version "$VERSION"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

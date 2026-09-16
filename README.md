@@ -88,17 +88,18 @@ npm run deploy
 Docker creates the data directory root-owned the first time, and the container runs unprivileged, so
 the first boot fails on `mkdir /data/workspaces` until the chown; the second deploy comes up.
 
-Every deploy after that:
+Every deploy after that is a push to `main`: the `image` workflow builds `linux/amd64` and pushes
+`ghcr.io/<owner>/bullpen:<git sha>`, then the `deploy` workflow runs `kamal deploy` for that sha.
+The deploy workflow needs two things in the repo: an Actions secret `KAMAL_SSH_KEY` (a private key
+authorized for the deploy user on the box, used by nothing else) and a variable `KAMAL_HOST_KEY`
+(the box's `ssh-keyscan -t ed25519 <host>` line, pinned). It can also be dispatched by hand with a
+sha to redeploy an older image.
 
-```bash
-git push                # CI builds linux/amd64 and pushes ghcr.io/<owner>/bullpen:<git sha>
-npm run deploy          # kamal deploy --skip-push --version <that sha>
-```
-
-Deploy from a clean checkout of a commit CI has already built — the tag has to exist. Nothing is
-built on your Mac or on the box: `better-sqlite3` compiles from source and wants more RAM than a
-small server has. Kamal stops the old container (waiting up to `stop_timeout` for agents to
-finish) and starts the new one, so a deploy costs a few seconds of downtime.
+`npm run deploy` does the same from your machine, from a `main` checkout at a commit CI has
+already built. Nothing is ever built on your Mac or on the box: `better-sqlite3` compiles from
+source and wants more RAM than a small server has. Kamal stops the old container (waiting up to
+`stop_timeout` for agents to finish) and starts the new one, so a deploy costs a few seconds of
+downtime.
 
 Useful afterwards:
 
