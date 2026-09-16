@@ -26,6 +26,23 @@ function options(overrides: Record<string, unknown> = {}) {
 }
 
 describe("approvals", () => {
+  it("expires an unanswered prompt instead of holding the run open", async () => {
+    const canUseTool = makeCanUseTool("r1", () => {}, 20);
+    const decision = await canUseTool("Bash", { command: "ls" }, options({ toolUseID: "tu-timeout" }));
+
+    expect(decision).toMatchObject({ behavior: "deny" });
+    expect((decision as { message: string }).message).toContain("denied");
+    expect(pendingApprovals("r1")).toHaveLength(0);
+  });
+
+  it("does not expire a prompt that was answered in time", async () => {
+    const canUseTool = makeCanUseTool("r1", () => {}, 5_000);
+    const decision = canUseTool("Write", { file_path: "/tmp/y" }, options({ toolUseID: "tu-fast" }));
+    const [row] = pendingApprovals("r1");
+    expect(decideApproval(row!.id, true)).toBe(true);
+    expect(await decision).toEqual({ behavior: "allow" });
+  });
+
   it("records a pending row and resolves once decided", async () => {
     const canUseTool = makeCanUseTool("r1", () => {});
     const decision = canUseTool("Write", { file_path: "/tmp/x" }, options());

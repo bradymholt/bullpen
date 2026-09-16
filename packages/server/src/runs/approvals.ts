@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { config } from "../config.ts";
 import { db } from "../db/index.ts";
 import { approvals } from "../db/schema.ts";
 import { hub } from "../hub.ts";
@@ -25,6 +26,7 @@ export function pendingApprovals(runId: string) {
 export function makeCanUseTool(
   runId: string,
   onPending: (hasPending: boolean) => void,
+  timeoutMs: number = config.approvalTimeoutMs,
 ): CanUseTool {
   return async (toolName, input, options) => {
     const id = randomUUID();
@@ -55,10 +57,39 @@ export function makeCanUseTool(
     const decision = await new Promise<PermissionResult>((resolve) => {
       pending.set(id, { resolve });
 
+      const expiry =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              if (!pending.delete(id)) return;
+              settle(id, "denied");
+              appendEvent(runId, "approval.decided", {
+                id,
+                toolName,
+                allow: false,
+                reason: "expired",
+              });
+              hub.broadcast(runId, { type: "approval", runId, id, status: "denied" });
+              resolve({
+                behavior: "deny",
+                message:
+                  `No one answered this prompt within ${Math.round(timeoutMs / 60_000)} minutes, ` +
+                  `so it was denied. Carry on without this tool if you can, or stop and say what ` +
+                  `you needed it for.`,
+              });
+            }, timeoutMs)
+          : undefined;
+
+      const finish = (result: PermissionResult) => {
+        clearTimeout(expiry);
+        resolve(result);
+      };
+      pending.set(id, { resolve: finish });
+
       // A stopped run must not leave the child waiting on a prompt nobody
       // will ever answer.
       options.signal.addEventListener("abort", () => {
         if (!pending.delete(id)) return;
+        clearTimeout(expiry);
         settle(id, "denied");
         resolve({ behavior: "deny", message: "Run stopped before approval." });
       });

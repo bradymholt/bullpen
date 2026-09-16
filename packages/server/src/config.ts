@@ -25,6 +25,12 @@ export const config = {
   agentDataDir: resolve(dataDir, "agent-data"),
   port: Number(process.env.PORT ?? 4322),
   githubToken: process.env.GITHUB_TOKEN || undefined,
+  /**
+   * An approval nobody answers holds the run in awaiting_approval, and a
+   * concurrency-skip agent then refuses every later trigger. Unattended runs
+   * have no one to answer at all, so prompts expire instead of wedging.
+   */
+  approvalTimeoutMs: Number(process.env.BULLPEN_APPROVAL_TIMEOUT_MS ?? 15 * 60_000),
 };
 
 /**
