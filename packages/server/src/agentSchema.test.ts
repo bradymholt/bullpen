@@ -34,15 +34,17 @@ describe("agent schema", () => {
     });
   });
 
-  it("defaults a new agent to the safe end of every switch but permission mode", () => {
+  it("defaults a new agent so overlapping triggers all run, each in its own directory", () => {
     const parsed = agentCreateSchema.parse({ name: "Fresh" });
     expect(parsed).toMatchObject({
       // `auto` on purpose: an unattended run that stops for approval never resumes.
       permissionMode: "auto",
       inheritMachineMcp: false,
-      concurrency: "skip",
+      // These two only make sense together: dropping a trigger loses it for good,
+      // but running in parallel is only safe when runs do not share a directory.
+      concurrency: "allow",
+      workspaceConfig: { kind: "ephemeral" },
       webhookMode: "custom",
-      workspaceConfig: { kind: "scratch" },
     });
   });
 

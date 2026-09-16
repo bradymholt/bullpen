@@ -34,7 +34,7 @@ function schedule(agent: Agent): void {
           );
           return;
         }
-        if (agentHasActiveRun(fresh.id)) {
+        if (fresh.concurrency === "skip" && agentHasActiveRun(fresh.id)) {
           console.log(`[cron] ${fresh.name}: skipped, a run is already active`);
           return;
         }

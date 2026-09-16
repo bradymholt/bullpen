@@ -1,15 +1,20 @@
 /** "persistent" and "git" are the old spellings of "scratch" and "clone". */
 export type WorkspaceConfig =
   | { kind: "scratch" }
+  | { kind: "ephemeral" }
   | { kind: "persistent" }
   | { kind: "existing"; path: string }
   | { kind: "clone"; repoUrl: string; baseBranch?: string }
   | { kind: "git"; repoUrl: string; baseBranch?: string };
 
+/** ANDed payload conditions; supersedes the single filterPath/filterValues pair. */
+export type FilterCondition = { path: string; op: "in" | "not_in"; values: string[] };
+
 export type Agent = {
   id: string;
   name: string;
   description: string | null;
+  space: string | null;
   model: string | null;
   prompt: string;
   permissionMode: string;
@@ -33,6 +38,7 @@ export type Agent = {
   webhookMode: string;
   webhookEvents: string[];
   filterPath: string | null;
+  filters: FilterCondition[];
   filterValues: string[];
   webhookSignatureHeader: string | null;
   webhookSignaturePrefix: string | null;
@@ -59,6 +65,8 @@ export type Run = {
   error: string | null;
   startedAt: number;
   endedAt: number | null;
+  /** The session is still attached, so it can take another message. */
+  resumable?: boolean;
 };
 
 export type RunEvent = {
@@ -80,6 +88,7 @@ export type Approval = {
   input: Record<string, unknown>;
   title: string | null;
   description: string | null;
+  space: string | null;
   status: string;
 };
 

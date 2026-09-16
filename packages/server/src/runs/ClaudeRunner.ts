@@ -11,6 +11,7 @@ export type RunnerSpec = {
   mcpServers?: Options["mcpServers"];
   strictMcpConfig: boolean;
   inheritUserSettings: boolean;
+  appendSystemPrompt?: string | undefined;
   env?: Record<string, string>;
   maxTurns?: number | undefined;
   resumeSessionId?: string | undefined;
@@ -53,6 +54,7 @@ export function startRunner(spec: RunnerSpec, onMessage: (m: SDKMessage) => void
         ...(spec.canUseTool ? { canUseTool: spec.canUseTool } : {}),
         ...(spec.maxTurns ? { maxTurns: spec.maxTurns } : {}),
         ...(spec.resumeSessionId ? { resume: spec.resumeSessionId } : {}),
+        ...(spec.appendSystemPrompt ? { appendSystemPrompt: spec.appendSystemPrompt } : {}),
         settingSources: spec.inheritUserSettings ? ["project", "user"] : ["project"],
         includePartialMessages: true,
         abortController: abort,

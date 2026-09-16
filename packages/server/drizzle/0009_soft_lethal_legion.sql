@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `filters` text DEFAULT '[]' NOT NULL;

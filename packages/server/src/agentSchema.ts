@@ -19,9 +19,18 @@ const mcpRemote = z.object({
 /** Mirrors the SDK's McpServerConfig union so bad config fails at save, not mid-run. */
 export const mcpServersSchema = z.record(z.string(), z.union([mcpStdio, mcpRemote]));
 
+/** ANDed payload conditions, checked before a run starts. */
+export const filterConditionSchema = z.object({
+  path: z.string().min(1).max(200),
+  op: z.enum(["in", "not_in"]),
+  values: z.array(z.string().max(200)).min(1).max(100),
+});
+
 /** `persistent` and `git` are the old spellings of `scratch` and `clone`. */
 export const workspaceConfigSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("scratch") }),
+  /** A fresh directory per run, deleted after — what lets an agent run in parallel. */
+  z.object({ kind: z.literal("ephemeral") }),
   z.object({ kind: z.literal("persistent") }),
   z.object({ kind: z.literal("existing"), path: z.string().min(1) }),
   z.object({
@@ -44,6 +53,7 @@ export const workspaceConfigSchema = z.discriminatedUnion("kind", [
 const fields = {
   name: z.string().min(1).max(120),
   description: z.string().max(500).nullish(),
+  space: z.string().trim().max(60).nullish(),
   model: z.string().max(120).nullish(),
   prompt: z.string(),
   permissionMode: z.enum(["supervised", "acceptEdits", "plan", "auto", "full", "locked"]),
@@ -64,6 +74,7 @@ const fields = {
   webhookMode: z.enum(["token", "github", "slack", "asana", "custom", "hmac"]),
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
+  filters: z.array(filterConditionSchema).max(10),
   webhookSignatureHeader: z.string().max(120).nullish(),
   webhookSignaturePrefix: z.string().max(40).nullish(),
   webhookEvents: z.array(z.string()),
@@ -79,7 +90,7 @@ const fields = {
 export const AGENT_DEFAULTS = {
   prompt: "",
   permissionMode: "auto",
-  workspaceConfig: { kind: "scratch" },
+  workspaceConfig: { kind: "ephemeral" },
   allowedTools: [],
   disallowedTools: [],
   mcpServers: {},
@@ -90,7 +101,8 @@ export const AGENT_DEFAULTS = {
   webhookMode: "custom",
   webhookEvents: [],
   filterValues: [],
-  concurrency: "skip",
+  filters: [],
+  concurrency: "allow",
   enabled: true,
 } as const;
 

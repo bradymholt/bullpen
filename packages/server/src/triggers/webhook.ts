@@ -6,6 +6,8 @@ import { webhookDeliveries, type Agent } from "../db/schema.ts";
 
 export const MAX_BODY_BYTES = 1_000_000;
 
+export type FilterCondition = { path: string; op: "in" | "not_in"; values: string[] };
+
 export function verifyToken(provided: string | undefined, secret: string): boolean {
   if (!provided) return false;
   const a = Buffer.from(provided);
@@ -182,16 +184,36 @@ export function decideDelivery(opts: {
     return { ok: false, status: 202, reason: `event ${event} not in this agent's allowlist` };
   }
 
-  const path = agent.filterPath?.trim();
-  const wanted = (agent.filterValues as string[] | undefined) ?? [];
-  if (path && wanted.length > 0) {
-    const found = valueAtPath(payload, path);
-    if (found === undefined || !wanted.includes(found)) {
-      return { ok: false, status: 202, reason: `${path}=${found ?? "(missing)"} is not in the filter` };
+  for (const cond of filterConditions(agent)) {
+    const found = valueAtPath(payload, cond.path);
+    const present = found !== undefined && cond.values.includes(found);
+    if (cond.op === "in" ? !present : present) {
+      const verb = cond.op === "in" ? "is not in" : "is excluded by";
+      return {
+        ok: false,
+        status: 202,
+        reason: `${cond.path}=${found ?? "(missing)"} ${verb} the filter`,
+      };
     }
   }
 
   return { ok: true, prompt: renderPrompt(agent.prompt, payload) };
+}
+
+/**
+ * The old single `filterPath`/`filterValues` pair reads as one `in` condition,
+ * so records written before `filters` existed keep behaving the same.
+ */
+export function filterConditions(agent: {
+  filters?: unknown;
+  filterPath?: string | null;
+  filterValues?: unknown;
+}): FilterCondition[] {
+  const listed = (agent.filters as FilterCondition[] | undefined) ?? [];
+  if (listed.length > 0) return listed.filter((c) => c.path?.trim() && c.values?.length > 0);
+  const path = agent.filterPath?.trim();
+  const values = (agent.filterValues as string[] | undefined) ?? [];
+  return path && values.length > 0 ? [{ path, op: "in", values }] : [];
 }
 
 /**

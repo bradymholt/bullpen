@@ -262,3 +262,62 @@ describe("payload filter", () => {
     expect(fire(filter, { number: 42 })).toMatchObject({ ok: true });
   });
 });
+
+describe("filter conditions", () => {
+  const fire = (over: Record<string, unknown>, payload: unknown) =>
+    decide(over, JSON.stringify(payload), { "x-bullpen-token": SECRET });
+
+  const review = {
+    filters: [
+      { path: "action", op: "in", values: ["review_requested", "dismissed"] },
+      { path: "pull_request.user.login", op: "not_in", values: ["dependabot[bot]"] },
+    ],
+  };
+
+  it("runs only when every condition holds", () => {
+    expect(
+      fire(review, { action: "review_requested", pull_request: { user: { login: "alice" } } }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("drops when the `in` condition misses", () => {
+    expect(
+      fire(review, { action: "synchronize", pull_request: { user: { login: "alice" } } }),
+    ).toMatchObject({ ok: false, status: 202 });
+  });
+
+  it("drops when the `not_in` condition matches", () => {
+    const d = fire(review, {
+      action: "review_requested",
+      pull_request: { user: { login: "dependabot[bot]" } },
+    });
+    expect(d).toMatchObject({ ok: false, status: 202 });
+    expect((d as { reason: string }).reason).toContain("excluded");
+  });
+
+  it("treats a missing path as absent, so `not_in` still passes", () => {
+    const only = { filters: [{ path: "sender.login", op: "not_in", values: ["bot"] }] };
+    expect(fire(only, { hello: 1 })).toMatchObject({ ok: true });
+  });
+
+  it("falls back to the old single pair when `filters` is empty", () => {
+    const legacy = { filters: [], filterPath: "action", filterValues: ["opened"] };
+    expect(fire(legacy, { action: "opened" })).toMatchObject({ ok: true });
+    expect(fire(legacy, { action: "closed" })).toMatchObject({ ok: false, status: 202 });
+  });
+
+  it("ignores the old pair once conditions exist", () => {
+    const both = {
+      filters: [{ path: "action", op: "in", values: ["closed"] }],
+      filterPath: "action",
+      filterValues: ["opened"],
+    };
+    expect(fire(both, { action: "closed" })).toMatchObject({ ok: true });
+    expect(fire(both, { action: "opened" })).toMatchObject({ ok: false, status: 202 });
+  });
+
+  it("skips a half-filled condition rather than dropping everything", () => {
+    const partial = { filters: [{ path: "action", op: "in", values: [] }] };
+    expect(fire(partial, { action: "anything" })).toMatchObject({ ok: true });
+  });
+});

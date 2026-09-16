@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
-import type { Agent, AgentInput, Delivery } from "./types.ts";
+import type { Agent, AgentInput, FilterCondition } from "./types.ts";
 
 const field =
   "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none placeholder:text-neutral-700 focus:border-neutral-600";
@@ -16,6 +16,45 @@ const CRON_PRESETS = [
   ["Weekdays 9am", "0 9 * * 1-5"],
   ["Mondays 9am", "0 9 * * 1"],
 ] as const;
+
+/**
+ * Comma-separated list that keeps what you typed. Parsing on every keystroke
+ * and rendering the result back drops the comma before it ever appears, so the
+ * text is local and only the parsed value goes to the draft.
+ */
+export function ListInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [text, setText] = useState(value.join(", "));
+  const joined = value.join("\u0000");
+  // Typing owns the text, but a change from elsewhere — a pill toggled — has to
+  // land in it. Only resync when the incoming list differs from what is typed,
+  // so a half-typed "a, " keeps its comma.
+  useEffect(() => {
+    const typed = text.split(",").map((v) => v.trim()).filter(Boolean);
+    if (typed.join("\u0000") !== joined) setText(value.join(", "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joined]);
+  return (
+    <input
+      className={className ?? field}
+      placeholder={placeholder ?? ""}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(e.target.value.split(",").map((v) => v.trim()).filter(Boolean));
+      }}
+    />
+  );
+}
 
 /** 32 random bytes, base64url — the same shape the server mints. */
 export function randomSecret(): string {
@@ -87,6 +126,62 @@ const PROVIDERS = [
 ] as const;
 
 /** A real field from each sender's payload, so the path isn't a guessing game. */
+/**
+ * Suggestions only — the path stays free text, since the filter is meant to work
+ * for any sender. A wrong path reads as missing, which silently drops everything
+ * under "is one of", so the point is to make the common ones typo-proof.
+ */
+const EVENT_SUGGESTIONS: Record<string, string[]> = {
+  github: [
+    "pull_request",
+    "pull_request_review",
+    "pull_request_review_comment",
+    "issues",
+    "issue_comment",
+    "push",
+    "release",
+    "workflow_run",
+  ],
+};
+
+const FILTER_SUGGESTIONS: Record<string, { paths: string[] }> = {
+  github: {
+    paths: [
+      "action",
+      "requested_reviewer.login",
+      "review.user.login",
+      "pull_request.user.login",
+      "pull_request.draft",
+      "pull_request.base.ref",
+      "repository.full_name",
+      "sender.login",
+      "review.state",
+    ],
+  },
+  slack: {
+    paths: [
+      "event.type",
+      "event.channel",
+      "event.user",
+      "event.subtype",
+      "event.channel_type",
+      "team_id",
+    ],
+  },
+  // `events.0.*` reads the first event only, and Asana batches — these narrow a
+  // delivery, they don't inspect every change in it.
+  asana: {
+    paths: [
+      "events.0.action",
+      "events.0.resource.resource_type",
+      "events.0.resource.resource_subtype",
+      "events.0.change.field",
+      "events.0.parent.gid",
+      "events.0.user.gid",
+    ],
+  },
+};
+
 const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: string }> = {
   slack: { path: "event.channel", values: "C0123ABC, C0456DEF", what: "a Slack channel id — Slack sends ids, never names" },
   github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR" },
@@ -160,17 +255,27 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
   ),
 };
 
-/** "hmac" and "token" predate the sender list; both still round-trip. */
-function CronPresets({ value, onPick }: { value: string; onPick: (expr: string) => void }) {
+/** Quick-fill pills over a field that stays free text. */
+function Pills({
+  options,
+  isOn,
+  onPick,
+  mono = false,
+}: {
+  options: readonly (readonly [string, string])[];
+  isOn: (value: string) => boolean;
+  onPick: (value: string) => void;
+  mono?: boolean;
+}) {
   return (
     <div className="mt-1.5 flex flex-wrap gap-1">
-      {CRON_PRESETS.map(([title, expr]) => (
+      {options.map(([title, value]) => (
         <button
-          key={expr}
+          key={value}
           type="button"
-          onClick={() => onPick(expr)}
-          className={`rounded border px-1.5 py-0.5 text-xs transition ${
-            value === expr
+          onClick={() => onPick(value)}
+          className={`rounded border px-1.5 py-0.5 text-xs transition ${mono ? "font-mono" : ""} ${
+            isOn(value)
               ? "border-neutral-600 bg-neutral-800 text-neutral-200"
               : "border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300"
           }`}
@@ -180,6 +285,11 @@ function CronPresets({ value, onPick }: { value: string; onPick: (expr: string) 
       ))}
     </div>
   );
+}
+
+/** "hmac" and "token" predate the sender list; both still round-trip. */
+function CronPresets({ value, onPick }: { value: string; onPick: (expr: string) => void }) {
+  return <Pills options={CRON_PRESETS} isOn={(expr) => value === expr} onPick={onPick} />;
 }
 
 function senderOption(mode: string | undefined): string {
@@ -250,8 +360,11 @@ function exampleRequest(url: string, draft: AgentInput): string {
 function initialKind(agent: Agent | null, draft: AgentInput): TriggerKind {
   if (draft.pollUrl) return "poll";
   if (draft.cron) return "schedule";
-  if (agent && (agent.webhookEvents.length > 0 || agent.webhookMode !== "token"))
-    return "webhook";
+  // A copy has no `agent` yet, so the webhook signal has to come off the draft
+  // the same way cron and poll already do.
+  const events = draft.webhookEvents ?? agent?.webhookEvents ?? [];
+  const mode = draft.webhookMode ?? agent?.webhookMode ?? "token";
+  if (events.length > 0 || mode !== "token") return "webhook";
   return "manual";
 }
 
@@ -267,18 +380,26 @@ export function TriggerSettings({
   const [kind, setKind] = useState<TriggerKind>(() => initialKind(agent, draft));
   const [next, setNext] = useState<string[] | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [secret, setSecret] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [testBody, setTestBody] = useState('{"word":"hello"}');
   const [showExample, setShowExample] = useState(false);
+  const [showTest, setShowTest] = useState(false);
+  const [showNotes, setShowNotes] = useState(!agent);
+  const [showFilterHelp, setShowFilterHelp] = useState(false);
+  const [spaceSecret, setSpaceSecret] = useState<{ configured: boolean; value?: string } | null>(
+    null,
+  );
   const [saved, setSaved] = useState<string | null>(null);
   const [pollNote, setPollNote] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
 
+  // `draft.id` is the seam: a copied agent mounts with an empty draft and is
+  // filled in a tick later, so keying on agent alone would read the empty one.
   useEffect(() => {
-    setKind(initialKind(agent, agent ?? {}));
-  }, [agent?.id]);
+    setKind(initialKind(agent, draft));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent?.id, draft.id]);
 
   // Saved cron only: the preview describes what will actually fire.
   useEffect(() => {
@@ -295,15 +416,19 @@ export function TriggerSettings({
       .catch((e) => setScheduleError(String(e)));
   }, [agent?.id, agent?.cron, agent?.cronTimezone]);
 
-  const loadDeliveries = () => {
-    if (agent) void api.deliveries(agent.id).then(setDeliveries);
-  };
   useEffect(() => {
     setSecret(agent?.webhookSecret ?? null);
     setRevealed(false);
     setTestResult(null);
-    loadDeliveries();
   }, [agent?.id]);
+
+  useEffect(() => {
+    if (!draft.space) return setSpaceSecret(null);
+    void api
+      .spaceSecretState(draft.space)
+      .then((s) => setSpaceSecret({ configured: s.configured }))
+      .catch(() => setSpaceSecret(null));
+  }, [draft.space]);
 
   const pick = (k: TriggerKind) => {
     setKind(k);
@@ -319,9 +444,29 @@ export function TriggerSettings({
   // The draft carries its own id, so an unsaved agent can still show the URL it will answer on.
   const agentId = agent?.id ?? draft.id;
   const hookUrl = agentId ? `${location.origin}/api/hooks/${agentId}` : null;
+  const spaceHookUrl = draft.space
+    ? `${location.origin}/api/hooks/space/${encodeURIComponent(draft.space)}`
+    : null;
   const shownSecret = agent ? secret : (draft.webhookSecret ?? null);
   const shape = shapeOf(draft);
   const example = FILTER_EXAMPLES[senderOption(draft.webhookMode)] ?? FILTER_EXAMPLES.custom!;
+
+  // An agent saved before `filters` existed still edits as one condition.
+  const conditions: FilterCondition[] =
+    draft.filters && draft.filters.length > 0
+      ? draft.filters
+      : draft.filterPath
+        ? [{ path: draft.filterPath, op: "in", values: draft.filterValues ?? [] }]
+        : [];
+  // Writing `filters` retires the old pair, so the two can never disagree.
+  const setConditions = (next: FilterCondition[]) => {
+    set("filters", next);
+    set("filterPath", null);
+    set("filterValues", []);
+  };
+  const setCondition = (i: number, cond: FilterCondition) =>
+    setConditions(conditions.map((c, j) => (j === i ? cond : c)));
+  const suggest = FILTER_SUGGESTIONS[senderOption(draft.webhookMode)];
 
   return (
     <div className="space-y-3 border-y border-neutral-800 py-4">
@@ -542,10 +687,6 @@ export function TriggerSettings({
             </select>
           </div>
 
-          <p className="-mt-1 text-xs leading-relaxed text-neutral-500">
-            {SENDER_NOTES[senderOption(draft.webhookMode)]}
-          </p>
-
           <div>
             <span className={label}>Webhook URL</span>
             <div className="flex gap-2">
@@ -563,6 +704,7 @@ export function TriggerSettings({
                 : "This is the URL this agent will answer on — it starts working when you create it."}
             </p>
           </div>
+
 
           {shape.pasted ? (
             <div>
@@ -665,14 +807,100 @@ export function TriggerSettings({
           </div>
           )}
 
+          {draft.space && (
+            <div className="rounded border border-neutral-800 bg-neutral-950 p-2.5">
+              <span className={label}>Shared URL for the &ldquo;{draft.space}&rdquo; space</span>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={spaceHookUrl!}
+                  className={`${field} font-mono text-xs text-neutral-400`}
+                />
+                <button
+                  onClick={() => void navigator.clipboard.writeText(spaceHookUrl!)}
+                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                >
+                  Copy
+                </button>
+              </div>
+              <span className={`${label} mt-3`}>Shared secret</span>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={
+                    spaceSecret?.value ??
+                    (spaceSecret?.configured ? "•".repeat(24) : "no shared secret yet")
+                  }
+                  className={`${field} font-mono text-xs ${
+                    spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
+                  }`}
+                />
+                {spaceSecret?.value && (
+                  <button
+                    onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
+                    className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                  >
+                    Copy
+                  </button>
+                )}
+                <button
+                  onClick={async () => {
+                    if (
+                      spaceSecret?.configured &&
+                      !confirm("Replace this space's secret? The current webhook stops working until you paste the new one into the sender.")
+                    ) {
+                      return;
+                    }
+                    const r = await api.setSpaceSecret(draft.space!);
+                    setSpaceSecret({ configured: true, value: r.secret });
+                  }}
+                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                >
+                  {spaceSecret?.configured ? "Rotate" : "Generate"}
+                </button>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                One webhook for the whole space: every enabled agent in it gets the delivery, and
+                its own filters decide whether it runs. This secret is the space&rsquo;s own — the
+                per-agent secret above is not used here, so there is nothing to keep in sync. It is
+                shown once when generated and never again. Renaming the space carries the secret but
+                changes the URL.
+              </p>
+            </div>
+          )}
+
           <div>
-            <button
-              type="button"
-              onClick={() => setShowExample((v) => !v)}
-              className="text-xs text-neutral-500 hover:text-neutral-300"
-            >
-              {showExample ? "▾" : "▸"} Example request
-            </button>
+            <div className="flex flex-wrap gap-4">
+              <button
+                type="button"
+                onClick={() => setShowNotes((v) => !v)}
+                className="text-xs text-neutral-500 hover:text-neutral-300"
+              >
+                {showNotes ? "▾" : "▸"} Setup notes
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExample((v) => !v)}
+                className="text-xs text-neutral-500 hover:text-neutral-300"
+              >
+                {showExample ? "▾" : "▸"} Example request
+              </button>
+              {agent && (
+                <button
+                  type="button"
+                  onClick={() => setShowTest((v) => !v)}
+                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                >
+                  {showTest ? "▾" : "▸"} Test fire
+                </button>
+              )}
+            </div>
+
+            {showNotes && (
+              <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+                {SENDER_NOTES[senderOption(draft.webhookMode)]}
+              </p>
+            )}
 
             {showExample && (
               <div className="mt-2">
@@ -689,24 +917,66 @@ export function TriggerSettings({
                 </button>
               </div>
             )}
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {shape.eventHeader && (
-              <div>
-                <span className={label}>Only these events</span>
-                <input
-                  className={field}
-                  placeholder="issues, pull_request"
-                  value={(draft.webhookEvents ?? []).join(", ")}
-                  onChange={(e) =>
-                    set("webhookEvents", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))
-                  }
-                />
-                <p className="mt-1 text-xs text-neutral-600">Matched against {shape.eventHeader}.</p>
+            {showTest && agent && (
+              <div className="mt-2">
+                <div className="flex gap-2">
+                  <input
+                    value={testBody}
+                    onChange={(e) => setTestBody(e.target.value)}
+                    className={`${field} font-mono text-xs`}
+                  />
+                  <button
+                    onClick={async () => {
+                      setTestResult("firing…");
+                      try {
+                        const r = await api.testFire(agent.id, testBody);
+                        setTestResult(`${r.status} ${JSON.stringify(r.body)}`);
+                      } catch (e) {
+                        setTestResult(String(e));
+                      }
+                    }}
+                    className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-800"
+                  >
+                    Send
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-neutral-600">
+                  Signs the request the same way a real caller would, using the settings above. Save
+                  first if you just changed them.
+                </p>
+                {testResult && (
+                  <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>
+                )}
               </div>
             )}
           </div>
+
+          {shape.eventHeader && (
+            <div>
+              <span className={label}>Only these events</span>
+              <ListInput
+                key={`events-${agent?.id ?? "new"}`}
+                placeholder="issues, pull_request"
+                value={draft.webhookEvents ?? []}
+                onChange={(next) => set("webhookEvents", next)}
+              />
+              {EVENT_SUGGESTIONS[senderOption(draft.webhookMode)] && (
+                <Pills
+                  mono
+                  options={EVENT_SUGGESTIONS[senderOption(draft.webhookMode)]!.map(
+                    (e) => [e, e] as const,
+                  )}
+                  isOn={(v) => (draft.webhookEvents ?? []).includes(v)}
+                  onPick={(v) => {
+                    const on = draft.webhookEvents ?? [];
+                    set("webhookEvents", on.includes(v) ? on.filter((x) => x !== v) : [...on, v]);
+                  }}
+                />
+              )}
+              <p className="mt-1 text-xs text-neutral-600">Matched against {shape.eventHeader}.</p>
+            </div>
+          )}
 
           {draft.webhookMode === "custom" && (
             <div className="grid grid-cols-2 gap-3">
@@ -740,91 +1010,84 @@ export function TriggerSettings({
 
 
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className={label}>Only run when</span>
+          <span className={label}>Only run when</span>
+          {conditions.map((cond, i) => (
+            <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
               <input
                 className={field}
                 placeholder={example.path}
-                value={draft.filterPath ?? ""}
-                onChange={(e) => set("filterPath", e.target.value || null)}
+                value={cond.path}
+                onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
               />
-            </div>
-            <div>
-              <span className={label}>is one of</span>
-              <input
+              <select
                 className={field}
-                placeholder={example.values}
-                value={(draft.filterValues ?? []).join(", ")}
+                value={cond.op}
                 onChange={(e) =>
-                  set("filterValues", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))
+                  setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
                 }
-              />
-            </div>
-          </div>
-          <p className="-mt-2 text-xs leading-relaxed text-neutral-600">
-            A dot path into the body, checked before the agent starts — nothing runs and nothing is
-            spent when it doesn&rsquo;t match. Any sender, any field; for this one,{" "}
-            <code>{example.path}</code> is {example.what}. Use <code>0</code> as a path segment to
-            index an array. Leave either box blank to accept everything.
-          </p>
-
-          <p className="text-xs leading-relaxed text-neutral-600">
-            The payload reaches the agent as data, never as instructions: pull fields into this
-            agent&rsquo;s prompt with <code>{"{{payload.a.b}}"}</code>, and read the whole body from{" "}
-            <code>.bullpen/payload.json</code> in the workspace.
-          </p>
-
-          {agent && (
-          <div>
-            <span className={label}>Test fire</span>
-            <div className="flex gap-2">
-              <input
-                value={testBody}
-                onChange={(e) => setTestBody(e.target.value)}
-                className={`${field} font-mono text-xs`}
+              >
+                <option value="in">is one of</option>
+                <option value="not_in">is not one of</option>
+              </select>
+              <ListInput
+                key={`filter-${agent?.id ?? "new"}-${i}`}
+                placeholder={example.values}
+                value={cond.values}
+                onChange={(next) => setCondition(i, { ...cond, values: next })}
               />
               <button
-                onClick={async () => {
-                  if (!agent) return;
-                  setTestResult("firing…");
-                  try {
-                    const r = await api.testFire(agent.id, testBody);
-                    setTestResult(`${r.status} ${JSON.stringify(r.body)}`);
-                  } catch (e) {
-                    setTestResult(String(e));
-                  }
-                  loadDeliveries();
-                }}
-                className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-800"
+                onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
+                title="Remove this condition"
+                className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
               >
-                Send
+                &times;
               </button>
+              {suggest && (
+                <div className="col-span-4">
+                  <Pills
+                    mono
+                    options={suggest.paths.map((pth) => [pth, pth] as const)}
+                    isOn={(v) => cond.path === v}
+                    onPick={(v) => setCondition(i, { ...cond, path: v })}
+                  />
+                </div>
+              )}
             </div>
-            <p className="mt-1 text-xs text-neutral-600">
-              Signs the request the same way a real caller would, using the settings above. Save
-              first if you just changed them.
-            </p>
-            {testResult && <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>}
-          </div>
-          )}
+          ))}
 
-          {deliveries.length > 0 && (
-            <div>
-              <span className={label}>Recent deliveries</span>
-              <ul className="space-y-0.5">
-                {deliveries.slice(0, 8).map((d) => (
-                  <li key={d.id} className="font-mono text-xs">
-                    <span className={d.accepted ? "text-emerald-500" : "text-neutral-600"}>
-                      {d.accepted ? "OK  " : "DROP"}
-                    </span>{" "}
-                    <span className="text-neutral-500">{d.event ?? "—"}</span>{" "}
-                    <span className="text-neutral-600">{d.reason ?? ""}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <button
+            onClick={() => setConditions([...conditions, { path: "", op: "in", values: [] }])}
+            className="self-start text-xs text-neutral-400 hover:text-neutral-100"
+          >
+            + Add another condition
+          </button>
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowFilterHelp((v) => !v)}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              {showFilterHelp ? "▾" : "▸"} How filtering works
+            </button>
+            {showFilterHelp && (
+              <>
+                <p className="mt-2 text-xs leading-relaxed text-neutral-600">
+                  Dot paths into the body, all of which must hold, checked before the agent starts —
+                  nothing runs and nothing is spent when one doesn&rsquo;t match. Any sender, any
+                  field; for this one, <code>{example.path}</code> is {example.what}. Use{" "}
+                  <code>0</code> as a path segment to index an array. A condition with no path or no
+                  values is ignored. A path the payload doesn&rsquo;t have counts as absent:{" "}
+                  <em>is one of</em> drops the delivery, <em>is not one of</em> lets it through.
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-neutral-600">
+                  The payload reaches the agent as data, never as instructions: pull fields into
+                  this agent&rsquo;s prompt with <code>{"{{payload.a.b}}"}</code>, and read the whole
+                  body from <code>.bullpen/payload.json</code> in the workspace.
+                </p>
+              </>
+            )}
+          </div>
+
         </div>
       )}
     </div>

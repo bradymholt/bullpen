@@ -75,11 +75,25 @@ export function startRun(opts: {
   const runId = randomUUID();
   const prompt = opts.prompt ?? agent.prompt;
   const permissionMode = opts.permissionMode ?? agent.permissionMode;
+  // Where the delivery body lives is bullpen's business, not something every
+  // prompt should have to restate.
+  const payloadNote =
+    trigger === "webhook" || trigger === "poll"
+      ? `This run was started by a ${trigger} delivery. Its full body is saved as ` +
+        `.bullpen/payload.json in your working directory — read that file whenever you need ` +
+        `fields the prompt does not already name. A field left blank in the prompt means the ` +
+        `payload had nothing at that path, not that it is missing from the file.`
+      : undefined;
 
-  const workspace = resolveWorkspace(
-    opts.ephemeralWorkspace ? { kind: "ephemeral" } : (agent.workspaceConfig as WorkspaceSpec),
-    { agentId: agent.id, agentName: agent.name, runId },
-  );
+  const spec: WorkspaceSpec = opts.ephemeralWorkspace
+    ? { kind: "ephemeral" }
+    : (agent.workspaceConfig as WorkspaceSpec);
+  const ephemeral = spec.kind === "ephemeral";
+  const workspace = resolveWorkspace(spec, {
+    agentId: agent.id,
+    agentName: agent.name,
+    runId,
+  });
 
   opts.onWorkspace?.(workspace.path);
 
@@ -109,6 +123,7 @@ export function startRun(opts: {
       mcpServers: interpolateSecrets(agent.mcpServers, agent.env as Record<string, string>) as never,
       strictMcpConfig: !agent.inheritMachineMcp,
       inheritUserSettings: agent.inheritUserSettings,
+      appendSystemPrompt: payloadNote,
       env: agent.env as Record<string, string>,
       maxTurns: agent.maxTurns ?? undefined,
       canUseTool: makeCanUseTool(runId, (hasPending) => {
@@ -141,8 +156,11 @@ export function startRun(opts: {
     .finally(() => {
       live.delete(runId);
       stopping.delete(runId);
-      // Only for a one-off dir: a clone is kept so its diff can still be reviewed.
-      if (opts.ephemeralWorkspace) removeWorkspace(workspace.path);
+      // Only for a one-off dir, and only when it ended cleanly: a failed run's
+      // directory is the only evidence it leaves, and a clone is always kept so
+      // its diff can still be reviewed.
+      const final = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
+      if (ephemeral && final?.status === "completed") removeWorkspace(workspace.path);
     });
 
   return runId;
@@ -177,6 +195,12 @@ export function sendToRun(runId: string, text: string): boolean {
   const handle = live.get(runId);
   if (!handle) return false;
   appendEvent(runId, "user.message", { text });
+  // A finished run is still attached; talking to it puts it back to work, and
+  // the status should say so rather than reading completed while it thinks.
+  const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
+  if (current && !ACTIVE_STATUSES.includes(current.status as RunStatus)) {
+    setStatus(runId, "running", { endedAt: null });
+  }
   handle.send(text);
   return true;
 }
@@ -256,7 +280,12 @@ export async function shutdownLiveRuns(timeoutMs = 5000): Promise<number> {
         handle.done.catch(() => {}),
         new Promise((r) => setTimeout(r, timeoutMs)),
       ]);
-      setStatus(id, "interrupted", { endedAt: Math.floor(Date.now() / 1000) });
+      // A finished run stays attached so it can be replied to. Shutting the
+      // session down is not an interruption of work that already ended.
+      const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, id)).get();
+      if (current && ACTIVE_STATUSES.includes(current.status as RunStatus)) {
+        setStatus(id, "interrupted", { endedAt: Math.floor(Date.now() / 1000) });
+      }
     }),
   );
   return handles.length;

@@ -15,7 +15,16 @@ export function useRun(runId: string | null) {
   const seqRef = useRef(0);
 
   useEffect(() => {
-    if (!runId) return;
+    // Navigating away from a run must drop it: a stale run left here makes the
+    // prompt bar offer to reply to something no longer on screen.
+    if (!runId) {
+      setRun(null);
+      setEvents([]);
+      setPartial("");
+      setApprovals([]);
+      seqRef.current = 0;
+      return;
+    }
     let closed = false;
     seqRef.current = 0;
     setEvents([]);

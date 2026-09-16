@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
-import { randomSecret, TriggerSettings } from "./TriggerSettings.tsx";
+import { ListInput, randomSecret, TriggerSettings } from "./TriggerSettings.tsx";
 import type { Agent, AgentInput, MachineMcp, Repo, RepoList, WorkspaceConfig } from "./types.ts";
 
 const MODELS = [
@@ -55,13 +55,39 @@ function Chips({ title, names }: { title: string; names: string[] }) {
   );
 }
 
+/**
+ * A copy is a new agent that happens to start filled in: its own id and webhook
+ * secret, and no env — the API masks secret values, so copying them across would
+ * store bullets. Asana issues its own secret during the handshake, so leave it
+ * unset there rather than minting one the handshake would then refuse.
+ */
+function copyOf(source: Agent): AgentInput {
+  const { workspaceKind, pollState, pollStatus, pollCheckedAt, ...rest } = source;
+  return {
+    ...rest,
+    id: crypto.randomUUID(),
+    name: `${source.name} copy`,
+    env: {},
+    ...(source.webhookMode === "asana" ? {} : { webhookSecret: randomSecret() }),
+  };
+}
+
 export function AgentEditor({
   agent,
+  seed = null,
+  spaces = [],
+  defaultSpace = null,
   onSaved,
   onDeleted,
   onCancel,
 }: {
   agent: Agent | null;
+  /** Fills a new agent in from an existing one, leaving the original alone. */
+  seed?: Agent | null;
+  /** Spaces already in use, offered as suggestions. */
+  spaces?: string[];
+  /** A new agent lands in the space the roster is filtered to. */
+  defaultSpace?: string | null;
   onSaved: (a: Agent) => void;
   onDeleted: () => void;
   onCancel: () => void;
@@ -73,6 +99,7 @@ export function AgentEditor({
   const [machineMcp, setMachineMcp] = useState<MachineMcp | null>(null);
   const [repoList, setRepoList] = useState<RepoList | null>(null);
   const [repoError, setRepoError] = useState<string | null>(null);
+  const [naming, setNaming] = useState(false);
 
   useEffect(() => {
     void api.machineMcp().then(setMachineMcp).catch(() => setMachineMcp(null));
@@ -85,26 +112,34 @@ export function AgentEditor({
   useEffect(() => {
     setError(null);
     setDraft(
-      agent ?? {
-        id: crypto.randomUUID(),
-        webhookSecret: randomSecret(),
-        name: "",
-        prompt: "",
-        permissionMode: "auto",
-        workspaceConfig: { kind: "scratch" },
-        env: {},
-        allowedTools: [],
-        inheritMachineMcp: true,
-        inheritUserSettings: true,
-      },
+      agent ??
+        (seed
+          ? copyOf(seed)
+          : {
+              id: crypto.randomUUID(),
+              ...(defaultSpace ? { space: defaultSpace } : {}),
+              webhookSecret: randomSecret(),
+              name: "",
+              prompt: "",
+              permissionMode: "auto",
+              workspaceConfig: { kind: "ephemeral" },
+              concurrency: "allow",
+              env: {},
+              allowedTools: [],
+              inheritMachineMcp: true,
+              inheritUserSettings: true,
+            }),
     );
-    setShowMcp(Object.keys(agent?.mcpServers ?? {}).length > 0);
-  }, [agent?.id]);
+    setShowMcp(Object.keys((agent ?? seed)?.mcpServers ?? {}).length > 0);
+  }, [agent?.id, seed?.id]);
 
   const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
 
   const ws = (draft.workspaceConfig ?? { kind: "scratch" }) as WorkspaceConfig;
+  // A space the roster doesn't know yet — a seeded draft, or one being typed.
+  const spaceOptions =
+    draft.space && !spaces.includes(draft.space) ? [...spaces, draft.space].sort() : spaces;
   // Old records still say persistent/git; show them as the option they mean.
   const wsKind = ws.kind === "persistent" ? "scratch" : ws.kind === "git" ? "clone" : ws.kind;
   const repo = ws as { repoUrl?: string; baseBranch?: string };
@@ -123,6 +158,7 @@ export function AgentEditor({
   const mode = draft.permissionMode ?? "auto";
   // `auto` and `full` never prompt, so a permission rule changes nothing there.
   const toolRulesApply = mode !== "auto" && mode !== "full";
+  const droppedEnv = seed ? Object.keys(seed.env) : [];
 
   const save = async () => {
     setBusy(true);
@@ -141,17 +177,60 @@ export function AgentEditor({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-6">
-      <h2 className="text-lg font-semibold">{agent ? `Edit ${agent.name}` : "New agent"}</h2>
+      <h2 className="text-lg font-semibold">
+        {agent ? `Edit ${agent.name}` : seed ? `Copy of ${seed.name}` : "New agent"}
+      </h2>
+      {droppedEnv.length > 0 && (
+        <p className="text-xs text-amber-500/80">
+          {droppedEnv.join(", ")} {droppedEnv.length === 1 ? "was" : "were"} not copied &mdash;
+          secret values never leave the server.
+        </p>
+      )}
 
-      <Row title="Name">
-        <input className={field} value={draft.name ?? ""} onChange={(e) => set("name", e.target.value)} />
-      </Row>
+      <div className="grid grid-cols-[1fr_12rem] gap-3">
+        <Row title="Name">
+          <input className={field} value={draft.name ?? ""} onChange={(e) => set("name", e.target.value)} />
+        </Row>
+        <Row title="Space" hint="Groups the roster.">
+          {naming ? (
+            <input
+              className={field}
+              autoFocus
+              placeholder="work"
+              value={draft.space ?? ""}
+              onChange={(e) => set("space", e.target.value || null)}
+              onBlur={() => {
+                const trimmed = (draft.space ?? "").trim();
+                set("space", trimmed || null);
+                if (!trimmed) setNaming(false);
+              }}
+            />
+          ) : (
+            <select
+              className={field}
+              value={draft.space ?? ""}
+              onChange={(e) => {
+                setNaming(e.target.value === "__new__");
+                set("space", e.target.value === "__new__" ? null : e.target.value || null);
+              }}
+            >
+              <option value="">Unassigned</option>
+              {spaceOptions.map((sp) => (
+                <option key={sp} value={sp}>
+                  {sp}
+                </option>
+              ))}
+              <option value="__new__">New space…</option>
+            </select>
+          )}
+        </Row>
+      </div>
 
       <TriggerSettings agent={agent} draft={draft} set={set} />
 
       <Row title="Prompt" hint="What this agent does every time you run it.">
         <textarea
-          className={`${field} h-28 resize-y font-mono`}
+          className={`${field} h-80 resize-y font-mono text-xs leading-relaxed`}
           value={draft.prompt ?? ""}
           onChange={(e) => set("prompt", e.target.value)}
         />
@@ -214,18 +293,16 @@ export function AgentEditor({
               : "Comma separated. Anything listed is auto-approved and never reaches the approval prompt, so prefer scoped rules like Bash(ls *). MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
           }
         >
-          <input
-            className={field}
+          <ListInput
+            key={`tools-${agent?.id ?? "new"}`}
             placeholder="Read, Grep, mcp__linear__*"
-            value={(draft.allowedTools ?? []).join(", ")}
-            onChange={(e) =>
-              set("allowedTools", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))
-            }
+            value={draft.allowedTools ?? []}
+            onChange={(next) => set("allowedTools", next)}
           />
         </Row>
       )}
 
-      <Row title="Workspace">
+      <Row title="Workspace" hint="The directory each run works in — its cwd, and where the webhook payload is written.">
         <select
           className={field}
           value={wsKind}
@@ -237,20 +314,25 @@ export function AgentEditor({
                 ? { kind: "clone", repoUrl: "" }
                 : kind === "existing"
                   ? { kind: "existing", path: "" }
-                  : { kind: "scratch" },
+                  : kind === "ephemeral"
+                    ? { kind: "ephemeral" }
+                    : { kind: "scratch" },
             );
           }}
         >
           <option value="scratch">Scratch directory — one folder this agent reuses every run</option>
+          <option value="ephemeral">Fresh directory — a new folder per run, deleted after</option>
           <option value="existing">Existing directory — run in a checkout you already have</option>
           <option value="clone">Git clone — new clone and branch per run, discarded after</option>
         </select>
         <p className="mt-1 text-xs text-neutral-600">
           {wsKind === "scratch"
             ? "One directory per agent, reused by every run of it and shared with no other agent. Files left behind are still there next time, so an agent can keep notes, caches, or a checkout it manages itself."
-            : wsKind === "existing"
-              ? "The agent works in your real checkout, on whatever branch is there."
-              : "Isolated per run. Review the diff and open a PR from the run view."}
+            : wsKind === "ephemeral"
+              ? "A new directory per run, removed when the run ends. Nothing carries over, which is what lets several runs of this agent work at once."
+              : wsKind === "existing"
+                ? "The agent works in your real checkout, on whatever branch is there."
+                : "Isolated per run. Review the diff and open a PR from the run view."}
         </p>
       </Row>
 
@@ -261,7 +343,12 @@ export function AgentEditor({
               className={field}
               placeholder="~/dev/my-project"
               value={(ws as { path?: string }).path ?? ""}
-              onChange={(e) => set("workspaceConfig", { kind: "existing", path: e.target.value })}
+              onChange={(e) =>
+                set("workspaceConfig", {
+                  kind: "existing",
+                  path: e.target.value,
+                })
+              }
             />
           </Row>
           <p className="-mt-2 text-xs text-amber-500/80">
@@ -306,7 +393,11 @@ export function AgentEditor({
                 placeholder="https://github.com/you/repo.git"
                 value={repo.repoUrl ?? ""}
                 onChange={(e) =>
-                  set("workspaceConfig", { kind: "clone", ...repo, repoUrl: e.target.value })
+                  set("workspaceConfig", {
+                    kind: "clone",
+                    ...repo,
+                    repoUrl: e.target.value,
+                  })
                 }
               />
             )}
@@ -334,6 +425,31 @@ export function AgentEditor({
           </Row>
         </>
       )}
+
+      <Row title="Overlapping runs">
+        <select
+          className={field}
+          value={draft.concurrency ?? "allow"}
+          onChange={(e) => set("concurrency", e.target.value)}
+        >
+          <option value="skip">Skip — refuse a trigger while a run is active</option>
+          <option value="allow">Allow — start it anyway, in parallel</option>
+        </select>
+        {(draft.concurrency ?? "allow") === "allow" &&
+        (wsKind === "scratch" || wsKind === "existing") ? (
+          <p className="mt-1 rounded border border-amber-900 bg-amber-950/40 px-2 py-1.5 text-xs leading-relaxed text-amber-300">
+            Parallel runs share one directory and will overwrite each other&rsquo;s files, including
+            the webhook payload. Set <strong>Workspace</strong> above to{" "}
+            <strong>Fresh directory</strong>.
+          </p>
+        ) : (
+          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+            {(draft.concurrency ?? "allow") === "skip"
+              ? "A trigger that arrives mid-run is dropped, not queued — two webhooks in quick succession means the second is never handled. A run waiting on an approval counts as active."
+              : "Runs happen in parallel, each in its own directory."}
+          </p>
+        )}
+      </Row>
 
       <div className="space-y-2 border-t border-neutral-800 pt-4">
         <span className={label}>MCP servers</span>

@@ -26,12 +26,13 @@ import {
   status as gitStatus,
 } from "../git.ts";
 import { db } from "../db/index.ts";
-import { agents, runs, webhookDeliveries, type Agent } from "../db/schema.ts";
+import { agents, runs, spaceSecrets, webhookDeliveries, type Agent } from "../db/schema.ts";
 import { eventsSince } from "../runs/eventLog.ts";
 import { decideApproval, pendingApprovals } from "../runs/approvals.ts";
 import {
   agentHasActiveRun,
   getAgent,
+  isActive,
   isPermissionMode,
   listAgents,
   sendToRun,
@@ -67,6 +68,23 @@ function redact(agent: Agent): Agent {
 
 api.get("/agents", (c) => c.json(listAgents().map(redact)));
 
+/** The whole roster's upcoming cron fires, flattened — the home view's "up next". */
+api.get("/schedule", (c) => {
+  const upcoming: { agentId: string; at: string }[] = [];
+  for (const agent of listAgents()) {
+    if (!agent.cron || !agent.enabled) continue;
+    try {
+      for (const at of nextRuns(agent.cron, agent.cronTimezone, 2)) {
+        upcoming.push({ agentId: agent.id, at });
+      }
+    } catch {
+      // A malformed expression is the editor's problem to report, not this view's.
+    }
+  }
+  upcoming.sort((a, b) => a.at.localeCompare(b.at));
+  return c.json(upcoming.slice(0, 10));
+});
+
 api.get("/agents/:id/schedule", (c) => {
   const agent = getAgent(c.req.param("id"));
   if (!agent?.cron) return c.json({ error: "agent has no cron expression" }, 409);
@@ -87,6 +105,111 @@ api.get("/agents/:id/deliveries", (c) =>
       .limit(20)
       .all(),
   ));
+
+type DeliveryOutcome =
+  | { ok: true; agentId: string; runId: string; duplicate?: boolean }
+  | { ok: false; agentId: string; status: number; reason: string };
+
+/**
+ * One agent's half of a delivery: verify, dedup, respect concurrency, run.
+ * Shared so the per-agent URL and the space fan-out can't drift apart.
+ */
+function deliverToAgent(opts: {
+  agent: Agent;
+  rawBody: string;
+  headers: Record<string, string | undefined>;
+  sourceIp?: string;
+  deliveryKey?: string;
+}): DeliveryOutcome {
+  const { agent, rawBody, headers, sourceIp, deliveryKey } = opts;
+  const agentId = agent.id;
+  const event = eventNameOf(presetFor(agent), headers);
+  const decision = decideDelivery({ agent, rawBody, headers });
+
+  if (!decision.ok) {
+    recordDelivery({ agentId, sourceIp, deliveryKey, event, accepted: false, reason: decision.reason });
+    return { ok: false, agentId, status: decision.status, reason: decision.reason };
+  }
+
+  const duplicate = alreadyDelivered(agentId, deliveryKey);
+  if (duplicate) return { ok: true, agentId, runId: duplicate, duplicate: true };
+
+  if (agent.concurrency === "skip" && agentHasActiveRun(agentId)) {
+    recordDelivery({ agentId, sourceIp, deliveryKey, event, accepted: false, reason: "run already active" });
+    return { ok: false, agentId, status: 409, reason: "agent already has an active run" };
+  }
+
+  const runId = startRun({
+    agent,
+    trigger: "webhook",
+    prompt: decision.prompt,
+    onWorkspace: (path) => writePayload(path, rawBody),
+  });
+  recordDelivery({ agentId, sourceIp, deliveryKey, event, accepted: true, runId });
+  return { ok: true, agentId, runId };
+}
+
+/**
+ * One URL for a whole space: every enabled agent in it that verifies the
+ * signature gets the delivery, and its own filters decide whether it runs. The
+ * sender holds one secret, so each agent must be given that same secret — one
+ * that doesn't match is simply skipped, which is what keeps this safe.
+ */
+api.post("/hooks/space/:space", async (c) => {
+  const space = c.req.param("space");
+  const headers = Object.fromEntries(
+    [...c.req.raw.headers].map(([k, v]) => [k.toLowerCase(), v]),
+  ) as Record<string, string | undefined>;
+  const sourceIp = c.req.header("x-forwarded-for") ?? undefined;
+  const rawBody = await c.req.text();
+
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
+  } catch {
+    payload = {};
+  }
+  const deliveryKey =
+    headers["x-bullpen-idempotency-key"] ??
+    headers["x-github-delivery"] ??
+    (typeof payload.event_id === "string" ? payload.event_id : undefined);
+
+  // The space's own secret is what the sender signs with, so every agent is
+  // checked against it. Without one, each falls back to its own — which is how
+  // this behaved before the table existed.
+  const shared = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get();
+  const candidates = listAgents().filter(
+    (a) => a.space === space && a.enabled && (shared ? true : a.webhookSecret),
+  );
+  // Same answer as a bad secret, so this can't be used to enumerate spaces.
+  if (candidates.length === 0) return c.json({ error: "unauthorized" }, 401);
+
+  const outcomes = candidates.map((agent) =>
+    deliverToAgent({
+      agent: shared ? { ...agent, webhookSecret: shared.secret } : agent,
+      rawBody,
+      headers,
+      sourceIp,
+      deliveryKey,
+    }),
+  );
+
+  // A secret that matches nobody is a real failure — let the sender see it.
+  if (outcomes.every((o) => !o.ok && o.status === 401)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  if (outcomes.every((o) => !o.ok && o.reason === "ping acknowledged")) {
+    return c.json({ ok: true }, 200);
+  }
+
+  return c.json(
+    {
+      ran: outcomes.filter((o) => o.ok).map((o) => ({ agentId: o.agentId, runId: o.runId })),
+      skipped: outcomes.filter((o) => !o.ok).map((o) => ({ agentId: o.agentId, reason: o.reason })),
+    },
+    202,
+  );
+});
 
 /**
  * The one endpoint reachable without a UI session, so it carries its own
@@ -138,43 +261,12 @@ api.post("/hooks/:id", async (c) => {
     return c.text(challenge, 200);
   }
 
-  const event = eventNameOf(preset, headers);
-
-  if (!decision.ok) {
-    recordDelivery({
-      agentId,
-      sourceIp,
-      deliveryKey,
-      event,
-      accepted: false,
-      reason: decision.reason,
-    });
-    return c.json({ error: decision.reason }, decision.status as 400);
-  }
-
-  const duplicate = alreadyDelivered(agentId, deliveryKey);
-  if (duplicate) return c.json({ runId: duplicate, duplicate: true }, 202);
-
-  if (agent.concurrency === "skip" && agentHasActiveRun(agentId)) {
-    recordDelivery({ agentId, sourceIp, deliveryKey, accepted: false, reason: "run already active" });
-    return c.json({ error: "agent already has an active run" }, 409);
-  }
-
-  const runId = startRun({
-    agent,
-    trigger: "webhook",
-    prompt: decision.prompt,
-    onWorkspace: (path) => writePayload(path, rawBody),
-  });
-  recordDelivery({
-    agentId,
-    sourceIp,
-    deliveryKey,
-    event,
-    accepted: true,
-    runId,
-  });
-  return c.json({ runId }, 202);
+  const outcome = deliverToAgent({ agent, rawBody, headers, sourceIp, deliveryKey });
+  if (!outcome.ok) return c.json({ error: outcome.reason }, outcome.status as 400);
+  return c.json(
+    outcome.duplicate ? { runId: outcome.runId, duplicate: true } : { runId: outcome.runId },
+    202,
+  );
 });
 
 api.get("/agents/:id", (c) => {
@@ -234,6 +326,73 @@ api.patch("/agents/:id", async (c) => {
     .run();
   rescheduleAgent(id);
   return c.json(redact(getAgent(id)!));
+});
+
+/** The fan-out URL's own secret. Never returned — the UI can set or rotate, not read. */
+api.get("/spaces/:name/secret", (c) => {
+  const row = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, c.req.param("name"))).get();
+  return c.json({ configured: row !== undefined });
+});
+
+api.post("/spaces/:name/secret", async (c) => {
+  const space = c.req.param("name");
+  const body = await c.req.json<{ secret?: string }>().catch(() => null);
+  const pasted = body?.secret?.trim();
+  if (pasted !== undefined && pasted.length > 0 && pasted.length < 16) {
+    return c.json({ error: "secret must be at least 16 characters" }, 400);
+  }
+  const secret = pasted || randomBytes(32).toString("base64url");
+  db.insert(spaceSecrets)
+    .values({ space, secret })
+    .onConflictDoUpdate({ target: spaceSecrets.space, set: { secret } })
+    .run();
+  return c.json({ secret });
+});
+
+api.delete("/spaces/:name/secret", (c) => {
+  db.delete(spaceSecrets).where(eq(spaceSecrets.space, c.req.param("name"))).run();
+  return c.json({ ok: true });
+});
+
+/**
+ * Spaces are a GROUP BY over `agents.space`, not a table, so renaming one means
+ * rewriting every member — and clearing it is the same call with a null target.
+ * Case-insensitive collision is rejected because two spaces differing only by
+ * case render as two identical-looking chips.
+ */
+api.patch("/spaces/:name", async (c) => {
+  const from = c.req.param("name");
+  const body = await c.req.json<{ name?: string | null }>().catch(() => null);
+  if (body === null) return c.json({ error: "expected a JSON body" }, 400);
+
+  const raw = body.name;
+  const to = typeof raw === "string" ? raw.trim() : null;
+  if (to !== null && (to.length === 0 || to.length > 60)) {
+    return c.json({ error: "name must be 1-60 characters, or null to unassign" }, 400);
+  }
+
+  const all = listAgents();
+  const members = all.filter((a) => a.space === from);
+  if (members.length === 0) return c.json({ error: "not found" }, 404);
+
+  if (to !== null && to.toLowerCase() !== from.toLowerCase()) {
+    const clash = all.some((a) => a.space && a.space.toLowerCase() === to.toLowerCase());
+    if (clash) return c.json({ error: `a space named "${to}" already exists` }, 409);
+  }
+
+  db.update(agents).set({ space: to }).where(eq(agents.space, from)).run();
+  const carried = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, from)).get();
+  if (carried) {
+    db.delete(spaceSecrets).where(eq(spaceSecrets.space, from)).run();
+    // A null target unassigns everyone, so there is no space left to carry it to.
+    if (to !== null) {
+      db.insert(spaceSecrets)
+        .values({ space: to, secret: carried.secret })
+        .onConflictDoUpdate({ target: spaceSecrets.space, set: { secret: carried.secret } })
+        .run();
+    }
+  }
+  return c.json({ moved: members.length, name: to });
 });
 
 api.post("/agents/:id/webhook-secret", (c) => {
@@ -329,7 +488,8 @@ api.get("/runs", (c) => {
 api.get("/runs/:id", (c) => {
   const run = db.select().from(runs).where(eq(runs.id, c.req.param("id"))).get();
   if (!run) return c.json({ error: "not found" }, 404);
-  return c.json({ run, events: eventsSince(run.id, 0) });
+  // A completed run keeps its session open, so it can still be talked to.
+  return c.json({ run: { ...run, resumable: isActive(run.id) }, events: eventsSince(run.id, 0) });
 });
 
 api.post("/agents/:id/run", async (c) => {

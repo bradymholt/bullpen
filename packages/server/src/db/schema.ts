@@ -7,6 +7,8 @@ export const agents = sqliteTable("agents", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  /** A label for filtering the roster — "work", "personal". Not isolation. */
+  space: text("space"),
   model: text("model"),
   prompt: text("prompt").notNull().default(""),
   permissionMode: text("permission_mode").notNull().default("supervised"),
@@ -36,9 +38,11 @@ export const agents = sqliteTable("agents", {
   webhookSecret: text("webhook_secret"),
   webhookMode: text("webhook_mode").notNull().default("token"),
   webhookEvents: text("webhook_events", { mode: "json" }).notNull().default(sql`'[]'`),
-  /** Dot path into the payload, matched against filterValues before firing. */
+  /** Superseded by `filters`; still read so old records keep working. */
   filterPath: text("filter_path"),
   filterValues: text("filter_values", { mode: "json" }).notNull().default(sql`'[]'`),
+  /** `[{ path, op, values }]`, ANDed. Empty means no payload filtering. */
+  filters: text("filters", { mode: "json" }).notNull().default(sql`'[]'`),
   webhookSignatureHeader: text("webhook_signature_header"),
   webhookSignaturePrefix: text("webhook_signature_prefix"),
   concurrency: text("concurrency").notNull().default("skip"),
@@ -46,6 +50,17 @@ export const agents = sqliteTable("agents", {
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at").notNull().default(now),
   updatedAt: integer("updated_at").notNull().default(now),
+});
+
+/**
+ * A space is otherwise a GROUP BY over `agents.space`, not an entity. This is a
+ * narrow side table, not a spaces table: it exists only so the fan-out URL has
+ * one secret instead of N copies that have to be kept in sync by hand.
+ */
+export const spaceSecrets = sqliteTable("space_secrets", {
+  space: text("space").primaryKey(),
+  secret: text("secret").notNull(),
+  createdAt: integer("created_at").notNull().default(now),
 });
 
 export const runs = sqliteTable(

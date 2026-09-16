@@ -6,7 +6,7 @@ run it. This file covers what the code alone won't teach you.
 ## Commands
 
 ```bash
-npm run dev        # API on :3000, Vite on :5173 — open :5173
+npm run dev        # API on :4322, Vite on :5173 — open :5173
 npm test           # vitest, server package
 npm run typecheck  # both packages
 npm run build && npm start   # single port, the way the container runs
@@ -18,6 +18,11 @@ container does need one — see README.
 Both `dev` and `start` read the repo-root `.env` via `--env-file-if-exists`, so `GITHUB_TOKEN`
 and `BULLPEN_DATA` no longer depend on which shell launched the server. `BULLPEN_DATA` expands a
 leading `~/` itself; env files don't.
+
+**Never regenerate a migration that has already run.** Drizzle decides what to apply by comparing
+each journal entry's `when` against `created_at` in `__drizzle_migrations`, so a replaced file
+looks new and re-runs — `duplicate column name` on boot, with the server dead until the row is
+hand-edited. To undo a bad migration, add the next one.
 
 Regenerate migrations after touching `db/schema.ts`:
 
@@ -76,6 +81,13 @@ session was not launched with ...". Every other mode switches fine. The run-view
 therefore offers `full` only when the run already started there, and `setRunPermissionMode`
 returns the refusal instead of a bare boolean so the UI can't claim a mode the run never entered.
 
+**An unanswered approval expires rather than wedging the agent.** There is no timeout in the
+SDK, so a prompt nobody answers holds the run in `awaiting_approval` forever — and a
+`concurrency: skip` agent then refuses every later trigger with a 409, which is how one stuck
+`AskUserQuestion` silenced a webhook agent for hours. `makeCanUseTool` denies after
+`approvalTimeoutMs` (15 minutes, `BULLPEN_APPROVAL_TIMEOUT_MS`) with a message telling the agent
+to continue without the tool or stop.
+
 **`canUseTool` must never resolve to `null`.** There is no timeout on a permission prompt; a
 null reply blocks that tool for the life of the process. An abort resolves to an explicit deny.
 
@@ -83,6 +95,14 @@ null reply blocks that tool for the life of the process. An abort resolves to an
 `bypassPermissions`, skips the approval UI entirely. Prefer scoped rules like `Bash(ls *)`.
 Separately, Claude Code auto-approves commands it classifies as trivially safe — a supervised
 agent running `echo` never prompts, but a file write does. Test approval changes with a write.
+
+**New agents default to `allow` + `ephemeral`, and the two go together.** A dropped trigger is
+lost for good — there is no queue — so `skip` silently loses the second of two webhooks that land
+close together. Running in parallel is only safe when runs do not share a directory, which is why
+the workspace default moved with it. `allow` on a `scratch` or `existing` workspace means parallel
+runs overwrite each other's files, `.bullpen/payload.json` included; the editor warns on that pair.
+An ephemeral directory is now kept when a run does not reach `completed`, since it is the only
+evidence a failure leaves.
 
 **Write to `run_events` before broadcasting.** A client asking for `sinceSeq` must never be
 able to miss an event a live subscriber already saw.
@@ -160,6 +180,8 @@ carry the `.ts` extension.
 - **PR creation's happy path is unverified** — it needs a real token and repo. Error paths work.
 - **No failure notification.** A nightly agent that starts failing produces nothing, which looks
   like nothing to report. Status is visible in the UI and nowhere else.
+- **Nothing sweeps `workspacesDir`.** A failed ephemeral run keeps its directory on purpose, and
+  no boot-time or age-based cleanup removes it, so failures accumulate on disk.
 - **Cron doesn't catch up** on fires missed while the container was down. Deliberate.
 - **Single instance assumed.** Two containers on one DB double-fire every cron job.
 - **No UI auth by design** — private network only. Webhooks carry their own per-agent secret

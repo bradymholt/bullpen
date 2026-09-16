@@ -58,8 +58,30 @@ export const api = {
       headers: { "content-type": "application/json" },
       body,
     }).then(json<{ status: number; body: unknown }>),
+  /** The whole roster's upcoming fires; the per-agent `schedule` above is unrelated. */
+  scheduleAll: () => fetch("/api/schedule").then(json<{ agentId: string; at: string }[]>),
   deleteAgent: (id: string) =>
     fetch(`/api/agents/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  spaceSecretState: (space: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean }>),
+  /** Omit `secret` to have the server mint one. Returns it once, then never again. */
+  setSpaceSecret: (space: string, secret?: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(secret ? { secret } : {}),
+    }).then(json<{ secret: string }>),
+  clearSpaceSecret: (space: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`, { method: "DELETE" }).then(
+      json<{ ok: true }>,
+    ),
+  /** `name: null` unassigns every member, which is how a space is removed. */
+  renameSpace: (from: string, name: string | null) =>
+    fetch(`/api/spaces/${encodeURIComponent(from)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then(json<{ moved: number; name: string | null }>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
   run: (id: string) => fetch(`/api/runs/${id}`).then(json<{ run: Run; events: RunEvent[] }>),
