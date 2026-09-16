@@ -97,7 +97,7 @@ api.get("/github/repos", async (c) => {
 
 api.get("/health", (c) => {
   const credential = claudeCredential();
-  return c.json({ ok: credential.source !== "none", dataDir: config.dataDir, claudeCredential: credential });
+  return c.json({ ok: credential.source !== "none", dataDir: config.dataDir, publicUrl: config.publicUrl ?? null, claudeCredential: credential });
 });
 
 /** Proves a GitHub token before it is saved: who does it authenticate as? */

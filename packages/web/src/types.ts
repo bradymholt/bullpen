@@ -150,6 +150,8 @@ export type Skill = { name: string; description: string };
 export type Health = {
   ok: boolean;
   dataDir: string;
+  /** Base URL senders use for /api/hooks, when it differs from the dashboard's own. */
+  publicUrl: string | null;
   claudeCredential: { source: string; detail: string };
 };
 

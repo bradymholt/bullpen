@@ -265,6 +265,8 @@ export function App() {
   const [metered, setMetered] = useState(false);
   // null until health answers; "none" swaps the whole app for setup.
   const [credentialSource, setCredentialSource] = useState<string | null>(null);
+  // Webhook URLs are built from this: the funneled public base if the server has one, else this tab's origin.
+  const [hookBase, setHookBase] = useState<string>(location.origin);
   const [setupGeneration, setSetupGeneration] = useState(0);
   // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
   // `?setup=1` reopens onboarding on a configured install; there is no button for it.
@@ -357,7 +359,7 @@ export function App() {
   const spaceName = view.kind === "space" ? view.name : null;
   // Keyed by the stable id once one exists, so a rename can't move the URL.
   const spaceHookUrl = spaceName
-    ? `${location.origin}/api/hooks/space/${encodeURIComponent(spaceSecret?.hookId ?? spaceName)}`
+    ? `${hookBase}/api/hooks/space/${encodeURIComponent(spaceSecret?.hookId ?? spaceName)}`
     : "";
   useEffect(() => {
     setSpaceError(null);
@@ -440,6 +442,7 @@ export function App() {
       .then((h) => {
         setMetered(h.claudeCredential.source === "api-key");
         setCredentialSource(h.claudeCredential.source);
+        if (h.publicUrl) setHookBase(h.publicUrl);
       })
       .catch(() => {
         setMetered(false);
@@ -791,6 +794,7 @@ export function App() {
               seed={view.seed ?? null}
               spaces={spaces}
               defaultSpace={active.kind === "space" ? active.name : null}
+              hookBase={hookBase}
               onSaved={() => {
                 refresh();
                 setView({ kind: "home" });
