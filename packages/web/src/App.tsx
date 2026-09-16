@@ -804,15 +804,24 @@ export function App() {
               defaultSpace={active.kind === "space" ? active.name : null}
               hookBase={hookBase}
               onSaved={() => {
+                // Saved, so there is nothing to discard — and the guard reads the ref
+                // synchronously, before the state update below has rendered.
+                dirtyRef.current = false;
+                setEditDirty(false);
                 refresh();
                 setView({ kind: "home" });
               }}
               onDeleted={() => {
+                dirtyRef.current = false;
+                setEditDirty(false);
                 refresh();
                 setView({ kind: "home" });
               }}
               onCancel={() => setView({ kind: "home" })}
-              onDirtyChange={setEditDirty}
+              onDirtyChange={(d) => {
+                dirtyRef.current = d;
+                setEditDirty(d);
+              }}
             />
           </div>
         )}
