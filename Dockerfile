@@ -56,18 +56,24 @@ RUN if [ -n "$GOG_URL" ]; then \
       && chmod +x /usr/local/bin/gog && gog --version ; \
     fi
 
-# A browser for agents, opt-in: the Playwright MCP server plus the headless
-# Chromium shell and its OS libraries, ~250MB. The browsers are installed with
-# the Playwright version the MCP package pins, so they match. Configure the
-# shared server as `playwright-mcp --browser chromium --headless --no-sandbox --isolated`:
-# the MCP server defaults to the `chrome` channel (Google Chrome, not present),
-# and Chromium's own sandbox can't start under Docker's default seccomp profile.
+# A browser for agents, opt-in. The image carries the Playwright MCP server and
+# Chromium's OS libraries (root-only to install); the browser itself is
+# downloaded the first time a run asks for it, into the data volume, by the
+# wrapper below — so an image nobody browses from never pays for Chromium, and
+# a box downloads it once. The Playwright inside the MCP package does the
+# download, so the build matches. Configure the shared server as
+# `playwright-mcp --browser chromium --headless --no-sandbox --isolated`: the
+# server defaults to the `chrome` channel (Google Chrome, not present), and
+# Chromium's own sandbox can't start under Docker's default seccomp profile.
 ARG WITH_BROWSER=""
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/data/browsers
 RUN if [ -n "$WITH_BROWSER" ]; then \
       npm install -g @playwright/mcp@0.0.81 \
-      && node "$(npm root -g)/@playwright/mcp/node_modules/playwright/cli.js" install --with-deps chromium-headless-shell \
-      && chmod -R a+rX /ms-playwright \
+      && MCP="$(npm root -g)/@playwright/mcp" \
+      && node "$MCP/node_modules/playwright/cli.js" install-deps chromium-headless-shell \
+      && rm -f /usr/local/bin/playwright-mcp \
+      && printf '#!/bin/sh\n# Fetches the headless Chromium into PLAYWRIGHT_BROWSERS_PATH on first use; the image ships only its libraries.\nif [ -z "$(ls -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium_headless_shell-* 2>/dev/null)" ]; then\n  node %s/node_modules/playwright/cli.js install chromium-headless-shell >&2\nfi\nexec node %s/cli.js "$@"\n' "$MCP" "$MCP" > /usr/local/bin/playwright-mcp \
+      && chmod +x /usr/local/bin/playwright-mcp \
       && rm -rf /var/lib/apt/lists/* /root/.npm ; \
     fi
 
