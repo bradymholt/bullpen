@@ -64,7 +64,15 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository }}"
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker buildx imagetools create -t "$IMAGE:$RELEASE_TAG" "$IMAGE:$VERSION"
-          gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes \
-            --notes "Image: \`$IMAGE:$RELEASE_TAG\` (also \`$IMAGE:$VERSION\`)"
+          # The package page for this exact image version, when the API will tell us its id.
+          OWNER="${{ github.repository_owner }}"; NAME="${{ github.event.repository.name }}"
+          VID=$(gh api "/users/$OWNER/packages/container/$NAME/versions?per_page=30" \
+                 --jq ".[] | select(.metadata.container.tags | index(\"$VERSION\")) | .id" 2>/dev/null | head -1 || true)
+          if [ -n "$VID" ]; then
+            NOTES="Image: [\`$IMAGE:$RELEASE_TAG\`](https://github.com/$OWNER/$NAME/pkgs/container/$NAME/$VID?tag=$RELEASE_TAG) — also tagged \`$VERSION\`"
+          else
+            NOTES="Image: \`$IMAGE:$RELEASE_TAG\` (also \`$IMAGE:$VERSION\`)"
+          fi
+          gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes --notes "$NOTES"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
