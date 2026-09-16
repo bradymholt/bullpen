@@ -126,3 +126,30 @@ export function importMachineMcp(servers: Record<string, McpServerConfig>): numb
   });
   return entries.length;
 }
+
+/**
+ * A headless box should be able to browse out of the box. When the config dir
+ * is bullpen's and the image carries the Playwright wrapper (WITH_BROWSER), the
+ * shared config gets a `playwright` server on first boot. Once only: the marker
+ * means a removal is respected, not undone at the next boot.
+ */
+export const DEFAULT_PLAYWRIGHT: McpServerConfig = {
+  command: "playwright-mcp",
+  args: ["--browser", "chromium", "--headless", "--no-sandbox", "--isolated"],
+};
+
+export function seedDefaultMcp(opts: { markerDir: string; wrapper?: string; managed?: boolean }): string[] {
+  const managed = opts.managed ?? Boolean(process.env.CLAUDE_CONFIG_DIR);
+  const wrapper = opts.wrapper ?? "/usr/local/bin/playwright-mcp";
+  if (!managed || !existsSync(wrapper)) return [];
+  const marker = join(opts.markerDir, ".mcp-seeded");
+  if (existsSync(marker)) return [];
+  const added: string[] = [];
+  if (!(readConfig()?.mcpServers ?? {}).playwright) {
+    addMachineMcp("playwright", DEFAULT_PLAYWRIGHT);
+    added.push("playwright");
+  }
+  mkdirSync(opts.markerDir, { recursive: true });
+  writeFileSync(marker, `${new Date().toISOString()}\n`);
+  return added;
+}
