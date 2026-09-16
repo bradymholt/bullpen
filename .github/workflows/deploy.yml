@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # tags and releases
-      packages: read
+      packages: write   # re-tag the deployed image with the release name
     env:
       VERSION: ${{ inputs.version || github.event.workflow_run.head_sha || github.sha }}
       # One release per deploy, numbered by this workflow's run: v0.17, v0.18, …
@@ -58,6 +58,13 @@ jobs:
           BULLPEN_RELEASE: ${{ env.RELEASE_TAG }}
 
       # Only after the box is running it: a failed deploy leaves no release behind.
-      - run: gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes
+      # The image gets the release name as a second tag (a manifest re-tag, no
+      # rebuild) and the release notes name the image, so the two are one thing.
+      - run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker buildx imagetools create -t "$IMAGE:$RELEASE_TAG" "$IMAGE:$VERSION"
+          gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes \
+            --notes "Image: \`$IMAGE:$RELEASE_TAG\` (also \`$IMAGE:$VERSION\`)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -66,6 +66,9 @@ COPY package.json ./
 COPY packages/server packages/server
 
 RUN mkdir -p /data/claude /data/gog && chown -R node:node /data /app
+# The harness the SDK bundles, on PATH for `kamal app exec 'claude login'` and
+# the dashboard's MCP authorize — a symlink, not a second install.
+RUN ln -s "$(ls -d /app/node_modules/@anthropic-ai/claude-agent-sdk-linux-*/claude | head -1)" /usr/local/bin/claude
 USER node
 # Kamal deploys this image without building it, and checks for the label it would have added.
 LABEL service=bullpen
