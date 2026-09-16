@@ -81,7 +81,12 @@ One-time, on the box (installs Docker, logs into GHCR, starts the container):
 
 ```bash
 npm run deploy:setup
+kamal server exec --hosts 203.0.113.10 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs as `node`
+npm run deploy
 ```
+
+Docker creates the data directory root-owned the first time, and the container runs unprivileged, so
+the first boot fails on `mkdir /data/workspaces` until the chown; the second deploy comes up.
 
 Every deploy after that:
 
@@ -103,18 +108,20 @@ kamal app exec -i --reuse 'claude login'   # full login in /data/claude: what Us
 kamal app details                      # what is running
 ```
 
-**Exposure.** Nothing listens on the server's public interface but SSH. Put the box on your
-tailnet, serve the dashboard to the tailnet, and funnel only the webhook path:
+**Exposure.** Nothing listens on the server's public interface but SSH. Tailscale runs as a Kamal
+accessory (`accessories.tailscale` in `config/deploy.yml`) and is the only proxy:
+`config/tailscale-serve.json` serves the dashboard to the tailnet on 443 and funnels **only**
+`/api/hooks` to the internet on 8443. Funnel is per port, not per path — a funnel on the dashboard's
+own port would publish the whole dashboard — which is why the two live on different ports.
 
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up
-tailscale serve  --bg http://127.0.0.1:4322                                      # dashboard, tailnet only
-tailscale funnel --bg --set-path /api/hooks http://127.0.0.1:4322/api/hooks      # webhooks, public
+export TS_AUTHKEY=tskey-auth-…     # admin console → Settings → Keys; used once, state persists in the accessory's volume
+kamal accessory boot tailscale
 ```
 
-Then open `https://<server>.<tailnet>.ts.net` and walk through setup. The funnel URL is what goes
-in GitHub's webhook config. Funnel needs the `funnel` node attribute in the tailnet's policy.
+Then open `https://bullpen.<tailnet>.ts.net` and walk through setup. GitHub webhooks point at
+`https://bullpen.<tailnet>.ts.net:8443/api/hooks/space/<hookId>`. Funnel needs the `funnel` node
+attribute in the tailnet's policy.
 
 ### Running headless
 

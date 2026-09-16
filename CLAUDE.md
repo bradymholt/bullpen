@@ -16,7 +16,7 @@ npm run deploy               # kamal deploy --skip-push --version <HEAD sha>; CI
 ```
 
 Deployment is Kamal 2 (`config/deploy.yml`, `.kamal/secrets`), one host, `proxy: false`, container
-published on loopback, Tailscale on the host for exposure. Kamal never builds: CI tags the image
+published on loopback, Tailscale as an accessory for exposure — 443 tailnet-only, 8443 funneled for `/api/hooks` alone, because Funnel is per port. Kamal never builds: CI tags the image
 with the bare git sha for exactly this. `.kamal/secrets` holds `$VAR` references only, so it is
 committed.
 
