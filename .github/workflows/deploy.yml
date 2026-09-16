@@ -21,10 +21,13 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # tags and releases
       packages: read
     env:
       VERSION: ${{ inputs.version || github.event.workflow_run.head_sha || github.sha }}
+      # One release per deploy, numbered by this workflow's run: v1, v2, … The
+      # tag is known before the deploy so the running app can link to it.
+      RELEASE_TAG: v${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,3 +54,9 @@ jobs:
       - run: kamal deploy --skip-push --version "$VERSION"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BULLPEN_RELEASE: ${{ env.RELEASE_TAG }}
+
+      # Only after the box is running it: a failed deploy leaves no release behind.
+      - run: gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

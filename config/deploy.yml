@@ -35,6 +35,9 @@ registry:
 env:
   clear:
     TZ: UTC
+  secret:
+    # Not a secret — the release tag — but the only per-deploy value Kamal can carry.
+    - BULLPEN_RELEASE
   # Everything else — Claude token, GitHub token, per-agent env — is configured
   # in the dashboard and stored under /data. BULLPEN_DATA, CLAUDE_CONFIG_DIR and
   # GOG_HOME are set in the image.

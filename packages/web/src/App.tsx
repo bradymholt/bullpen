@@ -268,7 +268,7 @@ export function App() {
   const [credentialSource, setCredentialSource] = useState<string | null>(null);
   // Webhook URLs are built from this: the funneled public base if the server has one, else this tab's origin.
   const [hookBase, setHookBase] = useState<string>(location.origin);
-  const [build, setBuild] = useState<{ version: string; repoUrl: string | null } | null>(null);
+  const [build, setBuild] = useState<{ version: string; release: string | null; repoUrl: string | null } | null>(null);
   const [setupGeneration, setSetupGeneration] = useState(0);
   // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
   // `?setup=1` reopens onboarding on a configured install; there is no button for it.
@@ -445,7 +445,7 @@ export function App() {
         setMetered(h.claudeCredential.source === "api-key");
         setCredentialSource(h.claudeCredential.source);
         if (h.publicUrl) setHookBase(h.publicUrl);
-        setBuild(h.version ? { version: h.version, repoUrl: h.repoUrl } : null);
+        setBuild(h.version ? { version: h.version, release: h.release, repoUrl: h.repoUrl } : null);
       })
       .catch(() => {
         setMetered(false);
@@ -793,13 +793,19 @@ export function App() {
           </button>
           {build && (
             <a
-              href={build.repoUrl ? `${build.repoUrl}/commit/${build.version}` : undefined}
+              href={
+                build.repoUrl
+                  ? build.release
+                    ? `${build.repoUrl}/releases/tag/${build.release}`
+                    : `${build.repoUrl}/commit/${build.version}`
+                  : undefined
+              }
               target="_blank"
               rel="noreferrer"
-              title={`Running commit ${build.version}`}
+              title={build.release ? `Release ${build.release} · commit ${build.version}` : `Running commit ${build.version}`}
               className="ml-auto font-mono text-[11px] text-neutral-600 hover:text-neutral-300"
             >
-              {build.version.slice(0, 7)}
+              {build.release ?? build.version.slice(0, 7)}
             </a>
           )}
         </div>
