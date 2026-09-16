@@ -62,80 +62,52 @@ The container can't reach your Mac's Keychain, so it needs an explicit credentia
 see below. The image builds `better-sqlite3` from source (it publishes no prebuilds),
 so the first build takes a couple of minutes.
 
-### Deploying with Kamal
+### Deploying to a server
 
-The box runs one container from the image CI pushes to GHCR; [Kamal 2](https://kamal-deploy.org)
-puts it there. `config/deploy.yml` has the host, image and Tailscale node name (`TS_HOSTNAME`), and
-`.kamal/secrets` names the secrets it needs — every deployment-specific value lives in those two files. There is no kamal-proxy and no host port at all: the dashboard has no auth, so the only way
-in is the Tailscale accessory (below), which reaches the app by name on Kamal's Docker network.
+One small Linux box, one container, deployed with [Kamal 2](https://kamal-deploy.org). The
+dashboard has no login, so nothing is exposed publicly except signed webhooks: Tailscale runs
+alongside the app and serves the dashboard to your tailnet, and funnels only `/api/hooks` to the
+internet.
 
-One-time, on your machine:
+**1. Point the config at your box.** Everything deployment-specific is in two files:
+
+- `config/deploy.yml` — the host IP, the image (`<your GitHub user>/bullpen`), and the
+  Tailscale node name (`TS_HOSTNAME`).
+- `.kamal/secrets` — names the secrets and reads them from your shell: `GITHUB_TOKEN` (needs
+  `read:packages`, to pull the image) and `TS_AUTHKEY` (a Tailscale auth key, used once).
+
+**2. First deploy**, from your machine, with `gem install kamal` done and SSH access to the box:
 
 ```bash
-gem install kamal
-export KAMAL_REGISTRY_PASSWORD=ghp_…   # a GitHub PAT with read:packages; keep it in your shell secrets
-ssh root@<host> true                   # accept the host key once
-```
-
-One-time, on the box (installs Docker, logs into GHCR, starts the container):
-
-```bash
-npm run deploy:setup
-kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs as `node`
+git push                      # CI builds the image and tags it with the commit sha
+npm run deploy:setup          # installs Docker on the box and starts the app
+kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs unprivileged
 npm run deploy
-```
-
-Docker creates the data directory root-owned the first time, and the container runs unprivileged, so
-the first boot fails on `mkdir /data/workspaces` until the chown; the second deploy comes up.
-
-Every deploy after that is a push to `main`: the `build` workflow builds `linux/amd64` and pushes
-`ghcr.io/<owner>/bullpen:<git sha>`, then the `deploy` workflow runs `kamal deploy` for that sha.
-The deploy workflow needs two things in the repo: an Actions secret `KAMAL_SSH_KEY` (a private key
-authorized for the deploy user on the box, used by nothing else) and a variable `KAMAL_HOST_KEY`
-(the box's `ssh-keyscan -t ed25519 <host>` line, pinned). It can also be dispatched by hand with a
-sha to redeploy an older image.
-
-`npm run deploy` does the same from your machine, from a `main` checkout at a commit CI has
-already built. Nothing is ever built on your Mac or on the box: `better-sqlite3` compiles from
-source and wants more RAM than a small server has. Kamal stops the old container (waiting up to
-`stop_timeout` for agents to finish) and starts the new one, so a deploy costs a few seconds of
-downtime.
-
-Useful afterwards:
-
-```bash
-kamal app logs -f                      # follow the server
-kamal app exec -i --reuse 'claude login'   # full login in /data/claude: what Usage and connectors need
-kamal app details                      # what is running
-```
-
-**Exposure.** Nothing listens on the server's public interface but SSH. Tailscale runs as a Kamal
-accessory (`accessories.tailscale` in `config/deploy.yml`) and is the only proxy:
-`config/tailscale-serve.json` serves the dashboard to the tailnet on 443 and funnels **only**
-`/api/hooks` to the internet on 8443. Funnel is per port, not per path — a funnel on the dashboard's
-own port would publish the whole dashboard — which is why the two live on different ports.
-
-```bash
-export TS_AUTHKEY=tskey-auth-…     # admin console → Settings → Keys; used once, state persists in the accessory's volume
+export TS_AUTHKEY=tskey-auth-…
 kamal accessory boot tailscale
 ```
 
-Then open `https://<node>.<tailnet>.ts.net` and walk through setup. GitHub webhooks point at
-`https://<node>.<tailnet>.ts.net:8443/api/hooks/space/<hookId>`; the dashboard shows them with the
-port already, since it can tell it was reached through Tailscale serve. `BULLPEN_PUBLIC_URL`
-overrides that for any other arrangement. Funnel needs the `funnel` node
-attribute in the tailnet's policy.
+Then open `https://<node>.<tailnet>.ts.net` and walk through setup.
 
-**If the tailnet's ACL blocks device-to-device traffic** — company tailnets often allow members only
-`autogroup:internet` — the tailnet-only dashboard is unreachable while webhooks still arrive, since
-Funnel ingress is granted separately. Either get one rule added
-(`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}`), or use the `tunnel` accessory,
-which pins `127.0.0.1:4322` on the server to the app:
+**3. Every deploy after that is a push to `main`.** The `build` workflow pushes the image; the
+`deploy` workflow runs Kamal for that sha. For the deploy workflow to reach the box, add an Actions
+secret `KAMAL_SSH_KEY` (a private key authorized on the box, used for nothing else) and a variable
+`KAMAL_HOST_KEY` (the output of `ssh-keyscan -t ed25519 <host>`). To redeploy an older commit, run
+the workflow by hand with its sha; `npm run deploy` does the same from your machine.
 
-```bash
-kamal accessory boot tunnel                      # once
-ssh -N -L 4322:127.0.0.1:4322 root@<host>       # then open http://localhost:4322
-```
+Nothing is ever built on your machine or the box — `better-sqlite3` compiles from source and a
+small box hasn't the memory. A deploy stops the old container (waiting for running agents) and
+starts the new one, so it costs a few seconds of downtime.
+
+**Webhooks** go to `https://<node>.<tailnet>.ts.net:8443/api/hooks/...` — the dashboard shows
+the right URL. Funnel needs the `funnel` attribute in your tailnet policy, and the tailnet's ACL
+must let your devices reach each other (`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}`
+if it doesn't); until then, `kamal accessory boot tunnel` plus
+`ssh -N -L 4322:127.0.0.1:4322 <user>@<host>` reaches the dashboard at `http://localhost:4322`.
+
+**Afterwards:** `kamal app logs -f`, `kamal app details`, and
+`kamal app exec -i --reuse 'claude login'` for a full Claude login on the box (what Usage and
+claude.ai connectors need).
 
 ### Running headless
 
