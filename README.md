@@ -65,9 +65,9 @@ so the first build takes a couple of minutes.
 ### Deploying with Kamal
 
 The box runs one container from the image CI pushes to GHCR; [Kamal 2](https://kamal-deploy.org)
-puts it there. `config/deploy.yml` has the one host and `.kamal/secrets` names the one secret it
-needs. There is no kamal-proxy: the dashboard has no auth, so the container is published on
-loopback only and Tailscale on the host does the exposing (below).
+puts it there. `config/deploy.yml` has the one host and `.kamal/secrets` names the secrets it
+needs. There is no kamal-proxy and no host port at all: the dashboard has no auth, so the only way
+in is the Tailscale accessory (below), which reaches the app by name on Kamal's Docker network.
 
 One-time, on your machine:
 

@@ -1,6 +1,6 @@
 # Kamal 2 — one server, one container, no kamal-proxy.
 #
-# The dashboard has no auth, so the container is published on loopback only.
+# The dashboard has no auth, so the container publishes no host port at all.
 # The tailscale accessory below serves it to the tailnet and funnels just
 # /api/hooks to the internet (README → "Deploying with Kamal"). With no proxy, Kamal
 # judges health by the image's HEALTHCHECK and restarts with a few seconds of
@@ -20,7 +20,11 @@ servers:
     # Shutdown waits for agents' child processes to wind down (see CLAUDE.md).
     stop_timeout: 120
     options:
-      publish: "127.0.0.1:4322:4322"
+      # No host port at all: the tailscale accessory reaches the app as
+      # `bullpen` on Kamal's network. (A fixed publish also made every
+      # redeploy fail — without kamal-proxy, the new container starts
+      # before the old one stops, and the port is still taken.)
+      network-alias: bullpen
 
 registry:
   server: ghcr.io
@@ -48,14 +52,14 @@ builder:
 
 # Tailscale is the proxy. Funnel is per port, not per path, so the dashboard
 # and the webhooks sit on different ports: 443 is tailnet-only, 8443 is
-# funneled and carries /api/hooks alone (config/tailscale-serve.json).
-# Host networking so it can reach the app's loopback port.
+# funneled and carries /api/hooks alone (config/tailscale-serve.json). It
+# reaches the app as `bullpen` on Kamal's network — Kamal attaches every
+# container to that network, which rules out host networking here.
 accessories:
   tailscale:
     image: tailscale/tailscale:stable
     host: 203.0.113.10
     options:
-      network: host
       cap-add: NET_ADMIN
       device: /dev/net/tun:/dev/net/tun
     env:
