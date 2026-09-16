@@ -26,6 +26,7 @@ import { addMachineMcp, exportMachineMcp, importMachineMcp, readMachineMcp, remo
 import { listRepos } from "../github.ts";
 import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, writeClaudeMd } from "../skills.ts";
 import { fetchUsage, invalidateUsage, UsageError } from "../usage.ts";
+import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
 import { foldMcpHealth } from "../mcp.ts";
 import {
   commit as gitCommit,
@@ -63,6 +64,34 @@ api.get("/machine-mcp", (c) => {
     .limit(200)
     .all();
   return c.json({ ...readMachineMcp(), health: foldMcpHealth(recent) });
+});
+
+/** OAuth for a remote server or claude.ai connector, through the harness's own `claude mcp login`. */
+api.post("/machine-mcp/:name/login", (c) => c.json(startMcpLogin(c.req.param("name")), 202));
+api.get("/machine-mcp/login/:id", (c) => {
+  const l = getMcpLogin(c.req.param("id"));
+  return l ? c.json(l) : c.json({ error: "not found" }, 404);
+});
+api.post("/machine-mcp/login/:id/complete", async (c) => {
+  const body = await c.req.json<{ redirectUrl?: string }>().catch(() => null);
+  if (!body?.redirectUrl) return c.json({ error: "redirectUrl is required" }, 400);
+  try {
+    return c.json(await completeMcpLogin(c.req.param("id"), body.redirectUrl));
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+api.delete("/machine-mcp/login/:id", (c) => {
+  cancelMcpLogin(c.req.param("id"));
+  return c.json({ ok: true });
+});
+api.post("/machine-mcp/:name/logout", async (c) => {
+  try {
+    await mcpLogout(c.req.param("name"));
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 /** Adds a server every run inherits. Managed dirs are written directly; otherwise via the `claude` CLI. */
@@ -110,7 +139,14 @@ function publicUrlFor(c: Context): string | null {
 
 api.get("/health", (c) => {
   const credential = claudeCredential();
-  return c.json({ ok: credential.source !== "none", dataDir: config.dataDir, publicUrl: publicUrlFor(c), claudeCredential: credential });
+  return c.json({
+    ok: credential.source !== "none",
+    dataDir: config.dataDir,
+    publicUrl: publicUrlFor(c),
+    version: config.version,
+    repoUrl: config.repoUrl,
+    claudeCredential: credential,
+  });
 });
 
 /** Proves a GitHub token before it is saved: who does it authenticate as? */

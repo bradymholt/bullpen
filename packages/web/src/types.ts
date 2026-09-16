@@ -152,10 +152,22 @@ export type Health = {
   dataDir: string;
   /** Base URL senders use for /api/hooks, when it differs from the dashboard's own. */
   publicUrl: string | null;
+  /** The commit this server runs, and the repo to link it to; either may be unknown. */
+  version: string | null;
+  repoUrl: string | null;
   claudeCredential: { source: string; detail: string };
 };
 
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
+export type McpLogin = {
+  id: string;
+  name: string;
+  state: "starting" | "awaiting_redirect" | "done" | "failed";
+  authUrl: string | null;
+  error: string | null;
+  startedAt: number;
+};
+
 export type UsageWindow = { key: string; label: string; utilization: number; resetsAt: string | null };
 export type Usage = { windows: UsageWindow[]; fetchedAt: number; source: "config-dir" | "keychain" | "env" };
 

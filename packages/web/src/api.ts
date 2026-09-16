@@ -4,6 +4,7 @@ import type {
   Approval,
   Delivery,
   MachineMcp,
+  McpLogin,
   PollOutcome,
   Health,
   RepoList,
@@ -97,6 +98,18 @@ export const api = {
     }).then(json<MachineMcp>),
   removeMachineMcp: (name: string) =>
     fetch(`/api/machine-mcp/${encodeURIComponent(name)}`, { method: "DELETE" }).then(json<MachineMcp>),
+  mcpLoginStart: (name: string) =>
+    fetch(`/api/machine-mcp/${encodeURIComponent(name)}/login`, { method: "POST" }).then(json<McpLogin>),
+  mcpLoginGet: (id: string) => fetch(`/api/machine-mcp/login/${id}`).then(json<McpLogin>),
+  mcpLoginComplete: (id: string, redirectUrl: string) =>
+    fetch(`/api/machine-mcp/login/${id}/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirectUrl }),
+    }).then(json<McpLogin>),
+  mcpLoginCancel: (id: string) => fetch(`/api/machine-mcp/login/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  mcpLogout: (name: string) =>
+    fetch(`/api/machine-mcp/${encodeURIComponent(name)}/logout`, { method: "POST" }).then(json<{ ok: true }>),
   claudeMd: () =>
     fetch("/api/setup/claude-md").then(
       json<{ path: string; exists: boolean; size: number; managed: boolean; content: string }>,

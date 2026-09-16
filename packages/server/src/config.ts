@@ -1,6 +1,31 @@
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+
+function gitHead(): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** `repository` in the root package.json, normalized to a browsable GitHub URL. */
+function repoUrlFromPackage(): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { repository?: string | { url?: string } };
+    const raw = typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url;
+    if (!raw) return null;
+    const m = /^(?:github:|git\+)?(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(raw);
+    return m ? `https://github.com/${m[1]}` : null;
+  } catch {
+    return null;
+  }
+}
 
 export type ClaudeCredential = {
   source: "global-env" | "oauth-token" | "api-key" | "config-dir" | "existing-login" | "none";
@@ -38,6 +63,9 @@ export const config = {
    * config value per deployment.
    */
   tailscaleHooksPort: 8443,
+  /** The running commit: Kamal sets KAMAL_VERSION on the container; dev falls back to git. */
+  version: process.env.KAMAL_VERSION || gitHead() || null,
+  repoUrl: repoUrlFromPackage(),
   /**
    * An approval nobody answers holds the run in awaiting_approval, and a
    * concurrency-skip agent then refuses every later trigger. Unattended runs

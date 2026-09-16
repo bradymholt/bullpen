@@ -10,6 +10,7 @@ import { EnvEditor } from "./EnvEditor.tsx";
 import { McpServerForm } from "./McpServerForm.tsx";
 import { SetupView } from "./SetupView.tsx";
 import { UsageView } from "./UsageView.tsx";
+import { McpAuth } from "./McpAuth.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
 import type { Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
@@ -267,6 +268,7 @@ export function App() {
   const [credentialSource, setCredentialSource] = useState<string | null>(null);
   // Webhook URLs are built from this: the funneled public base if the server has one, else this tab's origin.
   const [hookBase, setHookBase] = useState<string>(location.origin);
+  const [build, setBuild] = useState<{ version: string; repoUrl: string | null } | null>(null);
   const [setupGeneration, setSetupGeneration] = useState(0);
   // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
   // `?setup=1` reopens onboarding on a configured install; there is no button for it.
@@ -443,6 +445,7 @@ export function App() {
         setMetered(h.claudeCredential.source === "api-key");
         setCredentialSource(h.claudeCredential.source);
         if (h.publicUrl) setHookBase(h.publicUrl);
+        setBuild(h.version ? { version: h.version, repoUrl: h.repoUrl } : null);
       })
       .catch(() => {
         setMetered(false);
@@ -788,6 +791,17 @@ export function App() {
           >
             <BarsIcon />
           </button>
+          {build && (
+            <a
+              href={build.repoUrl ? `${build.repoUrl}/commit/${build.version}` : undefined}
+              target="_blank"
+              rel="noreferrer"
+              title={`Running commit ${build.version}`}
+              className="ml-auto font-mono text-[11px] text-neutral-600 hover:text-neutral-300"
+            >
+              {build.version.slice(0, 7)}
+            </a>
+          )}
         </div>
       </aside>
 
@@ -1414,13 +1428,18 @@ export function App() {
                         ) : (
                           <ul className="space-y-1">
                             {machineMcp.global.map((s) => (
-                              <li key={s.name} className="flex items-baseline gap-2 text-xs">
+                              <li key={s.name} className="flex flex-wrap items-baseline gap-2 text-xs">
                                 <McpHealthBadge h={machineMcp.health[s.name]} />
                                 <span className="shrink-0 font-mono text-neutral-200">{s.name}</span>
                                 <span className="shrink-0 text-neutral-600">{s.transport}</span>
                                 <span className="min-w-0 truncate font-mono text-neutral-500" title={s.detail}>{s.detail}</span>
                                 {s.secretKeys.length > 0 && (
                                   <span className="shrink-0 text-neutral-600" title={s.secretKeys.join(", ")}>{s.secretKeys.length} secret{s.secretKeys.length === 1 ? "" : "s"}</span>
+                                )}
+                                {(s.transport === "http" || s.transport === "sse") && (
+                                  <span className={writable ? "" : "ml-auto"}>
+                                    <McpAuth name={s.name} onDone={() => void api.machineMcp().then(setMachineMcp)} />
+                                  </span>
                                 )}
                                 {writable && (
                                   <button
@@ -1462,9 +1481,12 @@ export function App() {
                             </p>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {machineMcp.connectors.map((n) => (
-                                <span key={n} className="inline-flex items-center gap-1 rounded bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-400">
+                                <span key={n} className="inline-flex items-center gap-1.5 rounded bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-400">
                                   <McpHealthBadge h={machineMcp.health[n]} compact />
                                   {n}
+                                  {machineMcp.health[n]?.status === "needs-auth" && (
+                                    <McpAuth name={n} onDone={() => void api.machineMcp().then(setMachineMcp)} />
+                                  )}
                                 </span>
                               ))}
                             </div>
