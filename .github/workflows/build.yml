@@ -42,6 +42,8 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          build-args: |
+            WITH_BROWSER=1
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

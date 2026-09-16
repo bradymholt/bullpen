@@ -6,6 +6,8 @@ services:
       args:
         # Optional: a gogcli release asset for Linux. See README, "Running headless".
         GOG_URL: ${GOG_URL:-}
+        # Set to 1 for the Playwright MCP server and a headless Chromium (~250MB).
+        WITH_BROWSER: ${WITH_BROWSER:-}
     image: ghcr.io/bradymholt/bullpen:latest
     pull_policy: missing
     restart: unless-stopped

@@ -253,6 +253,12 @@ for gog. **Never put a `CLAUDE.md` under `/data`**: workspaces live there, and t
 collects `CLAUDE.md` from every parent of cwd — the same trap as `packages/server/data/`, one
 level up.
 
+**A browser is opt-in at build (`WITH_BROWSER=1`, on in CI).** `npx @playwright/mcp` fetches the
+server, never a browser, and Chromium needs OS libraries the slim image lacks — so the image
+installs `@playwright/mcp` globally and the headless Chromium shell through the Playwright version
+that package pins (a mismatched Playwright looks for a different Chromium build). Under Docker's
+default seccomp profile Chromium's sandbox cannot start, hence `--no-sandbox` in the server config.
+
 **`gh` is in the image; `gog` only if `GOG_URL` was passed at build.** The SDK brings the
 `claude` binary and nothing else; the agents' `gh api` calls need the CLI installed separately.
 
