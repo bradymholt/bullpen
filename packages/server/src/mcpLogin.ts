@@ -147,6 +147,9 @@ export function cancelMcpLogin(id: string): void {
 export async function completeMcpLogin(id: string, redirectUrl: string): Promise<McpLogin> {
   const s = sessions.get(id);
   if (!s) throw new Error("no such login");
+  // On a laptop the browser reaches the CLI's localhost callback itself, so the
+  // login may already be finished by the time the redirect is pasted.
+  if (s.info.state === "done") return s.info;
   if (s.info.state !== "awaiting_redirect") throw new Error(`login is ${s.info.state}`);
 
   let url: URL;

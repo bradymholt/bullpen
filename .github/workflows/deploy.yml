@@ -25,9 +25,10 @@ jobs:
       packages: read
     env:
       VERSION: ${{ inputs.version || github.event.workflow_run.head_sha || github.sha }}
-      # One release per deploy, numbered by this workflow's run: v1, v2, … The
-      # tag is known before the deploy so the running app can link to it.
-      RELEASE_TAG: v${{ github.run_number }}
+      # One release per deploy, numbered by this workflow's run: v0.17, v0.18, …
+      # while this is pre-1.0. The tag is known before the deploy so the running
+      # app can link to it.
+      RELEASE_TAG: v0.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:

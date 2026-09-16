@@ -27,11 +27,16 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
       const l = await api.mcpLoginStart(name);
       setLogin(l);
       stop();
+      // Poll until the login ends: on a laptop the browser reaches the CLI's
+      // callback directly, so it can finish without anything being pasted.
       timer.current = window.setInterval(async () => {
         try {
           const cur = await api.mcpLoginGet(l.id);
           setLogin(cur);
-          if (cur.state !== "starting") stop();
+          if (cur.state === "done" || cur.state === "failed") {
+            stop();
+            if (cur.state === "done") onDone();
+          }
         } catch {
           stop();
         }
@@ -95,8 +100,9 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
             and approve.
           </p>
           <p className="text-neutral-300">
-            2. The browser will land on a <code>localhost</code> address that fails to load &mdash; that&rsquo;s
-            expected. Copy that page&rsquo;s whole URL from the address bar and paste it here.
+            2. If the browser then shows a success page, you&rsquo;re done &mdash; this will update by itself.
+            If it lands on a <code>localhost</code> address that fails to load (a headless box), copy that
+            page&rsquo;s whole URL from the address bar and paste it here.
           </p>
           <div className="flex gap-2">
             <input
