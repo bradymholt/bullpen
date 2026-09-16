@@ -62,19 +62,59 @@ The container can't reach your Mac's Keychain, so it needs an explicit credentia
 see below. The image builds `better-sqlite3` from source (it publishes no prebuilds),
 so the first build takes a couple of minutes.
 
-### Deploying to a server
+### Deploying with Kamal
 
-`docker compose up -d --build` on the box works, but `better-sqlite3` compiles from source
-and wants more RAM than a small server has. The `image` workflow builds `linux/amd64` in CI
-and pushes to `ghcr.io/<owner>/bullpen:latest`, so a deploy is:
+The box runs one container from the image CI pushes to GHCR; [Kamal 2](https://kamal-deploy.org)
+puts it there. `config/deploy.yml` has the one host and `.kamal/secrets` names the one secret it
+needs. There is no kamal-proxy: the dashboard has no auth, so the container is published on
+loopback only and Tailscale on the host does the exposing (below).
+
+One-time, on your machine:
 
 ```bash
-docker compose pull && docker compose up -d
+gem install kamal
+export KAMAL_REGISTRY_PASSWORD=ghp_…   # a GitHub PAT with read:packages; keep it in your shell secrets
+ssh root@203.0.113.10 true            # accept the host key once
 ```
 
-The published port is bound to `127.0.0.1` on purpose — the dashboard has no auth. Reach it
-over an SSH tunnel (`ssh -L 4322:localhost:4322 …`) or Tailscale, and if webhooks need to
-arrive from the internet, put a proxy in front that forwards `/api/hooks/*` and nothing else.
+One-time, on the box (installs Docker, logs into GHCR, starts the container):
+
+```bash
+npm run deploy:setup
+```
+
+Every deploy after that:
+
+```bash
+git push                # CI builds linux/amd64 and pushes ghcr.io/bradymholt/bullpen:<git sha>
+npm run deploy          # kamal deploy --skip-push --version <that sha>
+```
+
+Deploy from a clean checkout of a commit CI has already built — the tag has to exist. Nothing is
+built on your Mac or on the box: `better-sqlite3` compiles from source and wants more RAM than a
+small server has. Kamal stops the old container (waiting up to `stop_timeout` for agents to
+finish) and starts the new one, so a deploy costs a few seconds of downtime.
+
+Useful afterwards:
+
+```bash
+kamal app logs -f                      # follow the server
+kamal app exec -i --reuse 'claude login'   # full login in /data/claude: what Usage and connectors need
+kamal app details                      # what is running
+```
+
+**Exposure.** Nothing listens on the server's public interface but SSH. Put the box on your
+tailnet, serve the dashboard to the tailnet, and funnel only the webhook path:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
+tailscale serve  --bg http://127.0.0.1:4322                                      # dashboard, tailnet only
+tailscale funnel --bg --set-path /api/hooks http://127.0.0.1:4322/api/hooks      # webhooks, public
+```
+
+Then open `https://<server>.<tailnet>.ts.net` and walk through setup. The funnel URL is what goes
+in GitHub's webhook config. Funnel needs the `funnel` node attribute in the tailnet's policy.
 
 ### Running headless
 
@@ -120,14 +160,6 @@ a space's **Environment** for things its agents share, and the agent editor for 
 scopes win. Values are stored once and never shown again. When the OAuth token
 is revoked or expires, every agent fails at once; the home page's "last run failed" panel is
 how you find out.
-
-**Exposure.** The dashboard has no auth, so compose binds it to loopback. Put the dashboard on
-your tailnet with `tailscale serve`, and expose only the webhook path publicly:
-
-```bash
-tailscale serve  --bg --https=443 http://127.0.0.1:4322          # dashboard, tailnet only
-tailscale funnel --bg --set-path /api/hooks http://127.0.0.1:4322/api/hooks   # public
-```
 
 **Never put a `CLAUDE.md` in `/data`.** Agent workspaces live under it, and Claude Code
 collects `CLAUDE.md` from every parent of its working directory.

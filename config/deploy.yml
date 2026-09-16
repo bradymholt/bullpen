@@ -1,0 +1,47 @@
+# Kamal 2 — one server, one container, no kamal-proxy.
+#
+# The dashboard has no auth, so the container is published on loopback only.
+# Tailscale on the host serves it to the tailnet and funnels just /api/hooks
+# to the internet (README → "Deploying with Kamal"). With no proxy, Kamal
+# judges health by the image's HEALTHCHECK and restarts with a few seconds of
+# downtime — fine for one box.
+service: bullpen
+
+# Prefixed with registry.server → ghcr.io/bradymholt/bullpen. CI builds and
+# pushes it tagged with the git sha; `npm run deploy` deploys that tag with
+# --skip-push, so nothing is built here (better-sqlite3 compiles from source).
+image: bradymholt/bullpen
+
+servers:
+  web:
+    hosts:
+      - 203.0.113.10
+    proxy: false
+    # Shutdown waits for agents' child processes to wind down (see CLAUDE.md).
+    stop_timeout: 120
+    options:
+      publish: "127.0.0.1:4322:4322"
+
+registry:
+  server: ghcr.io
+  username: bradymholt
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  clear:
+    TZ: UTC
+  # Everything else — Claude token, GitHub token, per-agent env — is configured
+  # in the dashboard and stored under /data. BULLPEN_DATA, CLAUDE_CONFIG_DIR and
+  # GOG_HOME are set in the image.
+
+volumes:
+  # SQLite, agent workspaces, /data/claude (skills, settings, MCP), /data/gog.
+  # Back up this directory and you have everything.
+  - /srv/bullpen/data:/data
+
+ssh:
+  user: root
+
+builder:
+  arch: amd64

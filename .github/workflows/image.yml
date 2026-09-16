@@ -33,6 +33,8 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,format=long
+            # Bare sha, the version Kamal deploys with --skip-push.
+            type=sha,format=long,prefix=
 
       # The server is x86_64; building here keeps better-sqlite3 off it.
       - uses: docker/build-push-action@v6

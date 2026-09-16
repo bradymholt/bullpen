@@ -12,7 +12,13 @@ npm run typecheck  # both packages
 npm run build && npm start   # single port, the way the container runs
 npm run dev:managed          # sandbox: own data dir + CLAUDE_CONFIG_DIR, so Settings is editable
 npm run dev:managed:fresh    # same, after wiping ~/.bullpen-managed
+npm run deploy               # kamal deploy --skip-push --version <HEAD sha>; CI must have built it
 ```
+
+Deployment is Kamal 2 (`config/deploy.yml`, `.kamal/secrets`), one host, `proxy: false`, container
+published on loopback, Tailscale on the host for exposure. Kamal never builds: CI tags the image
+with the bare git sha for exactly this. `.kamal/secrets` holds `$VAR` references only, so it is
+committed.
 
 Local runs need no credential setup: the SDK finds the existing `~/.claude` login. The
 container does need one — see README.
