@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 // Managed mode: a temp CLAUDE_CONFIG_DIR that bullpen owns and may write.
 const dir = mkdtempSync(join(tmpdir(), "bullpen-mcp-"));
 process.env.CLAUDE_CONFIG_DIR = dir;
-const { addMachineMcp, exportMachineMcp, importMachineMcp, readMachineMcp, removeMachineMcp } = await import("./machineMcp.ts");
+const { addMachineMcp, exportMachineMcp, importMachineMcp, readMachineMcp, removeMachineMcp, seedDefaultMcp } = await import("./machineMcp.ts");
 const file = join(dir, ".claude.json");
 
 beforeEach(() => {
@@ -46,5 +46,27 @@ describe("machine MCP (managed)", () => {
 
   it("rejects a config that is neither http nor stdio", () => {
     expect(() => addMachineMcp("bad", { nonsense: true })).toThrow(/url.*command/);
+  });
+});
+
+describe("seedDefaultMcp", () => {
+  it("adds playwright once when the image has the wrapper, and never re-adds after a removal", () => {
+    const markerDir = mkdtempSync(join(tmpdir(), "bullpen-seed-"));
+    const wrapper = join(markerDir, "playwright-mcp");
+    writeFileSync(wrapper, "#!/bin/sh\n");
+    expect(seedDefaultMcp({ markerDir, wrapper })).toEqual(["playwright"]);
+    expect(readMachineMcp().global.map((s) => s.name)).toEqual(["playwright"]);
+    expect(existsSync(join(markerDir, ".mcp-seeded"))).toBe(true);
+    removeMachineMcp("playwright");
+    expect(seedDefaultMcp({ markerDir, wrapper })).toEqual([]);
+    expect(readMachineMcp().global).toEqual([]);
+  });
+
+  it("does nothing without the wrapper or outside managed mode", () => {
+    const markerDir = mkdtempSync(join(tmpdir(), "bullpen-seed-"));
+    expect(seedDefaultMcp({ markerDir, wrapper: join(markerDir, "missing") })).toEqual([]);
+    writeFileSync(join(markerDir, "playwright-mcp"), "");
+    expect(seedDefaultMcp({ markerDir, wrapper: join(markerDir, "playwright-mcp"), managed: false })).toEqual([]);
+    expect(readMachineMcp().global).toEqual([]);
   });
 });

@@ -13,6 +13,7 @@ import { eventsSince } from "./runs/eventLog.ts";
 import { recoverOrphanedRuns, shutdownLiveRuns } from "./runs/RunManager.ts";
 import { seedScratchAgent } from "./seed.ts";
 import { pullSkillsIfManaged } from "./skills.ts";
+import { seedDefaultMcp } from "./machineMcp.ts";
 import { startScheduler, stopScheduler } from "./triggers/cron.ts";
 
 process.on("unhandledRejection", (reason) => {
@@ -25,6 +26,7 @@ if (recovered > 0) console.warn(`[bullpen] marked ${recovered} orphaned run(s) i
 seedScratchAgent();
 const skillsNote = pullSkillsIfManaged();
 if (skillsNote) console.log(`[bullpen] ${skillsNote}`);
+for (const name of seedDefaultMcp({ markerDir: config.dataDir })) console.log(`[bullpen] added shared MCP server ${name}`);
 const scheduled = startScheduler();
 if (scheduled > 0) console.log(`[bullpen] scheduled ${scheduled} cron agent(s)`);
 
