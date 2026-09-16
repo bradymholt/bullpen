@@ -56,6 +56,16 @@ builder:
 # reaches the app as `bullpen` on Kamal's network — Kamal attaches every
 # container to that network, which rules out host networking here.
 accessories:
+  # A loopback port on the host for `ssh -L 4322:127.0.0.1:4322` — the app
+  # itself publishes nothing, and this survives redeploys where a publish on
+  # the app container would not. Tailnets whose ACL blocks device-to-device
+  # traffic (a company tailnet, typically) make this the only way in.
+  tunnel:
+    image: alpine/socat:latest
+    host: 203.0.113.10
+    port: "127.0.0.1:4322:4322"
+    cmd: tcp-listen:4322,fork,reuseaddr tcp:bullpen:4322
+
   tailscale:
     image: tailscale/tailscale:stable
     host: 203.0.113.10
