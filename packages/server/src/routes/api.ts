@@ -27,6 +27,7 @@ import { listRepos } from "../github.ts";
 import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, writeClaudeMd } from "../skills.ts";
 import { fetchUsage, invalidateUsage, UsageError } from "../usage.ts";
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
+import { exportFilename, renderTranscript } from "../transcript.ts";
 import { foldMcpHealth } from "../mcp.ts";
 import {
   commit as gitCommit,
@@ -1134,6 +1135,23 @@ function gitRun(id: string) {
   if (!run?.workspacePath || !run.branch) return null;
   return run;
 }
+
+/** The run as a file: `md` for people, `json` for everything (the raw event log included). */
+api.get("/runs/:id/export", (c) => {
+  const run = db.select().from(runs).where(eq(runs.id, c.req.param("id"))).get();
+  if (!run) return c.json({ error: "not found" }, 404);
+  const agentName = getAgent(run.agentId)?.name ?? "agent";
+  const events = eventsSince(run.id, 0);
+  const format = c.req.query("format") === "json" ? "json" : "md";
+  const body =
+    format === "json"
+      ? JSON.stringify({ exportedAt: new Date().toISOString(), agent: { id: run.agentId, name: agentName }, run, events }, null, 2)
+      : renderTranscript(run, agentName, events);
+  return c.body(body, 200, {
+    "content-type": format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+    "content-disposition": `attachment; filename="${exportFilename(agentName, run, format)}"`,
+  });
+});
 
 api.get("/runs/:id/git", (c) => {
   const run = gitRun(c.req.param("id"));
