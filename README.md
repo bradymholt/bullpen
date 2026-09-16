@@ -65,8 +65,8 @@ so the first build takes a couple of minutes.
 ### Deploying with Kamal
 
 The box runs one container from the image CI pushes to GHCR; [Kamal 2](https://kamal-deploy.org)
-puts it there. `config/deploy.yml` has the one host and `.kamal/secrets` names the secrets it
-needs. There is no kamal-proxy and no host port at all: the dashboard has no auth, so the only way
+puts it there. `config/deploy.yml` has the host, image and Tailscale node name (`TS_HOSTNAME`), and
+`.kamal/secrets` names the secrets it needs — every deployment-specific value lives in those two files. There is no kamal-proxy and no host port at all: the dashboard has no auth, so the only way
 in is the Tailscale accessory (below), which reaches the app by name on Kamal's Docker network.
 
 One-time, on your machine:
@@ -74,14 +74,14 @@ One-time, on your machine:
 ```bash
 gem install kamal
 export KAMAL_REGISTRY_PASSWORD=ghp_…   # a GitHub PAT with read:packages; keep it in your shell secrets
-ssh root@203.0.113.10 true            # accept the host key once
+ssh root@<host> true                   # accept the host key once
 ```
 
 One-time, on the box (installs Docker, logs into GHCR, starts the container):
 
 ```bash
 npm run deploy:setup
-kamal server exec --hosts 203.0.113.10 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs as `node`
+kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs as `node`
 npm run deploy
 ```
 
@@ -91,7 +91,7 @@ the first boot fails on `mkdir /data/workspaces` until the chown; the second dep
 Every deploy after that:
 
 ```bash
-git push                # CI builds linux/amd64 and pushes ghcr.io/bradymholt/bullpen:<git sha>
+git push                # CI builds linux/amd64 and pushes ghcr.io/<owner>/bullpen:<git sha>
 npm run deploy          # kamal deploy --skip-push --version <that sha>
 ```
 
@@ -119,8 +119,8 @@ export TS_AUTHKEY=tskey-auth-…     # admin console → Settings → Keys; used
 kamal accessory boot tailscale
 ```
 
-Then open `https://bullpen.<tailnet>.ts.net` and walk through setup. GitHub webhooks point at
-`https://bullpen.<tailnet>.ts.net:8443/api/hooks/space/<hookId>`. Funnel needs the `funnel` node
+Then open `https://<node>.<tailnet>.ts.net` and walk through setup. GitHub webhooks point at
+`https://<node>.<tailnet>.ts.net:8443/api/hooks/space/<hookId>`. Funnel needs the `funnel` node
 attribute in the tailnet's policy.
 
 **If the tailnet's ACL blocks device-to-device traffic** — company tailnets often allow members only
@@ -131,7 +131,7 @@ which pins `127.0.0.1:4322` on the server to the app:
 
 ```bash
 kamal accessory boot tunnel                      # once
-ssh -N -L 4322:127.0.0.1:4322 root@203.0.113.10 # then open http://localhost:4322
+ssh -N -L 4322:127.0.0.1:4322 root@<host>       # then open http://localhost:4322
 ```
 
 ### Running headless
