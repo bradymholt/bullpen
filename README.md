@@ -88,7 +88,7 @@ npm run deploy
 Docker creates the data directory root-owned the first time, and the container runs unprivileged, so
 the first boot fails on `mkdir /data/workspaces` until the chown; the second deploy comes up.
 
-Every deploy after that is a push to `main`: the `image` workflow builds `linux/amd64` and pushes
+Every deploy after that is a push to `main`: the `build` workflow builds `linux/amd64` and pushes
 `ghcr.io/<owner>/bullpen:<git sha>`, then the `deploy` workflow runs `kamal deploy` for that sha.
 The deploy workflow needs two things in the repo: an Actions secret `KAMAL_SSH_KEY` (a private key
 authorized for the deploy user on the box, used by nothing else) and a variable `KAMAL_HOST_KEY`
