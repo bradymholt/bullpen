@@ -58,6 +58,7 @@ export function AgentEditor({
   seed = null,
   spaces = [],
   defaultSpace = null,
+  hookBase = location.origin,
   onSaved,
   onDeleted,
   onCancel,
@@ -70,6 +71,8 @@ export function AgentEditor({
   spaces?: string[];
   /** A new agent lands in the space the roster is filtered to. */
   defaultSpace?: string | null;
+  /** Base for the webhook URLs shown; the server's public base when it has one. */
+  hookBase?: string;
   onSaved: (a: Agent) => void;
   onDeleted: () => void;
   onCancel: () => void;
@@ -251,7 +254,7 @@ export function AgentEditor({
         </Row>
       </div>
 
-      <TriggerSettings agent={agent} draft={draft} set={set} />
+      <TriggerSettings agent={agent} draft={draft} set={set} hookBase={hookBase} />
 
       <Row title="Workspace" hint="The directory each run works in — its cwd, and where the webhook payload is written.">
         <select

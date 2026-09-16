@@ -364,10 +364,12 @@ export function TriggerSettings({
   agent,
   draft,
   set,
+  hookBase = location.origin,
 }: {
   agent: Agent | null;
   draft: AgentInput;
   set: <K extends keyof AgentInput>(k: K, v: AgentInput[K]) => void;
+  hookBase?: string;
 }) {
   const [kind, setKind] = useState<TriggerKind>(() => initialKind(agent, draft));
   const [next, setNext] = useState<string[] | null>(null);
@@ -425,7 +427,7 @@ export function TriggerSettings({
 
   // The draft carries its own id, so an unsaved agent can still show the URL it will answer on.
   const agentId = agent?.id ?? draft.id;
-  const hookUrl = agentId ? `${location.origin}/api/hooks/${agentId}` : null;
+  const hookUrl = agentId ? `${hookBase}/api/hooks/${agentId}` : null;
   const shownSecret = agent ? secret : (draft.webhookSecret ?? null);
   const shape = shapeOf(draft);
   const example = FILTER_EXAMPLES[senderOption(draft.webhookMode)] ?? FILTER_EXAMPLES.custom!;

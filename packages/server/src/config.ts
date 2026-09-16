@@ -26,6 +26,12 @@ export const config = {
   port: Number(process.env.PORT ?? 4322),
   githubToken: process.env.GITHUB_TOKEN || undefined,
   /**
+   * Where senders on the internet reach /api/hooks, when that differs from the
+   * address the dashboard is opened on — a funneled port beside a tailnet-only
+   * one, say. The UI builds every webhook URL from this when set.
+   */
+  publicUrl: process.env.BULLPEN_PUBLIC_URL?.replace(/\/+$/, "") || undefined,
+  /**
    * An approval nobody answers holds the run in awaiting_approval, and a
    * concurrency-skip agent then refuses every later trigger. Unattended runs
    * have no one to answer at all, so prompts expire instead of wedging.
