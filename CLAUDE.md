@@ -256,8 +256,9 @@ level up.
 **A browser is opt-in at build (`WITH_BROWSER=1`, on in CI), and the binary is lazy.** `npx
 @playwright/mcp` fetches the server, never a browser, and Chromium needs OS libraries the slim image
 lacks — so the image installs `@playwright/mcp` globally plus those libraries (root-only), and
-`/usr/local/bin/playwright-mcp` is a wrapper that downloads the headless Chromium shell into
-`PLAYWRIGHT_BROWSERS_PATH=/data/browsers` on first use, through the Playwright version the package
+`/usr/local/bin/playwright-mcp` is a wrapper that downloads Chromium into
+`PLAYWRIGHT_BROWSERS_PATH=/data/browsers` on first use (the full build, not the headless shell —
+`--browser chromium` selects Playwright's chromium channel, which runs the full binary headless), through the Playwright version the package
 pins (a mismatched Playwright looks for a different Chromium build). The volume keeps it across
 deploys; an image nobody browses from never carries it. The MCP server
 defaults to the `chrome` channel — Google Chrome at /opt/google/chrome, which is not there — so the
