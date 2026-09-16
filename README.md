@@ -133,7 +133,7 @@ docker compose run --rm -v bullpen-data:/data bullpen \
 
 **A browser for agents.** Build with `WITH_BROWSER=1` (the CI build does) and the image carries the
 Playwright MCP server with a headless Chromium. Add it as a shared server under Settings — type
-*Local command*, `playwright-mcp --headless --no-sandbox --isolated` — and agents that opt in can
+*Local command*, `playwright-mcp --browser chromium --headless --no-sandbox --isolated` — and agents that opt in can
 browse. `npx @playwright/mcp` alone is not enough on a box: it downloads the server, not a browser,
 and the browser needs system libraries the slim image lacks.
 

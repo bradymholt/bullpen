@@ -59,8 +59,9 @@ RUN if [ -n "$GOG_URL" ]; then \
 # A browser for agents, opt-in: the Playwright MCP server plus the headless
 # Chromium shell and its OS libraries, ~250MB. The browsers are installed with
 # the Playwright version the MCP package pins, so they match. Configure the
-# shared server as `playwright-mcp --headless --no-sandbox --isolated` —
-# Chromium's own sandbox can't start under Docker's default seccomp profile.
+# shared server as `playwright-mcp --browser chromium --headless --no-sandbox --isolated`:
+# the MCP server defaults to the `chrome` channel (Google Chrome, not present),
+# and Chromium's own sandbox can't start under Docker's default seccomp profile.
 ARG WITH_BROWSER=""
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN if [ -n "$WITH_BROWSER" ]; then \
