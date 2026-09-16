@@ -67,6 +67,8 @@ COPY packages/server packages/server
 
 RUN mkdir -p /data/claude /data/gog && chown -R node:node /data /app
 USER node
+# Kamal deploys this image without building it, and checks for the label it would have added.
+LABEL service=bullpen
 VOLUME /data
 EXPOSE 4322
 
