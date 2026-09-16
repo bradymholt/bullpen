@@ -65,6 +65,8 @@ export const config = {
   tailscaleHooksPort: 8443,
   /** The running commit: Kamal sets KAMAL_VERSION on the container; dev falls back to git. */
   version: process.env.KAMAL_VERSION || gitHead() || null,
+  /** The GitHub release this deploy was published as, when it came through the deploy workflow. */
+  release: process.env.BULLPEN_RELEASE || null,
   repoUrl: repoUrlFromPackage(),
   /**
    * An approval nobody answers holds the run in awaiting_approval, and a

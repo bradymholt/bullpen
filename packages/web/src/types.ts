@@ -154,6 +154,8 @@ export type Health = {
   publicUrl: string | null;
   /** The commit this server runs, and the repo to link it to; either may be unknown. */
   version: string | null;
+  /** Release tag (v12) when deployed through the workflow; otherwise null and the commit is the reference. */
+  release: string | null;
   repoUrl: string | null;
   claudeCredential: { source: string; detail: string };
 };

@@ -144,6 +144,7 @@ api.get("/health", (c) => {
     dataDir: config.dataDir,
     publicUrl: publicUrlFor(c),
     version: config.version,
+    release: config.release,
     repoUrl: config.repoUrl,
     claudeCredential: credential,
   });
