@@ -123,6 +123,17 @@ Then open `https://bullpen.<tailnet>.ts.net` and walk through setup. GitHub webh
 `https://bullpen.<tailnet>.ts.net:8443/api/hooks/space/<hookId>`. Funnel needs the `funnel` node
 attribute in the tailnet's policy.
 
+**If the tailnet's ACL blocks device-to-device traffic** — company tailnets often allow members only
+`autogroup:internet` — the tailnet-only dashboard is unreachable while webhooks still arrive, since
+Funnel ingress is granted separately. Either get one rule added
+(`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}`), or use the `tunnel` accessory,
+which pins `127.0.0.1:4322` on the server to the app:
+
+```bash
+kamal accessory boot tunnel                      # once
+ssh -N -L 4322:127.0.0.1:4322 root@203.0.113.10 # then open http://localhost:4322
+```
+
 ### Running headless
 
 Everything the agents need lives in the `/data` volume, not on the box:
