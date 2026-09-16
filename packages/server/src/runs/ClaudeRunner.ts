@@ -1,38 +1,31 @@
-import { query, type Options, type PermissionMode, type Query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type PermissionMode, type Query } from "@anthropic-ai/claude-agent-sdk";
+import { summarizeMcpStatus } from "../mcp.ts";
 import { InputQueue } from "./inputQueue.ts";
+import type { ModeName, Runner, RunnerEvents, RunnerHandle, RunnerSpec } from "./runner.ts";
 
-export type RunnerSpec = {
-  cwd: string;
-  prompt: string;
-  model?: string | undefined;
-  permissionMode: PermissionMode;
-  allowedTools?: string[];
-  disallowedTools?: string[];
-  mcpServers?: Options["mcpServers"];
-  strictMcpConfig: boolean;
-  inheritUserSettings: boolean;
-  appendSystemPrompt?: string | undefined;
-  env?: Record<string, string>;
-  maxTurns?: number | undefined;
-  resumeSessionId?: string | undefined;
-  canUseTool?: Options["canUseTool"];
+/**
+ * Bullpen's mode names to the SDK's. `auto` here is the harness's classifier
+ * mode, `locked` is deny-by-default with allowedTools as the whole allowance.
+ */
+const SDK_MODES: Record<ModeName, PermissionMode> = {
+  supervised: "default",
+  acceptEdits: "acceptEdits",
+  plan: "plan",
+  auto: "auto",
+  full: "bypassPermissions",
+  locked: "dontAsk",
 };
 
-export type RunnerHandle = {
-  /** Resolves when the SDK stream ends. */
-  done: Promise<void>;
-  send(text: string): void;
-  stop(): Promise<void>;
-  setPermissionMode(mode: PermissionMode): Promise<void>;
-  sessionId(): string | undefined;
-};
+export function toSdkPermissionMode(mode: string): PermissionMode {
+  return SDK_MODES[mode as ModeName] ?? "default";
+}
 
 /**
  * Wraps one `query()` session. Always streaming-input mode: the SDK exposes
  * interrupt() and setPermissionMode() only there, and without them a run has
  * no stop button and no mid-run mode change.
  */
-export function startRunner(spec: RunnerSpec, onMessage: (m: SDKMessage) => void): RunnerHandle {
+function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
   const input = new InputQueue();
   const abort = new AbortController();
   let sessionId: string | undefined;
@@ -46,7 +39,7 @@ export function startRunner(spec: RunnerSpec, onMessage: (m: SDKMessage) => void
       options: {
         cwd: spec.cwd,
         ...(spec.model ? { model: spec.model } : {}),
-        permissionMode: spec.permissionMode,
+        permissionMode: toSdkPermissionMode(spec.permissionMode),
         ...(spec.allowedTools?.length ? { allowedTools: spec.allowedTools } : {}),
         ...(spec.disallowedTools?.length ? { disallowedTools: spec.disallowedTools } : {}),
         ...(spec.mcpServers ? { mcpServers: spec.mcpServers } : {}),
@@ -65,10 +58,19 @@ export function startRunner(spec: RunnerSpec, onMessage: (m: SDKMessage) => void
 
     try {
       for await (const message of q) {
+        events.onMessage(message.type, message);
         if (message.type === "system" && message.subtype === "init") {
           sessionId = message.session_id;
+          events.onSession(message.session_id);
+          events.onMcpStatus(summarizeMcpStatus(message));
         }
-        onMessage(message);
+        if (message.type === "result") {
+          events.onResult({
+            numTurns: message.num_turns,
+            costUsd: message.total_cost_usd,
+            isError: message.is_error,
+          });
+        }
       }
     } finally {
       input.close();
@@ -88,8 +90,10 @@ export function startRunner(spec: RunnerSpec, onMessage: (m: SDKMessage) => void
       input.close();
     },
     async setPermissionMode(mode) {
-      await q?.setPermissionMode(mode);
+      await q?.setPermissionMode(toSdkPermissionMode(mode));
     },
     sessionId: () => sessionId,
   };
 }
+
+export const claudeRunner: Runner = { start };

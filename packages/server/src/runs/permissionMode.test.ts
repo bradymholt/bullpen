@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 process.env.BULLPEN_DATA = mkdtempSync(join(tmpdir(), "bullpen-test-"));
-const { toSdkPermissionMode } = await import("./RunManager.ts");
+const { toSdkPermissionMode } = await import("./ClaudeRunner.ts");
 
 describe("permission mode mapping", () => {
   it("maps bullpen's modes onto the SDK's", () => {

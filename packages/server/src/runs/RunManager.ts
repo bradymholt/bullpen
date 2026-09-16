@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import type { PermissionMode, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
-import { interpolateSecrets, summarizeMcpStatus } from "../mcp.ts";
+import { interpolateSecrets } from "../mcp.ts";
 import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
 import { dropPending, makeCanUseTool } from "./approvals.ts";
-import { startRunner, type RunnerHandle } from "./ClaudeRunner.ts";
+import { claudeRunner } from "./ClaudeRunner.ts";
+import { MODE_NAMES, type ModeName, type Runner, type RunnerHandle } from "./runner.ts";
 import { appendEvent } from "./eventLog.ts";
 
 export type RunStatus =
@@ -21,22 +21,13 @@ export type RunStatus =
 export const ACTIVE_STATUSES: RunStatus[] = ["running", "awaiting_approval"];
 
 /** Bullpen's UI modes, mapped to what the SDK actually accepts. */
-const PERMISSION_MODES: Record<string, PermissionMode> = {
-  supervised: "default",
-  acceptEdits: "acceptEdits",
-  plan: "plan",
-  full: "bypassPermissions",
-  auto: "auto",
-  locked: "dontAsk",
-};
-
-export function toSdkPermissionMode(mode: string): PermissionMode {
-  return PERMISSION_MODES[mode] ?? "default";
+export function isPermissionMode(mode: string): mode is ModeName {
+  return (MODE_NAMES as readonly string[]).includes(mode);
 }
 
-export function isPermissionMode(mode: string): boolean {
-  return mode in PERMISSION_MODES;
-}
+/** The one backend today. A second one is another entry here and nothing else. */
+const runners: Record<string, Runner> = { claude: claudeRunner };
+const runner = runners.claude!;
 
 const live = new Map<string, RunnerHandle>();
 /** Runs the user stopped on purpose, so the interrupted result doesn't read as a failure. */
@@ -70,6 +61,8 @@ export function startRun(opts: {
   ephemeralWorkspace?: boolean;
   /** Runs after the workspace exists, before the agent starts. */
   onWorkspace?: (path: string) => void;
+  /** Names this run in lists. The caller renders it; the payload lives there. */
+  label?: string;
 }): string {
   const { agent, trigger } = opts;
   const runId = randomUUID();
@@ -106,18 +99,19 @@ export function startRun(opts: {
       prompt,
       permissionMode,
       workspacePath: workspace.path,
+      ...(opts.label ? { label: opts.label } : {}),
       ...(workspace.branch ? { branch: workspace.branch } : {}),
     })
     .run();
 
   appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, permissionMode, cwd: workspace.path });
 
-  const handle = startRunner(
+  const handle = runner.start(
     {
       cwd: workspace.path,
       prompt,
       model: agent.model ?? undefined,
-      permissionMode: toSdkPermissionMode(permissionMode),
+      permissionMode: isPermissionMode(permissionMode) ? permissionMode : "supervised",
       allowedTools: agent.allowedTools as string[],
       disallowedTools: agent.disallowedTools as string[],
       mcpServers: interpolateSecrets(agent.mcpServers, agent.env as Record<string, string>) as never,
@@ -132,7 +126,29 @@ export function startRun(opts: {
         setStatus(runId, hasPending ? "awaiting_approval" : "running");
       }),
     },
-    (message) => onMessage(runId, message),
+    {
+      onMessage: (type, payload) => appendEvent(runId, type, payload),
+      onSession: (sessionId) =>
+        db.update(runs).set({ claudeSessionId: sessionId }).where(eq(runs.id, runId)).run(),
+      // MCP startup is non-blocking, so a server that failed to connect leaves
+      // the agent quietly short of tools unless someone surfaces it.
+      onMcpStatus: (servers) => {
+        if (servers.length > 0) appendEvent(runId, "mcp.status", { servers });
+      },
+      onResult: ({ numTurns, costUsd, isError }) => {
+        db.update(runs)
+          .set({
+            numTurns,
+            // Stored in micro-dollars: an integer column, and sums stay exact.
+            costUsd: Math.round((costUsd ?? 0) * 1_000_000),
+            endedAt: Math.floor(Date.now() / 1000),
+          })
+          .where(eq(runs.id, runId))
+          .run();
+        if (stopping.has(runId)) return;
+        setStatus(runId, isError ? "failed" : "completed");
+      },
+    },
   );
 
   live.set(runId, handle);
@@ -164,31 +180,6 @@ export function startRun(opts: {
     });
 
   return runId;
-}
-
-function onMessage(runId: string, message: SDKMessage): void {
-  appendEvent(runId, message.type, message);
-
-  if (message.type === "system" && message.subtype === "init") {
-    db.update(runs).set({ claudeSessionId: message.session_id }).where(eq(runs.id, runId)).run();
-    // MCP startup is non-blocking, so a server that failed to connect leaves
-    // the agent quietly short of tools unless someone surfaces it.
-    const servers = summarizeMcpStatus(message);
-    if (servers.length > 0) appendEvent(runId, "mcp.status", { servers });
-  }
-
-  if (message.type === "result") {
-    db.update(runs)
-      .set({
-        numTurns: message.num_turns,
-        costUsd: Math.round((message.total_cost_usd ?? 0) * 1_000_000),
-        endedAt: Math.floor(Date.now() / 1000),
-      })
-      .where(eq(runs.id, runId))
-      .run();
-    if (stopping.has(runId)) return;
-    setStatus(runId, message.is_error ? "failed" : "completed");
-  }
 }
 
 export function sendToRun(runId: string, text: string): boolean {
@@ -247,18 +238,17 @@ export function recoverOrphanedRuns(): number {
  */
 export async function setRunPermissionMode(
   runId: string,
-  mode: string,
+  mode: ModeName,
 ): Promise<{ ok: true } | { ok: false; live: boolean; error?: string }> {
   const handle = live.get(runId);
   if (!handle) return { ok: false, live: false };
-  const sdkMode = toSdkPermissionMode(mode);
   try {
-    await handle.setPermissionMode(sdkMode);
+    await handle.setPermissionMode(mode);
   } catch (err) {
     return { ok: false, live: true, error: err instanceof Error ? err.message : String(err) };
   }
   db.update(runs).set({ permissionMode: mode }).where(eq(runs.id, runId)).run();
-  appendEvent(runId, "permission.mode", { mode, sdkMode });
+  appendEvent(runId, "permission.mode", { mode });
   return { ok: true };
 }
 
