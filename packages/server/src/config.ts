@@ -32,6 +32,13 @@ export const config = {
    */
   publicUrl: process.env.BULLPEN_PUBLIC_URL?.replace(/\/+$/, "") || undefined,
   /**
+   * The port config/tailscale-serve.json funnels /api/hooks on. When the
+   * dashboard is reached through Tailscale serve, the public base is derived
+   * from the request's host plus this — the one convention that saves a
+   * config value per deployment.
+   */
+  tailscaleHooksPort: 8443,
+  /**
    * An approval nobody answers holds the run in awaiting_approval, and a
    * concurrency-skip agent then refuses every later trigger. Unattended runs
    * have no one to answer at all, so prompts expire instead of wedging.

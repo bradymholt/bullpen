@@ -35,9 +35,6 @@ registry:
 env:
   clear:
     TZ: UTC
-    # The funneled port, not the tailnet-only one the dashboard is opened on;
-    # every webhook URL the UI shows is built from this.
-    BULLPEN_PUBLIC_URL: https://<node>.<tailnet>.ts.net:8443
   # Everything else — Claude token, GitHub token, per-agent env — is configured
   # in the dashboard and stored under /data. BULLPEN_DATA, CLAUDE_CONFIG_DIR and
   # GOG_HOME are set in the image.

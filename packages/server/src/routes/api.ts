@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { agentCreateSchema, agentPatchSchema, inferTrigger, DEFAULT_SPACE } from "../agentSchema.ts";
 import { nextRuns, rescheduleAgent } from "../triggers/cron.ts";
 import { pollOnce } from "../triggers/poll.ts";
@@ -95,9 +95,22 @@ api.get("/github/repos", async (c) => {
   }
 });
 
+/**
+ * `publicUrl` is where senders reach /api/hooks. Set explicitly, or derived when
+ * the request came through Tailscale serve (it stamps identity headers on
+ * tailnet traffic): the same host, on the funneled port. Otherwise null and the
+ * UI uses its own origin.
+ */
+function publicUrlFor(c: Context): string | null {
+  if (config.publicUrl) return config.publicUrl;
+  if (!c.req.header("tailscale-user-login")) return null;
+  const host = (c.req.header("x-forwarded-host") ?? c.req.header("host") ?? "").replace(/:\d+$/, "");
+  return host ? `https://${host}:${config.tailscaleHooksPort}` : null;
+}
+
 api.get("/health", (c) => {
   const credential = claudeCredential();
-  return c.json({ ok: credential.source !== "none", dataDir: config.dataDir, publicUrl: config.publicUrl ?? null, claudeCredential: credential });
+  return c.json({ ok: credential.source !== "none", dataDir: config.dataDir, publicUrl: publicUrlFor(c), claudeCredential: credential });
 });
 
 /** Proves a GitHub token before it is saved: who does it authenticate as? */

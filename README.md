@@ -120,8 +120,9 @@ kamal accessory boot tailscale
 ```
 
 Then open `https://<node>.<tailnet>.ts.net` and walk through setup. GitHub webhooks point at
-`https://<node>.<tailnet>.ts.net:8443/api/hooks/space/<hookId>` — `BULLPEN_PUBLIC_URL` in
-`deploy.yml` is that base, so the URLs the dashboard shows already carry the port. Funnel needs the `funnel` node
+`https://<node>.<tailnet>.ts.net:8443/api/hooks/space/<hookId>`; the dashboard shows them with the
+port already, since it can tell it was reached through Tailscale serve. `BULLPEN_PUBLIC_URL`
+overrides that for any other arrangement. Funnel needs the `funnel` node
 attribute in the tailnet's policy.
 
 **If the tailnet's ACL blocks device-to-device traffic** — company tailnets often allow members only
