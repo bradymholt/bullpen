@@ -491,6 +491,12 @@ export function App() {
     api.notableDrops().then(setDrops).catch(() => setDrops([]));
   };
   useEffect(refresh, []);
+
+  /** Paused means nothing starts it — not a webhook, a cron fire, a poll, or the Run button. */
+  async function setPaused(a: Agent, paused: boolean) {
+    await api.updateAgent(a.id, { enabled: !paused });
+    refresh();
+  }
   useEffect(() => {
     if (run && !ACTIVE.has(run.status)) api.runs().then(setRuns);
   }, [run?.status]);
@@ -704,7 +710,7 @@ export function App() {
                 selectedAgentId === a.id
                   ? "border-neutral-600 bg-neutral-900"
                   : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700"
-              }`}
+              } ${a.enabled ? "" : "opacity-60"}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -719,7 +725,9 @@ export function App() {
                     {workspaceKindLabel(a.workspaceKind)} · {modeLabel(a.permissionMode)}
                   </div>
                   <div className="mt-0.5 text-xs">
-                    {live > 0 ? (
+                    {!a.enabled && live === 0 ? (
+                      <span className="text-amber-500">paused</span>
+                    ) : live > 0 ? (
                       <span className="text-sky-400">
                         {live} running
                         {(stats?.queued[a.id] ?? 0) > 0 ? ` · ${stats!.queued[a.id]} queued` : ""}
@@ -746,7 +754,7 @@ export function App() {
                 </span>
               </div>
               {/* A webhook or poll agent reads its payload from disk; run bare, there is none. */}
-              {(a.trigger === "manual" || a.trigger === "schedule") && (
+              {a.enabled && (a.trigger === "manual" || a.trigger === "schedule") && (
                 <span
                   onClick={(e) => {
                     e.stopPropagation();
@@ -815,7 +823,10 @@ export function App() {
               <div>
                 <h2 className="text-lg font-semibold">{detailAgent.name}</h2>
                 {!detailAgent.enabled && (
-                  <p className="mt-1 text-xs text-amber-500">All triggers are paused</p>
+                  <p className="mt-1 text-xs text-amber-500">
+                    Paused &mdash; nothing starts it until you resume. Webhooks are refused, cron fires
+                    and polls are skipped.
+                  </p>
                 )}
                 {detailAgent.description && (
                   <p className="mt-1 text-xs text-neutral-500">{detailAgent.description}</p>
@@ -835,7 +846,23 @@ export function App() {
                 >
                   Copy
                 </button>
-                {(detailAgent.trigger === "manual" || detailAgent.trigger === "schedule") && (
+                {detailAgent.enabled ? (
+                  <button
+                    onClick={() => void setPaused(detailAgent, true)}
+                    title="Stop every trigger until resumed; running work finishes"
+                    className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                  >
+                    Pause
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => void setPaused(detailAgent, false)}
+                    className="rounded border border-amber-700 px-3 py-1.5 text-sm text-amber-300 hover:bg-amber-950"
+                  >
+                    Resume
+                  </button>
+                )}
+                {detailAgent.enabled && (detailAgent.trigger === "manual" || detailAgent.trigger === "schedule") && (
                   <button
                     onClick={() => void start(detailAgent.id)}
                     className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white"
