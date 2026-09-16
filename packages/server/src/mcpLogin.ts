@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 /**
  * OAuth for a remote MCP server, driven through the harness's own
@@ -14,6 +17,24 @@ import { randomUUID } from "node:crypto";
  */
 
 export type McpLoginState = "starting" | "awaiting_redirect" | "done" | "failed";
+
+/**
+ * The harness the SDK bundles: a per-platform binary in a sibling package.
+ * That is what runs the agents, so its login store is the one that matters —
+ * and in the container nothing else is on PATH. `claude` on PATH is the
+ * fallback for a laptop with its own install.
+ */
+export function claudeBinary(): string {
+  try {
+    // The package's exports map hides package.json, so resolve its entry point instead.
+    const sdkEntry = createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
+    const bin = join(dirname(sdkEntry), "..", `claude-agent-sdk-${process.platform}-${process.arch}`, "claude");
+    if (existsSync(bin)) return bin;
+  } catch {
+    // not installed where expected
+  }
+  return "claude";
+}
 
 export type McpLogin = {
   id: string;
@@ -75,7 +96,7 @@ export function startMcpLogin(name: string): McpLogin {
   const existing = active(name);
   if (existing) return existing.info;
 
-  const child = spawn(...ptyCommand(["claude", "mcp", "login", "--no-browser", name]), {
+  const child = spawn(...ptyCommand([claudeBinary(), "mcp", "login", "--no-browser", name]), {
     env: process.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -180,7 +201,7 @@ export async function completeMcpLogin(id: string, redirectUrl: string): Promise
 
 export function mcpLogout(name: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", ["mcp", "logout", name], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(claudeBinary(), ["mcp", "logout", name], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout?.on("data", (d: Buffer) => (out += d.toString()));
     child.stderr?.on("data", (d: Buffer) => (out += d.toString()));
