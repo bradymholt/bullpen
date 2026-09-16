@@ -56,6 +56,20 @@ RUN if [ -n "$GOG_URL" ]; then \
       && chmod +x /usr/local/bin/gog && gog --version ; \
     fi
 
+# A browser for agents, opt-in: the Playwright MCP server plus the headless
+# Chromium shell and its OS libraries, ~250MB. The browsers are installed with
+# the Playwright version the MCP package pins, so they match. Configure the
+# shared server as `playwright-mcp --headless --no-sandbox --isolated` —
+# Chromium's own sandbox can't start under Docker's default seccomp profile.
+ARG WITH_BROWSER=""
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN if [ -n "$WITH_BROWSER" ]; then \
+      npm install -g @playwright/mcp@0.0.81 \
+      && node "$(npm root -g)/@playwright/mcp/node_modules/playwright/cli.js" install --with-deps chromium-headless-shell \
+      && chmod -R a+rX /ms-playwright \
+      && rm -rf /var/lib/apt/lists/* /root/.npm ; \
+    fi
+
 # No global @anthropic-ai/claude-code: the Agent SDK spawns the harness binary
 # it bundles itself, so a global install is a second 200MB copy nothing runs.
 

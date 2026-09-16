@@ -131,6 +131,12 @@ docker compose run --rm -v bullpen-data:/data bullpen \
   sh -c 'git clone https://github.com/<you>/claude-skills /data/claude/skills'
 ```
 
+**A browser for agents.** Build with `WITH_BROWSER=1` (the CI build does) and the image carries the
+Playwright MCP server with a headless Chromium. Add it as a shared server under Settings — type
+*Local command*, `playwright-mcp --headless --no-sandbox --isolated` — and agents that opt in can
+browse. `npx @playwright/mcp` alone is not enough on a box: it downloads the server, not a browser,
+and the browser needs system libraries the slim image lacks.
+
 For gog, copy `~/Library/Application Support/gogcli` from a machine where both accounts
 are signed in to `/data/gog`, and set `GOG_KEYRING_PASSWORD` on the agent that uses it.
 gog itself is not in the image by default — pass a Linux release asset when building:
