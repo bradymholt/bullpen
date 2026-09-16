@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 export type ClaudeCredential = {
-  source: "oauth-token" | "api-key" | "config-dir" | "existing-login" | "none";
+  source: "global-env" | "oauth-token" | "api-key" | "config-dir" | "existing-login" | "none";
   detail: string;
 };
 
@@ -51,10 +51,15 @@ export function detectClaudeCredential(): ClaudeCredential {
   if (existsSync(join(configDir, ".credentials.json"))) {
     return { source: "config-dir", detail: join(configDir, ".credentials.json") };
   }
-  if (existsSync(configDir) || existsSync(join(homedir(), ".claude.json"))) {
+  // A bare config dir is not a login — the container image creates one so
+  // skills can be mounted into it. `~/.claude.json` only exists after the
+  // harness has actually been signed in on this machine — and that sign-in is
+  // invisible to a harness pointed at another CLAUDE_CONFIG_DIR (measured:
+  // "Not logged in" with the Keychain login present).
+  if (!process.env.CLAUDE_CONFIG_DIR && existsSync(join(homedir(), ".claude.json"))) {
     return {
       source: "existing-login",
-      detail: `${configDir} exists; credentials may live in the OS keychain`,
+      detail: `${join(homedir(), ".claude.json")} exists; credentials may live in the OS keychain`,
     };
   }
 

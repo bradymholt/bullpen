@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, type Agent } from "../db/schema.ts";
 import { interpolateSecrets } from "../mcp.ts";
-import { agentHasActiveRun, startRun } from "../runs/RunManager.ts";
-import { MAX_BODY_BYTES, recordDelivery, writePayload } from "./webhook.ts";
+import { agentHasActiveRun, requestRun } from "../runs/RunManager.ts";
+import { MAX_BODY_BYTES, recordDelivery } from "./webhook.ts";
 
 export type PollOutcome =
   | { kind: "primed"; status: number }
@@ -94,11 +94,11 @@ export async function pollOnce(agent: Agent, timeoutMs = 20_000): Promise<PollOu
     return { kind: "skipped", reason: "run already active" };
   }
 
-  const runId = startRun({
+  const { runId } = requestRun({
     agent,
     trigger: "poll",
     prompt: renderPollPrompt(agent.prompt, body),
-    onWorkspace: (path) => writePayload(path, body),
+    rawPayload: body,
   });
   // Written only once the run exists, so a crash mid-start re-fires rather than
   // silently swallowing the change.

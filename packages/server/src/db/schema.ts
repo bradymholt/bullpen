@@ -20,6 +20,8 @@ export const agents = sqliteTable("agents", {
   disallowedTools: text("disallowed_tools", { mode: "json" }).notNull().default(sql`'[]'`),
   mcpServers: text("mcp_servers", { mode: "json" }).notNull().default(sql`'{}'`),
   inheritMachineMcp: integer("inherit_machine_mcp", { mode: "boolean" }).notNull().default(false),
+  /** With inheritMachineMcp on: null = every shared server (and connectors); a list = only these, passed explicitly. */
+  sharedMcpPick: text("shared_mcp_pick", { mode: "json" }).$type<string[] | null>(),
   inheritUserSettings: integer("inherit_user_settings", { mode: "boolean" }).notNull().default(false),
   env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
   maxTurns: integer("max_turns"),
@@ -36,6 +38,8 @@ export const agents = sqliteTable("agents", {
   cron: text("cron"),
   cronTimezone: text("cron_timezone"),
   webhookSecret: text("webhook_secret"),
+  /** Which of the four trigger cards the agent is on. Explicit — the old inference from other fields misfired. */
+  trigger: text("trigger").notNull().default("manual"),
   webhookMode: text("webhook_mode").notNull().default("token"),
   webhookEvents: text("webhook_events", { mode: "json" }).notNull().default(sql`'[]'`),
   /** Superseded by `filters`; still read so old records keep working. */
@@ -64,7 +68,18 @@ export const spaceSecrets = sqliteTable("space_secrets", {
   /** Stable id for the shared webhook URL, so renaming the space can't break it. */
   hookId: text("hook_id"),
   secret: text("secret").notNull(),
+  /** Env every agent in the space inherits; the agent's own wins on a clash. */
+  env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
   createdAt: integer("created_at").notNull().default(now),
+});
+
+/**
+ * One row. Env every agent inherits before its space's and its own — the
+ * place for a headless box's shared secrets, so `.env` only has to bootstrap.
+ */
+export const globalConfig = sqliteTable("global_config", {
+  id: integer("id").primaryKey(),
+  env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
 });
 
 export const runs = sqliteTable(

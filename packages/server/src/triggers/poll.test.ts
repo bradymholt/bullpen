@@ -8,9 +8,9 @@ process.env.BULLPEN_DATA = mkdtempSync(join(tmpdir(), "bullpen-test-"));
 const started: { trigger: string; prompt: string }[] = [];
 vi.mock("../runs/RunManager.ts", () => ({
   agentHasActiveRun: () => false,
-  startRun: (opts: { trigger: string; prompt: string }) => {
+  requestRun: (opts: { trigger: string; prompt: string }) => {
     started.push({ trigger: opts.trigger, prompt: opts.prompt });
-    return "run-1";
+    return { runId: "run-1", queued: false };
   },
 }));
 

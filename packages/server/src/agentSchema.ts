@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+/**
+ * Where an agent lives when nobody chose a space. It is an ordinary space in
+ * every way but two: it cannot be renamed or removed, so there is always
+ * somewhere for an agent to land.
+ */
+export const DEFAULT_SPACE = "General";
+
 const mcpStdio = z.object({
   type: z.literal("stdio").optional(),
   command: z.string().min(1),
@@ -53,7 +60,7 @@ export const workspaceConfigSchema = z.discriminatedUnion("kind", [
 const fields = {
   name: z.string().min(1).max(120),
   description: z.string().max(500).nullish(),
-  space: z.string().trim().max(60).nullish(),
+  space: z.string().trim().min(1).max(60),
   model: z.string().max(120).nullish(),
   prompt: z.string(),
   permissionMode: z.enum(["supervised", "acceptEdits", "plan", "auto", "full", "locked"]),
@@ -62,6 +69,7 @@ const fields = {
   disallowedTools: z.array(z.string()),
   mcpServers: mcpServersSchema,
   inheritMachineMcp: z.boolean(),
+  sharedMcpPick: z.array(z.string().min(1).max(64)).max(50).nullable(),
   inheritUserSettings: z.boolean(),
   env: z.record(z.string(), z.string()),
   maxTurns: z.number().int().positive().nullish(),
@@ -71,6 +79,7 @@ const fields = {
   cron: z.string().max(120).nullish(),
   cronTimezone: z.string().max(120).nullish(),
   // "hmac" is the pre-preset spelling of "github"; kept so old records round-trip.
+  trigger: z.enum(["manual", "schedule", "poll", "webhook"]),
   webhookMode: z.enum(["token", "github", "slack", "asana", "custom", "hmac"]),
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
@@ -79,7 +88,7 @@ const fields = {
   webhookSignatureHeader: z.string().max(120).nullish(),
   webhookSignaturePrefix: z.string().max(40).nullish(),
   webhookEvents: z.array(z.string()),
-  concurrency: z.enum(["skip", "allow"]),
+  concurrency: z.enum(["skip", "allow", "queue"]),
   enabled: z.boolean(),
 };
 
@@ -90,15 +99,18 @@ const fields = {
  */
 export const AGENT_DEFAULTS = {
   prompt: "",
+  space: DEFAULT_SPACE,
   permissionMode: "auto",
   workspaceConfig: { kind: "ephemeral" },
   allowedTools: [],
   disallowedTools: [],
   mcpServers: {},
   inheritMachineMcp: false,
+  sharedMcpPick: null,
   inheritUserSettings: true,
   env: {},
   pollHeaders: {},
+  trigger: "manual",
   webhookMode: "custom",
   webhookEvents: [],
   filterValues: [],
@@ -157,3 +169,20 @@ export const agentCreateSchema = z.preprocess(
 export const agentPatchSchema = z.preprocess(withoutServerFields, base.partial());
 
 export type AgentInput = z.infer<typeof agentCreateSchema>;
+
+/**
+ * Exports written before `trigger` existed carry no such field; recover it the
+ * way the editor used to guess it, so an old webhook agent doesn't import as manual.
+ */
+export function inferTrigger(a: {
+  pollUrl?: unknown;
+  cron?: unknown;
+  webhookEvents?: unknown;
+  webhookMode?: unknown;
+}): "manual" | "schedule" | "poll" | "webhook" {
+  if (a.pollUrl) return "poll";
+  if (a.cron) return "schedule";
+  const events = Array.isArray(a.webhookEvents) ? a.webhookEvents : [];
+  if (events.length > 0 || (a.webhookMode && a.webhookMode !== "token" && a.webhookMode !== "custom")) return "webhook";
+  return "manual";
+}

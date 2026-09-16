@@ -184,7 +184,7 @@ const FILTER_SUGGESTIONS: Record<string, { paths: string[] }> = {
 
 const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: string; label: string }> = {
   slack: { path: "event.channel", values: "C0123ABC, C0456DEF", what: "a Slack channel id — Slack sends ids, never names", label: "{{payload.event.channel}}" },
-  github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR", label: "{{payload.repository.full_name}} #{{payload.number}}" },
+  github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR", label: "{{payload.repository.full_name}} #{{payload.pull_request.number}}" },
   asana: { path: "events.0.action", values: "changed, added", what: "what Asana did to the resource", label: "{{payload.events.0.resource.gid}}" },
   custom: { path: "type", values: "deploy.failed", what: "whatever field your sender uses to say what happened", label: "{{payload.type}}" },
 };
@@ -357,14 +357,7 @@ function exampleRequest(url: string, draft: AgentInput): string {
 }
 
 function initialKind(agent: Agent | null, draft: AgentInput): TriggerKind {
-  if (draft.pollUrl) return "poll";
-  if (draft.cron) return "schedule";
-  // A copy has no `agent` yet, so the webhook signal has to come off the draft
-  // the same way cron and poll already do.
-  const events = draft.webhookEvents ?? agent?.webhookEvents ?? [];
-  const mode = draft.webhookMode ?? agent?.webhookMode ?? "token";
-  if (events.length > 0 || mode !== "token") return "webhook";
-  return "manual";
+  return draft.trigger ?? agent?.trigger ?? "manual";
 }
 
 export function TriggerSettings({
@@ -420,6 +413,7 @@ export function TriggerSettings({
 
   const pick = (k: TriggerKind) => {
     setKind(k);
+    set("trigger", k);
     // Both schedule and poll run off the cron expression, so it only survives
     // a move between those two.
     if (k !== "schedule" && k !== "poll" && draft.cron) {
@@ -452,6 +446,9 @@ export function TriggerSettings({
   const setCondition = (i: number, cond: FilterCondition) =>
     setConditions(conditions.map((c, j) => (j === i ? cond : c)));
   const suggest = FILTER_SUGGESTIONS[senderOption(draft.webhookMode)];
+  // Pills for one condition at a time — the one whose path is being edited —
+  // rather than a full block under every row.
+  const [activeCond, setActiveCond] = useState<number | null>(null);
 
   return (
     <div className="space-y-3 border-y border-neutral-800 py-4">
@@ -949,6 +946,7 @@ export function TriggerSettings({
                 className={field}
                 placeholder={example.path}
                 value={cond.path}
+                onFocus={() => setActiveCond(i)}
                 onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
               />
               <select
@@ -974,7 +972,7 @@ export function TriggerSettings({
               >
                 &times;
               </button>
-              {suggest && (
+              {suggest && activeCond === i && (
                 <div className="col-span-4">
                   <Pills
                     mono
@@ -988,7 +986,10 @@ export function TriggerSettings({
           ))}
 
           <button
-            onClick={() => setConditions([...conditions, { path: "", op: "in", values: [] }])}
+            onClick={() => {
+              setConditions([...conditions, { path: "", op: "in", values: [] }]);
+              setActiveCond(conditions.length);
+            }}
             className="self-start text-xs text-neutral-400 hover:text-neutral-100"
           >
             + Add another condition

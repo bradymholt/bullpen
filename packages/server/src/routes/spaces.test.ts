@@ -20,6 +20,8 @@ function patch(name: string, body: unknown) {
   });
 }
 
+const remove = (name: string) => api.request(`/spaces/${encodeURIComponent(name)}`, { method: "DELETE" });
+
 const spaceOf = (id: string) =>
   db.select().from(agents).all().find((a) => a.id === id)?.space ?? null;
 
@@ -29,25 +31,30 @@ beforeEach(() => {
     { id: "a1", name: "dependabot", space: "work" },
     { id: "a2", name: "nightly", space: "work" },
     { id: "a3", name: "personal-bot", space: "home" },
-    { id: "a4", name: "loose", space: null },
+    { id: "a4", name: "loose", space: "General" },
   ]).run();
 });
 
 describe("PATCH /spaces/:name", () => {
-  it("carries the space secret to the new name, so the fan-out URL keeps working", async () => {
+  it("carries the whole space row — secret, hook id and env — to the new name", async () => {
     db.delete(spaceSecrets).run();
-    db.insert(spaceSecrets).values({ space: "work", secret: "s".repeat(32) }).run();
+    db.insert(spaceSecrets).values({ space: "work", secret: "s".repeat(32), hookId: "hook-1", env: { A: "1" } }).run();
     await patch("work", { name: "linear" });
     const rows = db.select().from(spaceSecrets).all();
     expect(rows.map((r) => r.space)).toEqual(["linear"]);
-    expect(rows[0]!.secret).toBe("s".repeat(32));
+    expect(rows[0]).toMatchObject({ secret: "s".repeat(32), hookId: "hook-1", env: { A: "1" } });
   });
 
-  it("drops the secret when a space is emptied, since no space is left", async () => {
-    db.delete(spaceSecrets).run();
-    db.insert(spaceSecrets).values({ space: "work", secret: "s".repeat(32) }).run();
-    await patch("work", { name: null });
-    expect(db.select().from(spaceSecrets).all()).toEqual([]);
+  it("will not rename the default space, or rename another onto it", async () => {
+    expect((await patch("General", { name: "Misc" })).status).toBe(400);
+    expect(spaceOf("a4")).toBe("General");
+    expect((await patch("work", { name: "general" })).status).toBe(409);
+    expect(spaceOf("a1")).toBe("work");
+  });
+
+  it("no longer takes null: there is nowhere for an agent to be but a space", async () => {
+    expect((await patch("work", { name: null })).status).toBe(400);
+    expect(spaceOf("a1")).toBe("work");
   });
 
   it("renames every member and leaves other spaces alone", async () => {
@@ -57,14 +64,7 @@ describe("PATCH /spaces/:name", () => {
     expect(spaceOf("a1")).toBe("linear");
     expect(spaceOf("a2")).toBe("linear");
     expect(spaceOf("a3")).toBe("home");
-    expect(spaceOf("a4")).toBeNull();
-  });
-
-  it("unassigns every member on a null name", async () => {
-    const res = await patch("work", { name: null });
-    expect(res.status).toBe(200);
-    expect(spaceOf("a1")).toBeNull();
-    expect(spaceOf("a2")).toBeNull();
+    expect(spaceOf("a4")).toBe("General");
   });
 
   it("404s on a space nobody is in", async () => {
@@ -87,5 +87,32 @@ describe("PATCH /spaces/:name", () => {
     expect(spaceOf("a1")).toBe("linear");
     expect((await patch("linear", { name: "   " })).status).toBe(400);
     expect((await patch("linear", { name: "x".repeat(61) })).status).toBe(400);
+  });
+});
+
+describe("DELETE /spaces/:name", () => {
+  it("moves every member to the default space and drops the space's secret and env", async () => {
+    db.delete(spaceSecrets).run();
+    db.insert(spaceSecrets).values({ space: "work", secret: "s".repeat(32), env: { A: "1" } }).run();
+    const res = await remove("work");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ moved: 2, name: "General" });
+    expect(spaceOf("a1")).toBe("General");
+    expect(spaceOf("a2")).toBe("General");
+    expect(spaceOf("a3")).toBe("home");
+    expect(db.select().from(spaceSecrets).all()).toEqual([]);
+  });
+
+  it("refuses to remove the default space", async () => {
+    expect((await remove("General")).status).toBe(400);
+    expect(spaceOf("a4")).toBe("General");
+  });
+
+  it("removes a space that only ever had a secret, and 404s one that never existed", async () => {
+    db.delete(spaceSecrets).run();
+    db.insert(spaceSecrets).values({ space: "ghost-town", secret: "s".repeat(32) }).run();
+    expect((await remove("ghost-town")).status).toBe(200);
+    expect(db.select().from(spaceSecrets).all()).toEqual([]);
+    expect((await remove("never")).status).toBe(404);
   });
 });

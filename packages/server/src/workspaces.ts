@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { config } from "./config.ts";
+import { githubToken } from "./env.ts";
 
 export type WorkspaceSpec =
   | { kind: "ephemeral" }
@@ -24,17 +25,23 @@ function slug(s: string): string {
  */
 function gitEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-  if (config.githubToken) {
+  if (githubToken()) {
     env.GIT_ASKPASS = "";
     env.GIT_CONFIG_COUNT = "1";
     env.GIT_CONFIG_KEY_0 = "credential.https://github.com.helper";
-    env.GIT_CONFIG_VALUE_0 = `!f() { echo username=x-access-token; echo password=${config.githubToken}; }; f`;
+    env.GIT_CONFIG_VALUE_0 = `!f() { echo username=x-access-token; echo password=${githubToken()}; }; f`;
   }
   return env;
 }
 
-export function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, env: gitEnv(), encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+export function git(cwd: string, args: string[], timeoutMs?: number): string {
+  return execFileSync("git", args, {
+    cwd,
+    env: gitEnv(),
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+    ...(timeoutMs ? { timeout: timeoutMs } : {}),
+  });
 }
 
 /**

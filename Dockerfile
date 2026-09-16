@@ -24,13 +24,37 @@ RUN rm -rf node_modules/@anthropic-ai/claude-agent-sdk-*-musl
 
 # ---- runtime ------------------------------------------------------------
 FROM node:22-slim
-ENV NODE_ENV=production BULLPEN_DATA=/data
+# CLAUDE_CONFIG_DIR: the harness reads skills, settings.json and a global
+# CLAUDE.md from here instead of ~/.claude, so agent config is a directory in
+# the data volume rather than state on the box. GOG_HOME does the same for gog.
+ENV NODE_ENV=production BULLPEN_DATA=/data \
+    CLAUDE_CONFIG_DIR=/data/claude GOG_HOME=/data/gog
 
 # git for workspace clones; ripgrep because Claude Code's search tools use it;
-# ca-certificates for HTTPS to the API and remote MCP servers.
+# ca-certificates for HTTPS to the API and remote MCP servers; gh because the
+# agents drive GitHub through it and it is not something the SDK brings along.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep ca-certificates \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
+ && apt-get purge -y gnupg && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
+
+# gog (Gmail CLI) has no apt package. Pass a release asset URL at build time —
+# a bare linux binary or a .tar.gz containing one — or leave it unset and the
+# image simply has no gog, which only the email-archiving agent notices.
+ARG GOG_URL=""
+RUN if [ -n "$GOG_URL" ]; then \
+      case "$GOG_URL" in \
+        *.tar.gz|*.tgz) curl -fsSL "$GOG_URL" | tar -xz -C /usr/local/bin --wildcards --no-anchored 'gog' ;; \
+        *) curl -fsSL "$GOG_URL" -o /usr/local/bin/gog ;; \
+      esac \
+      && chmod +x /usr/local/bin/gog && gog --version ; \
+    fi
 
 # No global @anthropic-ai/claude-code: the Agent SDK spawns the harness binary
 # it bundles itself, so a global install is a second 200MB copy nothing runs.
@@ -41,7 +65,7 @@ COPY --from=build /app/packages/web/dist packages/web/dist
 COPY package.json ./
 COPY packages/server packages/server
 
-RUN mkdir -p /data && chown -R node:node /data /app
+RUN mkdir -p /data/claude /data/gog && chown -R node:node /data /app
 USER node
 VOLUME /data
 EXPOSE 4322

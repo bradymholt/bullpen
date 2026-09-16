@@ -20,6 +20,7 @@ const {
 const SECRET = "s3cret-token-value";
 const agent = {
   enabled: true,
+  trigger: "webhook",
   webhookSecret: SECRET,
   webhookMode: "token",
   webhookEvents: [],
@@ -28,6 +29,14 @@ const agent = {
 
 const decide = (over: Record<string, unknown> = {}, rawBody = "{}", headers: Record<string, string | undefined> = {}) =>
   decideDelivery({ agent: { ...agent, ...over } as never, rawBody, headers });
+
+describe("trigger gate", () => {
+  it("refuses a delivery to an agent that is not webhook-triggered", () => {
+    const d = decide({ trigger: "manual" }, "{}", { "x-bullpen-token": SECRET });
+    expect(d).toMatchObject({ ok: false, status: 409 });
+    expect((d as { reason: string }).reason).toContain("not webhook-triggered");
+  });
+});
 
 describe("token verification", () => {
   it("accepts the exact secret and nothing else", () => {

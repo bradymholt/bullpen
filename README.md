@@ -28,6 +28,19 @@ npm run build && npm start
 
 Then open **http://localhost:4322**.
 
+To see what the container's Settings page looks like — skills pulled from a repo, MCP servers and
+`CLAUDE.md` editable — without touching your own `~/.claude`:
+
+```bash
+npm run dev:managed
+```
+
+That runs against a throwaway `~/.bullpen-managed/` (its own database and `CLAUDE_CONFIG_DIR`),
+so it starts at onboarding and needs a `claude setup-token` — your Mac login is invisible to a
+harness pointed at another config dir. Stop it and run `npm run dev` to be back on your real
+data. The sandbox keeps its state between runs; `npm run dev:managed:fresh` wipes it and starts
+over at onboarding.
+
 Other useful commands:
 
 ```bash
@@ -62,6 +75,62 @@ docker compose pull && docker compose up -d
 The published port is bound to `127.0.0.1` on purpose — the dashboard has no auth. Reach it
 over an SSH tunnel (`ssh -L 4322:localhost:4322 …`) or Tailscale, and if webhooks need to
 arrive from the internet, put a proxy in front that forwards `/api/hooks/*` and nothing else.
+
+### Running headless
+
+Everything the agents need lives in the `/data` volume, not on the box:
+
+```
+/data/bullpen.db          agents, runs, deliveries, webhook and space secrets, agent env
+/data/claude/             CLAUDE_CONFIG_DIR — what ~/.claude is on your Mac
+/data/claude/skills/      the skills agents invoke (pr-review, gmail-archive, …)
+/data/claude/settings.json
+/data/gog/                GOG_HOME — gog's OAuth tokens and keyring file
+```
+
+The image sets `CLAUDE_CONFIG_DIR=/data/claude` and `GOG_HOME=/data/gog`, and both the
+harness and bullpen honour them. So `~/.claude` stops being machine state and becomes a
+directory you can version. The simplest way to populate it is a git checkout of your
+skills, pulled on deploy:
+
+```bash
+docker compose run --rm -v bullpen-data:/data bullpen \
+  sh -c 'git clone https://github.com/<you>/claude-skills /data/claude/skills'
+```
+
+For gog, copy `~/Library/Application Support/gogcli` from a machine where both accounts
+are signed in to `/data/gog`, and set `GOG_KEYRING_PASSWORD` on the agent that uses it.
+gog itself is not in the image by default — pass a Linux release asset when building:
+
+```bash
+GOG_URL=https://github.com/.../gog_linux_amd64.tar.gz docker compose build
+```
+
+`.env` on the box is optional. Bring the container up with nothing but `TZ`, open the
+dashboard over the tailnet, and a setup screen asks for the Claude token (from
+`claude setup-token` on any logged-in machine) and, optionally, a GitHub token it verifies
+before saving. Both land in global env. The screen only appears while no credential is
+configured; to walk through it again later — a new token, a different skills repo — open
+**`/?setup=1`**. Whatever you enter replaces the saved value; a skipped step leaves it as it is.
+If you'd rather, `.env` still works and should be mode
+600. Everything agents and the server need
+for actual work goes in the dashboard instead: **Settings → Global environment** for things
+every agent shares (`GITHUB_TOKEN` included — the server's own GitHub calls fall back to it),
+a space's **Environment** for things its agents share, and the agent editor for its own. Later
+scopes win. Values are stored once and never shown again. When the OAuth token
+is revoked or expires, every agent fails at once; the home page's "last run failed" panel is
+how you find out.
+
+**Exposure.** The dashboard has no auth, so compose binds it to loopback. Put the dashboard on
+your tailnet with `tailscale serve`, and expose only the webhook path publicly:
+
+```bash
+tailscale serve  --bg --https=443 http://127.0.0.1:4322          # dashboard, tailnet only
+tailscale funnel --bg --set-path /api/hooks http://127.0.0.1:4322/api/hooks   # public
+```
+
+**Never put a `CLAUDE.md` in `/data`.** Agent workspaces live under it, and Claude Code
+collects `CLAUDE.md` from every parent of its working directory.
 
 ## Claude credentials
 
@@ -144,10 +213,14 @@ exactly the way GitHub would, using the settings you just saved.
 
 ## Notes
 
-- **MCP config is per agent and strict by default.** Turn on "inherit this machine's MCP
-  config" to also pick up `~/.claude.json`, a repo's `.mcp.json`, and claude.ai connectors.
-  Reference secrets as `${NAME}` and define them in the agent's env; the API never returns
-  their values.
+- **MCP servers are shared, and off by default.** They live in the Claude config (`~/.claude.json`,
+  or `CLAUDE_CONFIG_DIR/.claude.json` in the container) and are listed under Settings. An agent
+  gets them only with "Use the shared MCP servers" checked — and then gets all of them, plus the
+  repo's `.mcp.json` and claude.ai connectors. Reference secrets as `${NAME}` and define them
+  in global, space, or agent env; the API never returns their values. To move servers from your
+  Mac to a headless box, **Export** with a passphrase (the servers ride along encrypted with the
+  other secrets) and **Import** on the box; on a Mac, import reports them but leaves your own
+  `~/.claude.json` alone. claude.ai connectors need no setup — they come with the login.
 - **Allow rules for MCP need a real server name.** `mcp__linear__*` works; `mcp__*` is ignored
   with a warning and grants nothing.
 - **Cron doesn't catch up.** A fire missed while the container was down is skipped, not

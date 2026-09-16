@@ -1,7 +1,11 @@
 services:
   bullpen:
     # Built here for local work; the server pulls the same tag from GHCR.
-    build: .
+    build:
+      context: .
+      args:
+        # Optional: a gogcli release asset for Linux. See README, "Running headless".
+        GOG_URL: ${GOG_URL:-}
     image: ghcr.io/bradymholt/bullpen:latest
     pull_policy: missing
     restart: unless-stopped
@@ -10,6 +14,9 @@ services:
       # should reach it. Put a proxy in front for the webhook path alone.
       - "127.0.0.1:4322:4322"
     volumes:
+      # Also holds /data/claude (skills, settings.json — CLAUDE_CONFIG_DIR) and
+      # /data/gog (gog's OAuth tokens and keyring). Back this up and you have
+      # every secret the agents use; .env holds only what starts the process.
       - bullpen-data:/data
     environment:
       TZ: ${TZ:-UTC}

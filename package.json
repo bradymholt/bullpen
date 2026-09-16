@@ -12,6 +12,8 @@
     "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "npm run dev -w @bullpen/server",
     "dev:web": "npm run dev -w @bullpen/web",
+    "dev:managed": "mkdir -p \"$HOME/.bullpen-managed/claude\" && BULLPEN_DATA=\"$HOME/.bullpen-managed\" CLAUDE_CONFIG_DIR=\"$HOME/.bullpen-managed/claude\" npm run dev",
+    "dev:managed:fresh": "rm -rf \"$HOME/.bullpen-managed\" && npm run dev:managed",
     "build": "npm run build -w @bullpen/web && npm run build -w @bullpen/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

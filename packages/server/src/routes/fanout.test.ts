@@ -38,17 +38,17 @@ beforeEach(() => {
   db.insert(agents).values([
     {
       id: "a1", name: "Reviewer", space: "work", enabled: true,
-      webhookMode: "github", webhookSecret: SECRET,
+      trigger: "webhook", webhookMode: "github", webhookSecret: SECRET,
       filters: [{ path: "action", op: "in", values: ["review_requested"] }],
     },
     {
       id: "a2", name: "Dependabot", space: "work", enabled: true,
-      webhookMode: "github", webhookSecret: SECRET,
+      trigger: "webhook", webhookMode: "github", webhookSecret: SECRET,
       filters: [{ path: "action", op: "in", values: ["opened"] }],
     },
     {
       id: "a3", name: "Elsewhere", space: "personal", enabled: true,
-      webhookMode: "github", webhookSecret: SECRET,
+      trigger: "webhook", webhookMode: "github", webhookSecret: SECRET,
       filters: [{ path: "action", op: "in", values: ["closed"] }],
     },
   ]).run();

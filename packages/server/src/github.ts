@@ -1,4 +1,4 @@
-import { config } from "./config.ts";
+import { githubToken } from "./env.ts";
 
 export type Repo = { fullName: string; owner: string; cloneUrl: string; private: boolean; pushedAt: string };
 export type RepoList = {
@@ -15,7 +15,7 @@ const TTL_MS = 5 * 60_000;
 let cache: { at: number; value: RepoList } | null = null;
 
 const headers = () => ({
-  authorization: `Bearer ${config.githubToken}`,
+  authorization: `Bearer ${githubToken()}`,
   accept: "application/vnd.github+json",
 });
 
@@ -97,7 +97,7 @@ async function fromActivity(since: string): Promise<{ viewer: string; repos: Rep
 }
 
 export async function listRepos(force = false): Promise<RepoList> {
-  if (!config.githubToken) {
+  if (!githubToken()) {
     return { configured: false, viewer: null, source: "none", sinceDays: WINDOW_DAYS, repos: [] };
   }
   if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.value;

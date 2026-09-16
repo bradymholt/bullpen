@@ -45,7 +45,23 @@ describe("agent schema", () => {
       concurrency: "allow",
       workspaceConfig: { kind: "ephemeral" },
       webhookMode: "custom",
+      trigger: "manual",
+      space: "General",
+      sharedMcpPick: null,
     });
+  });
+
+  it("takes a pick of shared MCP servers by name, or null for all", () => {
+    expect(agentPatchSchema.parse({ sharedMcpPick: ["dd"] })).toEqual({ sharedMcpPick: ["dd"] });
+    expect(agentPatchSchema.parse({ sharedMcpPick: null })).toEqual({ sharedMcpPick: null });
+    expect(agentPatchSchema.safeParse({ sharedMcpPick: [""] }).success).toBe(false);
+  });
+
+  it("puts a blank or missing space in the default one, and never stores null", () => {
+    expect(agentCreateSchema.parse({ name: "x", space: "  work " })).toMatchObject({ space: "work" });
+    expect(agentCreateSchema.safeParse({ name: "x", space: "" }).success).toBe(false);
+    expect(agentCreateSchema.safeParse({ name: "x", space: null }).success).toBe(false);
+    expect(agentPatchSchema.safeParse({ space: null }).success).toBe(false);
   });
 
   it("takes an id on create so a webhook URL can be shown before saving, but never on patch", () => {

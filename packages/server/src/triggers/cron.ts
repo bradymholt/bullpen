@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, type Agent } from "../db/schema.ts";
-import { agentHasActiveRun, startRun } from "../runs/RunManager.ts";
+import { agentHasActiveRun, requestRun } from "../runs/RunManager.ts";
 import { pollOnce } from "./poll.ts";
 
 const jobs = new Map<string, Cron>();
@@ -38,7 +38,12 @@ function schedule(agent: Agent): void {
           console.log(`[cron] ${fresh.name}: skipped, a run is already active`);
           return;
         }
-        startRun({ agent: fresh, trigger: "cron" });
+        try {
+          const { queued } = requestRun({ agent: fresh, trigger: "cron" });
+          if (queued) console.log(`[cron] ${fresh.name}: queued behind the active run`);
+        } catch (err) {
+          console.error(`[cron] ${fresh.name}: ${String(err)}`);
+        }
       },
     );
     jobs.set(agent.id, job);
