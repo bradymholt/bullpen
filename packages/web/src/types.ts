@@ -1,3 +1,6 @@
+/** The space an agent lands in when none is chosen; cannot be renamed or removed. */
+export const DEFAULT_SPACE = "General";
+
 /** "persistent" and "git" are the old spellings of "scratch" and "clone". */
 export type WorkspaceConfig =
   | { kind: "scratch" }
@@ -14,7 +17,7 @@ export type Agent = {
   id: string;
   name: string;
   description: string | null;
-  space: string | null;
+  space: string;
   model: string | null;
   prompt: string;
   permissionMode: string;
@@ -24,6 +27,8 @@ export type Agent = {
   disallowedTools: string[];
   mcpServers: Record<string, unknown>;
   inheritMachineMcp: boolean;
+  /** null = every shared server; a list = only these. Only read when inheritMachineMcp is on. */
+  sharedMcpPick: string[] | null;
   inheritUserSettings: boolean;
   env: Record<string, string>;
   pollUrl: string | null;
@@ -35,6 +40,7 @@ export type Agent = {
   cron: string | null;
   cronTimezone: string | null;
   webhookSecret: string | null;
+  trigger: "manual" | "schedule" | "poll" | "webhook";
   webhookMode: string;
   webhookEvents: string[];
   filterPath: string | null;
@@ -110,11 +116,23 @@ export type Delivery = {
   runId: string | null;
 };
 
+export type McpServerSummary = {
+  name: string;
+  transport: string;
+  /** URL or command line — never env or header values. */
+  detail: string;
+  secretKeys: string[];
+};
+
 export type MachineMcp = {
   configPath: string;
   found: boolean;
-  global: { name: string; transport: string }[];
+  /** Bullpen may write the file directly (CLAUDE_CONFIG_DIR is set). */
+  managed: boolean;
+  global: McpServerSummary[];
   connectors: string[];
+  /** Last connection state seen in a run's init message, by server name. */
+  health: Record<string, { status: string; at: number; error?: string }>;
 };
 
 export type PollOutcome =
@@ -136,6 +154,9 @@ export type Health = {
 };
 
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
+export type UsageWindow = { key: string; label: string; utilization: number; resetsAt: string | null };
+export type Usage = { windows: UsageWindow[]; fetchedAt: number; source: "config-dir" | "keychain" | "env" };
+
 export type Stats = {
   last24h: number;
   prev24h: number;
@@ -146,4 +167,6 @@ export type Stats = {
   latest: Record<string, { id: string; status: string; startedAt: number }>;
   /** Count of running / awaiting-approval runs per agent. */
   active: Record<string, number>;
+  /** Runs waiting behind an active one, per agent. */
+  queued: Record<string, number>;
 };

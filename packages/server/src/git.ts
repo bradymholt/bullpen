@@ -1,4 +1,4 @@
-import { config } from "./config.ts";
+import { githubToken } from "./env.ts";
 import { git } from "./workspaces.ts";
 
 export type FileChange = { path: string; status: string };
@@ -39,7 +39,7 @@ export async function openPullRequest(opts: {
   body?: string;
   base?: string;
 }): Promise<{ url: string; number: number }> {
-  if (!config.githubToken) throw new Error("GITHUB_TOKEN is not set");
+  if (!githubToken()) throw new Error("GITHUB_TOKEN is not set");
 
   const remote = git(opts.cwd, ["remote", "get-url", "origin"]).trim();
   const repo = parseRepo(remote);
@@ -53,7 +53,7 @@ export async function openPullRequest(opts: {
   const res = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.repo}/pulls`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${config.githubToken}`,
+      authorization: `Bearer ${githubToken()}`,
       accept: "application/vnd.github+json",
       "content-type": "application/json",
     },

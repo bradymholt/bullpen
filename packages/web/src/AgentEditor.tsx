@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
+import { EnvEditor } from "./EnvEditor.tsx";
 import { MODES } from "./modes.ts";
 import { ListInput, randomSecret, TriggerSettings } from "./TriggerSettings.tsx";
-import type { Agent, AgentInput, MachineMcp, Repo, RepoList, WorkspaceConfig } from "./types.ts";
+import { DEFAULT_SPACE, type Agent, type AgentInput, type MachineMcp, type Repo, type RepoList, type Skill, type WorkspaceConfig } from "./types.ts";
 
 const MODELS = [
   ["opus", "Opus — alias, tracks the current Opus"],
@@ -18,31 +19,19 @@ const field =
   "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none placeholder:text-neutral-700 focus:border-neutral-600";
 const label = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
 
+/** Last connection state a run reported for a server. */
+function McpHealthDot({ status }: { status: string }) {
+  const tone =
+    status === "connected" ? "bg-emerald-500" : status === "needs-auth" ? "bg-amber-500" : status === "pending" ? "bg-neutral-500" : "bg-red-500";
+  return <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone}`} title={status} />;
+}
+
 function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
       <span className={label}>{title}</span>
       {children}
       {hint && <p className="mt-1 text-xs text-neutral-600">{hint}</p>}
-    </div>
-  );
-}
-
-function Chips({ title, names }: { title: string; names: string[] }) {
-  return (
-    <div className="mb-2 last:mb-0">
-      <span className="text-neutral-500">{title}</span>
-      {names.length === 0 ? (
-        <span className="ml-2 text-neutral-600">none</span>
-      ) : (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {names.map((n) => (
-            <span key={n} className="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-300">
-              {n}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -90,11 +79,18 @@ export function AgentEditor({
   const [draft, setDraft] = useState<AgentInput>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showMcp, setShowMcp] = useState(false);
   const [machineMcp, setMachineMcp] = useState<MachineMcp | null>(null);
   const [repoList, setRepoList] = useState<RepoList | null>(null);
   const [repoError, setRepoError] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
+  const [sharedSkills, setSharedSkills] = useState<Skill[]>([]);
+  const [claudeMdInfo, setClaudeMdInfo] = useState<{ exists: boolean; size: number } | null>(null);
+  const [preapproved, setPreapproved] = useState<{ count: number; bare: string[] } | null>(null);
+  useEffect(() => {
+    void api.skills().then(setSharedSkills).catch(() => setSharedSkills([]));
+    void api.skillsState().then((s) => setPreapproved(s.preapproved)).catch(() => setPreapproved(null));
+    void api.claudeMd().then((m) => setClaudeMdInfo({ exists: m.exists, size: m.size })).catch(() => setClaudeMdInfo({ exists: false, size: 0 }));
+  }, []);
 
   useEffect(() => {
     void api.machineMcp().then(setMachineMcp).catch(() => setMachineMcp(null));
@@ -113,22 +109,35 @@ export function AgentEditor({
           ? copyOf(seed)
           : {
               id: crypto.randomUUID(),
-              ...(defaultSpace ? { space: defaultSpace } : {}),
+              space: defaultSpace ?? DEFAULT_SPACE,
               webhookSecret: randomSecret(),
               name: "",
               prompt: "",
               permissionMode: "auto",
               workspaceConfig: { kind: "ephemeral" },
               concurrency: "allow",
+              trigger: "manual",
               env: {},
               allowedTools: [],
               inheritMachineMcp: true,
+              sharedMcpPick: null,
               inheritUserSettings: true,
             });
     loadedRef.current = JSON.stringify(seeded);
     setDraft(seeded);
-    setShowMcp(Object.keys((agent ?? seed)?.mcpServers ?? {}).length > 0);
   }, [agent?.id, seed?.id]);
+
+  // Which keys wider scopes provide, so the editor can say what this agent inherits.
+  const [inheritedEnv, setInheritedEnv] = useState<{ from: string; keys: string[] }[]>([]);
+  useEffect(() => {
+    const space = draft.space;
+    void Promise.all([
+      api.globalEnv().then((r) => Object.keys(r.env)).catch(() => []),
+      space ? api.spaceEnv(space).then((r) => Object.keys(r.env)).catch(() => []) : Promise.resolve([]),
+    ]).then(([g, s]) =>
+      setInheritedEnv([{ from: "global", keys: g }, ...(space ? [{ from: `the ${space} space`, keys: s }] : [])]),
+    );
+  }, [draft.space]);
 
   const dirty = loadedRef.current !== "" && JSON.stringify(draft) !== loadedRef.current;
   useEffect(() => onDirtyChange?.(dirty), [dirty]);
@@ -146,9 +155,9 @@ export function AgentEditor({
     setDraft((d) => ({ ...d, [k]: v }));
 
   const ws = (draft.workspaceConfig ?? { kind: "scratch" }) as WorkspaceConfig;
-  // A space the roster doesn't know yet — a seeded draft, or one being typed.
-  const spaceOptions =
-    draft.space && !spaces.includes(draft.space) ? [...spaces, draft.space].sort() : spaces;
+  // The default space is always on offer; so is one the roster doesn't know
+  // yet — a seeded draft, or one being typed.
+  const spaceOptions = [...new Set([DEFAULT_SPACE, ...spaces, ...(draft.space ? [draft.space] : [])])].sort();
   // Old records still say persistent/git; show them as the option they mean.
   const wsKind = ws.kind === "persistent" ? "scratch" : ws.kind === "git" ? "clone" : ws.kind;
   const repo = ws as { repoUrl?: string; baseBranch?: string };
@@ -162,7 +171,6 @@ export function AgentEditor({
   ).sort(([a], [b]) =>
     a === repoList?.viewer ? -1 : b === repoList?.viewer ? 1 : a.localeCompare(b),
   );
-  const mcpCount = Object.keys(draft.mcpServers ?? {}).length;
   const knownModel = !draft.model || MODELS.some(([v]) => v === draft.model);
   const mode = draft.permissionMode ?? "auto";
   // `auto` and `full` never prompt, so a permission rule changes nothing there.
@@ -202,7 +210,12 @@ export function AgentEditor({
         <div className="min-w-0 space-y-4">
       <div className="grid grid-cols-[1fr_12rem] gap-3">
         <Row title="Name">
-          <input className={field} value={draft.name ?? ""} onChange={(e) => set("name", e.target.value)} />
+          <input
+            className={field}
+            autoFocus={!agent}
+            value={draft.name ?? ""}
+            onChange={(e) => set("name", e.target.value)}
+          />
         </Row>
         <Row title="Space" hint="Groups your agents.">
           {naming ? (
@@ -211,23 +224,22 @@ export function AgentEditor({
               autoFocus
               placeholder="work"
               value={draft.space ?? ""}
-              onChange={(e) => set("space", e.target.value || null)}
+              onChange={(e) => set("space", e.target.value)}
               onBlur={() => {
                 const trimmed = (draft.space ?? "").trim();
-                set("space", trimmed || null);
+                set("space", trimmed || DEFAULT_SPACE);
                 if (!trimmed) setNaming(false);
               }}
             />
           ) : (
             <select
               className={field}
-              value={draft.space ?? ""}
+              value={draft.space ?? DEFAULT_SPACE}
               onChange={(e) => {
                 setNaming(e.target.value === "__new__");
-                set("space", e.target.value === "__new__" ? null : e.target.value || null);
+                set("space", e.target.value === "__new__" ? "" : e.target.value);
               }}
             >
-              <option value="">Unassigned</option>
               {spaceOptions.map((sp) => (
                 <option key={sp} value={sp}>
                   {sp}
@@ -373,19 +385,26 @@ export function AgentEditor({
         >
           <option value="skip">Skip — refuse a trigger while a run is active</option>
           <option value="allow">Allow — start it anyway, in parallel</option>
+          <option value="queue">Queue — hold it and run one at a time, in order</option>
         </select>
         {(draft.concurrency ?? "allow") === "allow" &&
         (wsKind === "scratch" || wsKind === "existing") ? (
           <p className="mt-1 rounded border border-amber-900 bg-amber-950/40 px-2 py-1.5 text-xs leading-relaxed text-amber-300">
             Parallel runs share one directory and will overwrite each other&rsquo;s files, including
-            the webhook payload. Set <strong>Workspace</strong> above to{" "}
-            <strong>Fresh directory</strong>.
+            the webhook payload. Two ways out: set <strong>Workspace</strong> above to{" "}
+            <strong>Fresh directory</strong> if runs don&rsquo;t need what earlier runs left behind, or
+            choose <strong>Queue</strong> here if they do &mdash; one run at a time keeps the shared
+            directory safe.
           </p>
         ) : (
           <p className="mt-1 text-xs leading-relaxed text-neutral-600">
             {(draft.concurrency ?? "allow") === "skip"
-              ? "A trigger that arrives mid-run is dropped, not queued — two webhooks in quick succession means the second is never handled. A run waiting on an approval counts as active."
-              : "Runs happen in parallel, each in its own directory."}
+              ? "A trigger that arrives mid-run is dropped for good — two webhooks in quick succession means the second is never handled. A run waiting on an approval counts as active. If every trigger must be handled, choose Queue instead."
+              : (draft.concurrency ?? "allow") === "queue"
+                ? wsKind === "scratch" || wsKind === "existing"
+                  ? "A trigger that arrives mid-run waits and starts when the current run ends, oldest first — which is what keeps this shared directory safe. Up to 20 can wait; beyond that a trigger is dropped and shows as a refused delivery."
+                  : "A trigger that arrives mid-run waits and starts when the current run ends, oldest first. With a fresh directory per run nothing is shared, so Allow would run these in parallel with no downside — Queue only makes sense here if the runs must not overlap for some other reason. Up to 20 can wait."
+                : "Runs happen in parallel, each in its own directory."}
           </p>
         )}
       </Row>
@@ -478,55 +497,87 @@ export function AgentEditor({
             checked={draft.inheritMachineMcp ?? true}
             onChange={(e) => set("inheritMachineMcp", e.target.checked)}
           />
-          Inherit this machine&rsquo;s
+          Use the shared MCP servers
         </label>
         <p className="-mt-1 text-xs text-neutral-600">
-          Servers from {machineMcp?.configPath ?? "~/.claude.json"}, the repo&rsquo;s .mcp.json, and
-          claude.ai connectors.
+          The list is managed under Settings &rarr; MCP servers; this decides whether this agent gets
+          any of it. Off means none &mdash; the safe choice for an agent that doesn&rsquo;t need a browser
+          or Datadog, since a server&rsquo;s credentials go to every agent that can reach it.
         </p>
 
         {(draft.inheritMachineMcp ?? true) && machineMcp && (
-          <div className="rounded border border-neutral-800 bg-neutral-950 p-2.5 text-xs">
-            {!machineMcp.found ? (
-              <p className="text-neutral-600">No config found at {machineMcp.configPath}.</p>
-            ) : (
-              <>
-                <Chips title="From this machine" names={machineMcp.global.map((s) => s.name)} />
-                <Chips title="claude.ai connectors" names={machineMcp.connectors} />
-                <p className="mt-2 text-neutral-600">
-                  What actually connects is reported per run as an mcp.status event.
-                </p>
-              </>
+          <div className="space-y-1.5 pl-5">
+            <label className="flex items-start gap-2 text-sm text-neutral-300">
+              <input
+                type="radio"
+                name="shared-mcp-pick"
+                className="mt-1"
+                checked={draft.sharedMcpPick == null}
+                onChange={() => set("sharedMcpPick", null)}
+              />
+              <span>
+                All of them
+                <span className="block text-xs text-neutral-600">
+                  {machineMcp.global.length} server{machineMcp.global.length === 1 ? "" : "s"}
+                  {machineMcp.connectors.length > 0 ? `, ${machineMcp.connectors.length} claude.ai connectors` : ", any claude.ai connectors"}
+                  , and the repo&rsquo;s .mcp.json. The only way to get connectors.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-neutral-300">
+              <input
+                type="radio"
+                name="shared-mcp-pick"
+                className="mt-1"
+                checked={draft.sharedMcpPick != null}
+                onChange={() => set("sharedMcpPick", draft.sharedMcpPick ?? [])}
+                disabled={machineMcp.global.length === 0}
+              />
+              <span>
+                Only these
+                <span className="block text-xs text-neutral-600">
+                  Passed to the run by name, with everything else &mdash; connectors included &mdash; kept out.
+                  {machineMcp.global.length === 0 ? " No shared servers are configured yet." : ""}
+                </span>
+              </span>
+            </label>
+            {draft.sharedMcpPick != null && (
+              <div className="flex flex-wrap gap-1.5 pl-6">
+                {machineMcp.global.map((srv) => {
+                  const on = draft.sharedMcpPick!.includes(srv.name);
+                  const h = machineMcp.health[srv.name];
+                  return (
+                    <label
+                      key={srv.name}
+                      className={`flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs ${
+                        on ? "border-neutral-500 text-neutral-100" : "border-neutral-800 text-neutral-400"
+                      }`}
+                      title={srv.detail}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) =>
+                          set(
+                            "sharedMcpPick",
+                            e.target.checked
+                              ? [...draft.sharedMcpPick!, srv.name]
+                              : draft.sharedMcpPick!.filter((n) => n !== srv.name),
+                          )
+                        }
+                      />
+                      <span className="font-mono">{srv.name}</span>
+                      {h && <McpHealthDot status={h.status} />}
+                    </label>
+                  );
+                })}
+                {draft.sharedMcpPick!.filter((n) => !machineMcp.global.some((g) => g.name === n)).map((n) => (
+                  <span key={n} className="rounded border border-amber-900 px-2 py-1 font-mono text-xs text-amber-500" title="Picked, but no shared server has this name any more">
+                    {n}
+                  </span>
+                ))}
+              </div>
             )}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setShowMcp((v) => !v)}
-          className="block pt-1 text-left text-xs text-neutral-500 hover:text-neutral-300"
-        >
-          {showMcp ? "▾" : "▸"} Add servers just for this agent
-          {mcpCount > 0 ? ` (${mcpCount})` : ""}
-        </button>
-
-        {showMcp && (
-          <div>
-            <textarea
-              className={`${field} h-24 resize-y font-mono text-xs`}
-              defaultValue={JSON.stringify(draft.mcpServers ?? {}, null, 2)}
-              onBlur={(e) => {
-                try {
-                  set("mcpServers", JSON.parse(e.target.value || "{}"));
-                  setError(null);
-                } catch {
-                  setError("MCP servers must be valid JSON");
-                }
-              }}
-            />
-            <p className="mt-1 text-xs text-neutral-600">
-              JSON, same shape the Agent SDK takes. These are added to whatever is inherited above.
-            </p>
           </div>
         )}
 
@@ -536,14 +587,50 @@ export function AgentEditor({
             checked={draft.inheritUserSettings ?? true}
             onChange={(e) => set("inheritUserSettings", e.target.checked)}
           />
-          Load this machine&rsquo;s skills and global CLAUDE.md
+          Use the shared skills and global CLAUDE.md
         </label>
         <p className="-mt-1 text-xs text-neutral-600">
-          Needed for ~/.claude/skills to be invokable. It also loads ~/.claude/settings.json, so any
-          allow rule there auto-approves that tool without prompting &mdash; a bare <code>Bash</code>{" "}
-          rule turns the approval UI off entirely.
+          Needed for the skills under Settings &rarr; Skills to be invokable. It also brings that
+          directory&rsquo;s settings.json along, including its list of pre-approved tools.
+          {preapproved && preapproved.count > 0 ? (
+            <>
+              {" "}Yours pre-approves <strong>{preapproved.count}</strong> tool rule
+              {preapproved.count === 1 ? "" : "s"}
+              {preapproved.bare.includes("Bash") ? (
+                <>
+                  {" "}&mdash; including <code>Bash</code> with no pattern, which is <strong>every shell
+                  command</strong>. An agent with this on will run those without asking, even if its
+                  permission mode is Manual.
+                </>
+              ) : (
+                <> that will run without asking, even if this agent&rsquo;s permission mode is Manual.</>
+              )}
+            </>
+          ) : (
+            <> Anything on that list runs without asking, even on a Manual agent.</>
+          )}
         </p>
+
+        {(draft.inheritUserSettings ?? true) && (
+          <p className="text-xs text-neutral-500">
+            Currently {sharedSkills.length} skill{sharedSkills.length === 1 ? "" : "s"}
+            {claudeMdInfo?.exists ? ` and a ${(claudeMdInfo.size / 1024).toFixed(1)} KB global CLAUDE.md` : ""}
+            {" "}&mdash; listed under Settings &rarr; Skills.
+          </p>
+        )}
       </div>
+
+      <Row
+        title="Environment"
+        hint="This agent's own variables. It also inherits global and space env; on a clash, these win."
+      >
+        <EnvEditor
+          key={`env-${agent?.id ?? "new"}-${Object.keys(draft.env ?? {}).length}`}
+          value={draft.env ?? {}}
+          onChange={(env) => set("env", env)}
+          inherited={inheritedEnv}
+        />
+      </Row>
           </div>
         </div>
       </div>

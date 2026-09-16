@@ -6,9 +6,14 @@ import { api } from "./api.ts";
 import { MODES, modeLabel } from "./modes.ts";
 import { ago, took } from "./time.ts";
 import { DeliveryList, GroupedDeliveryList } from "./DeliveryList.tsx";
+import { EnvEditor } from "./EnvEditor.tsx";
+import { McpServerForm } from "./McpServerForm.tsx";
+import { SetupView } from "./SetupView.tsx";
+import { UsageView } from "./UsageView.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
-import type { Agent, Delivery, Run, Skill, Stats } from "./types.ts";
+import type { Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
+import { DEFAULT_SPACE } from "./types.ts";
 
 const ACTIVE = new Set(["running", "awaiting_approval"]);
 
@@ -39,6 +44,41 @@ function HomeSection({
   );
 }
 
+function PencilIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" />
+      <path d="M10 4l2 2" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function BarsIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
+      <path d="M3 13.5V9M8 13.5V4M13 13.5V7" />
+    </svg>
+  );
+}
+
+/** A server's last-known state from runs' init messages; the title carries the time and any error. */
+function McpHealthBadge({ h, compact = false }: { h?: { status: string; at: number; error?: string }; compact?: boolean }) {
+  if (!h) return compact ? null : <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-800" title="No run has reached this server yet" />;
+  const tone =
+    h.status === "connected" ? "bg-emerald-500" : h.status === "needs-auth" ? "bg-amber-500" : h.status === "pending" ? "bg-neutral-500" : "bg-red-500";
+  const title = `${h.status} · ${ago(h.at)}${h.error ? ` · ${h.error}` : ""}`;
+  return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} title={title} />;
+}
+
 function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
@@ -61,11 +101,10 @@ function RailRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 /** An agent can carry several triggers at once, so this is a list, not a label. */
 function triggersOf(a: Agent): string[] {
-  const out: string[] = [];
-  if (a.cron) out.push(`cron ${a.cron}${a.cronTimezone ? ` · ${a.cronTimezone}` : ""}`);
-  if (a.pollUrl) out.push("poll");
-  if (a.webhookSecret) out.push(`webhook · ${a.webhookMode}`);
-  return out.length > 0 ? out : ["manual only"];
+  if (a.trigger === "schedule") return [`cron ${a.cron ?? "?"}${a.cronTimezone ? ` · ${a.cronTimezone}` : ""}`];
+  if (a.trigger === "poll") return ["poll"];
+  if (a.trigger === "webhook") return [`webhook · ${a.webhookMode}`];
+  return ["manual only"];
 }
 
 /** Stored records still carry the pre-rename spellings; only the display changes. */
@@ -111,7 +150,7 @@ function SpaceChip({
  * can select, not the absence of a selection — an agent with a null space is
  * otherwise reachable from nowhere once the roster remembers a space.
  */
-type SpaceFilter = { kind: "all" } | { kind: "unassigned" } | { kind: "space"; name: string };
+type SpaceFilter = { kind: "all" } | { kind: "space"; name: string };
 
 const SPACE_KEY = "bullpen.space";
 
@@ -120,7 +159,7 @@ function loadSpaceFilter(): SpaceFilter {
     const raw = localStorage.getItem(SPACE_KEY);
     if (!raw) return { kind: "all" };
     const parsed = JSON.parse(raw) as SpaceFilter;
-    if (parsed?.kind === "all" || parsed?.kind === "unassigned") return { kind: parsed.kind };
+    if (parsed?.kind === "all") return { kind: "all" };
     if (parsed?.kind === "space" && typeof parsed.name === "string") {
       return { kind: "space", name: parsed.name };
     }
@@ -132,7 +171,12 @@ function loadSpaceFilter(): SpaceFilter {
 
 
 
+/** Process-env names shown by default; the rest hide behind "show all". */
+const INTERESTING_ENV =
+  /TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|^GITHUB_|^ANTHROPIC_|^CLAUDE_|^BULLPEN_|^GOG_|^OPENAI_|^TZ$|^NODE_ENV$|^PORT$/i;
+
 const STATUS_COLOR: Record<string, string> = {
+  queued: "text-neutral-500",
   running: "text-sky-400",
   awaiting_approval: "text-amber-400",
   completed: "text-emerald-400",
@@ -149,6 +193,10 @@ type View =
   | { kind: "edit"; agent: Agent | null; seed?: Agent }
   /** Everything a space owns: its name, and the webhook the whole space answers. */
   | { kind: "space"; name: string }
+  /** Global env and the box's own state — what `.env` used to be for. */
+  | { kind: "settings" }
+  /** The subscription's rate-limit windows. */
+  | { kind: "usage" }
   /** The roster at a glance, outside any one agent. */
   | { kind: "home" };
 
@@ -156,7 +204,9 @@ function viewToPath(v: View): string {
   if (v.kind === "detail") return `/agents/${v.id}`;
   if (v.kind === "run") return `/runs/${v.id}`;
   if (v.kind === "edit") return v.agent ? `/agents/${v.agent.id}/edit` : "/agents/new";
-  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}`;
+  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/edit`;
+  if (v.kind === "settings") return "/settings";
+  if (v.kind === "usage") return "/usage";
   return "/";
 }
 
@@ -164,17 +214,22 @@ function viewToPath(v: View): string {
  * The edit view holds a whole agent, which a cold load doesn't have yet, so an
  * edit URL lands on the agent page and `editId` upgrades it once agents arrive.
  */
-function pathToView(path: string): { view: View; editId?: string } {
+function pathToView(path: string): { view: View; editId?: string; space?: string } {
   const p = path.replace(/\/+$/, "") || "/";
   if (p === "/agents/new") return { view: { kind: "edit", agent: null } };
+  if (p === "/settings") return { view: { kind: "settings" } };
+  if (p === "/usage") return { view: { kind: "usage" } };
   let m = /^\/runs\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "run", id: m[1]! } };
   m = /^\/agents\/([\w-]+)\/edit$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]! }, editId: m[1]! };
   m = /^\/agents\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]! } };
-  m = /^\/spaces\/([^/]+)$/.exec(p);
+  m = /^\/spaces\/([^/]+)\/edit$/.exec(p);
   if (m) return { view: { kind: "space", name: decodeURIComponent(m[1]!) } };
+  // A space's landing is the home view filtered to it.
+  m = /^\/spaces\/([^/]+)$/.exec(p);
+  if (m) return { view: { kind: "home" }, space: decodeURIComponent(m[1]!) };
   return { view: { kind: "home" } };
 }
 
@@ -189,13 +244,12 @@ export function App() {
   const viewRef = useRef(view);
   const dirtyRef = useRef(false);
   viewRef.current = view;
-  dirtyRef.current = editDirty;
 
-  /** Leaving the editor with unsaved edits asks first; everything else is free. */
+  /** Leaving an editor with unsaved edits asks first; everything else is free. */
   const confirmLeave = (next: View): boolean => {
     const cur = viewRef.current;
-    if (cur.kind !== "edit" || next.kind === "edit" || !dirtyRef.current) return true;
-    return confirm("Discard unsaved changes to this agent?");
+    if ((cur.kind !== "edit" && cur.kind !== "space") || next.kind === cur.kind || !dirtyRef.current) return true;
+    return confirm(cur.kind === "edit" ? "Discard unsaved changes to this agent?" : "Discard unsaved changes to this space?");
   };
 
   const setView = (next: View) => {
@@ -209,9 +263,17 @@ export function App() {
   const [prompt, setPrompt] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [metered, setMetered] = useState(false);
+  // null until health answers; "none" swaps the whole app for setup.
+  const [credentialSource, setCredentialSource] = useState<string | null>(null);
+  const [setupGeneration, setSetupGeneration] = useState(0);
+  // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
+  // `?setup=1` reopens onboarding on a configured install; there is no button for it.
+  const [forceSetup, setForceSetup] = useState(() => new URLSearchParams(location.search).has("setup"));
   const [skillIndex, setSkillIndex] = useState(0);
   const [liveMode, setLiveMode] = useState("auto");
-  const [space, setSpace] = useState<SpaceFilter>(loadSpaceFilter);
+  const [space, setSpace] = useState<SpaceFilter>(() =>
+    route.space ? { kind: "space", name: route.space } : loadSpaceFilter(),
+  );
   const [spaceDraft, setSpaceDraft] = useState("");
   const [spaceSecret, setSpaceSecret] = useState<{
     configured: boolean;
@@ -230,6 +292,40 @@ export function App() {
   const [agentRuns, setAgentRuns] = useState<Run[] | null>(null);
   const [drops, setDrops] = useState<Delivery[]>([]);
   const [spaceDeliveries, setSpaceDeliveries] = useState<Delivery[]>([]);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [spaceEnvMap, setSpaceEnvMap] = useState<Record<string, string> | null>(null);
+  const [spaceEnvLoaded, setSpaceEnvLoaded] = useState<string>("");
+  const spaceDirty =
+    view.kind === "space" &&
+    (spaceDraft.trim() !== view.name ||
+      (spaceEnvMap !== null && JSON.stringify(spaceEnvMap) !== spaceEnvLoaded));
+  dirtyRef.current = editDirty || spaceDirty;
+  const [globalEnvMap, setGlobalEnvMap] = useState<Record<string, string> | null>(null);
+  const [envSaved, setEnvSaved] = useState<string | null>(null);
+  const [processEnvNames, setProcessEnvNames] = useState<string[] | null>(null);
+  const [skillsInfo, setSkillsInfo] = useState<{
+    dir: string;
+    dirDisplay: string;
+    count: number;
+    remote: string | null;
+    subdir: string | null;
+    managed: boolean;
+  } | null>(null);
+  const [skillsSource, setSkillsSource] = useState({ url: "", path: "" });
+  const [skillsNote, setSkillsNote] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<string | null>(null);
+  const [machineMcp, setMachineMcp] = useState<MachineMcp | null>(null);
+  const [skillList, setSkillList] = useState<Skill[]>([]);
+  const [claudeMd, setClaudeMd] = useState<{ path: string; exists: boolean; size: number; managed: boolean; content: string } | null>(null);
+  const [claudeMdDraft, setClaudeMdDraft] = useState("");
+  const [claudeMdNote, setClaudeMdNote] = useState<string | null>(null);
+  const [mcpNote, setMcpNote] = useState<string | null>(null);
+  const [exportPassphrase, setExportPassphrase] = useState("");
+  const [showAllProcessEnv, setShowAllProcessEnv] = useState(false);
+  const [health, setHealth] = useState<{
+    dataDir: string;
+    claudeCredential: { source: string; detail: string };
+  } | null>(null);
 
   // Back and forward are the browser's, so the view follows the URL rather than
   // the other way round.
@@ -267,15 +363,43 @@ export function App() {
     setSpaceError(null);
     if (spaceName === null) return setSpaceSecret(null);
     setSpaceDraft(spaceName);
+    setSpaceEnvMap(null);
     void api
-      .spaceDeliveries(spaceName)
-      .then(setSpaceDeliveries)
-      .catch(() => setSpaceDeliveries([]));
+      .spaceEnv(spaceName)
+      .then((r) => {
+        setSpaceEnvMap(r.env);
+        setSpaceEnvLoaded(JSON.stringify(r.env));
+      })
+      .catch(() => setEnvSaved("Couldn\u2019t load this space\u2019s environment \u2014 reload before editing."));
     void api
       .spaceSecretState(spaceName)
       .then((s) => setSpaceSecret({ configured: s.configured, hookId: s.hookId }))
       .catch(() => setSpaceSecret(null));
   }, [spaceName]);
+
+  useEffect(() => {
+    if (view.kind !== "settings") return;
+    setEnvSaved(null);
+    setGlobalEnvMap(null);
+    void api
+      .globalEnv()
+      .then((r) => setGlobalEnvMap(r.env))
+      .catch(() => setEnvSaved("Couldn\u2019t load the global environment \u2014 reload before editing."));
+    void api.health().then(setHealth).catch(() => setHealth(null));
+    void api
+      .processEnvNames()
+      .then((r) => setProcessEnvNames(r.names))
+      .catch(() => setProcessEnvNames([]));
+    void api.skillsState().then(setSkillsInfo).catch(() => setSkillsInfo(null));
+    void api.skills().then(setSkillList).catch(() => setSkillList([]));
+    void api.machineMcp().then(setMachineMcp).catch(() => setMachineMcp(null));
+    void api
+      .claudeMd()
+      .then((m) => { setClaudeMd(m); setClaudeMdDraft(m.content); })
+      .catch(() => setClaudeMd(null));
+    setImportResult(null);
+    setMcpNote(null);
+  }, [view.kind]);
 
   const detailId = view.kind === "detail" ? view.id : null;
   useEffect(() => setPromptOpen(false), [detailId]);
@@ -313,9 +437,15 @@ export function App() {
     void api.skills().then(setSkills).catch(() => setSkills([]));
     void api
       .health()
-      .then((h) => setMetered(h.claudeCredential.source === "api-key"))
-      .catch(() => setMetered(false));
-  }, []);
+      .then((h) => {
+        setMetered(h.claudeCredential.source === "api-key");
+        setCredentialSource(h.claudeCredential.source);
+      })
+      .catch(() => {
+        setMetered(false);
+        setCredentialSource("unknown");
+      });
+  }, [setupGeneration]);
   const [error, setError] = useState<string | null>(null);
 
   const { run, events, partial, approvals } = useRun(view.kind === "run" ? view.id : null);
@@ -347,6 +477,7 @@ export function App() {
   }, [events, partial, approvals]);
 
   const refresh = () => {
+    setRefreshTick((t) => t + 1);
     api.agents().then(setAgents);
     api.runs().then(setRuns);
     api
@@ -398,37 +529,68 @@ export function App() {
   }, [run?.id, run?.permissionMode]);
 
   const isLive = run != null && ACTIVE.has(run.status);
+  const isQueued = run?.status === "queued";
   // Finished but still attached: replying continues the same session rather
   // than starting a fresh run with none of its context.
   const canReply = run != null && (isLive || run.resumable === true);
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? "—";
-  const spaces = [...new Set(agents.map((a) => a.space).filter((sp): sp is string => !!sp))].sort();
-  const hasUnassigned = agents.some((a) => !a.space);
+  // Only spaces with agents in them, the default one included: an empty
+  // space is not a place to go.
+  const spaces = [...new Set(agents.map((a) => a.space))].sort();
   // A remembered space that no longer exists (renamed, or its last agent
   // deleted) shows everything rather than an empty roster.
   const active: SpaceFilter =
-    (space.kind === "space" && !spaces.includes(space.name)) ||
-    (space.kind === "unassigned" && !hasUnassigned)
-      ? { kind: "all" }
-      : space;
-  const visibleAgents =
-    active.kind === "all"
-      ? agents
-      : active.kind === "unassigned"
-        ? agents.filter((a) => !a.space)
-        : agents.filter((a) => a.space === active.name);
+    space.kind === "space" && !spaces.includes(space.name) ? { kind: "all" } : space;
+  const visibleAgents = active.kind === "all" ? agents : agents.filter((a) => a.space === active.name);
 
-  /** `to === null` unassigns every member, which is how a space is removed. */
-  async function moveSpace(from: string, to: string | null) {
-    if (to === from) return;
-    if (to !== null && to.length === 0) return;
+
+  /** The space's landing: the home view filtered to it. Bypasses the guard — callers have settled that. */
+  const goToSpace = (name: string) => {
+    setSpace({ kind: "space", name });
+    setViewState({ kind: "home" });
+    const path = `/spaces/${encodeURIComponent(name)}`;
+    if (path !== location.pathname) history.pushState(null, "", path);
+  };
+
+  /** Env first under the old name, then the rename carries the row along. */
+  async function saveSpace(from: string) {
+    const to = spaceDraft.trim();
+    if (to.length === 0) return setSpaceError("name is required");
     setSpaceError(null);
     try {
-      await api.renameSpace(from, to);
-      // Follow the agents so they don't vanish from under the selection.
-      setSpace(to === null ? { kind: "unassigned" } : { kind: "space", name: to });
-      setView(to === null ? { kind: "home" } : { kind: "space", name: to });
+      if (spaceEnvMap !== null && JSON.stringify(spaceEnvMap) !== spaceEnvLoaded) {
+        const r = await api.setSpaceEnv(from, spaceEnvMap, Object.keys(spaceEnvMap).length === 0);
+        setSpaceEnvMap(r.env);
+        setSpaceEnvLoaded(JSON.stringify(r.env));
+      }
+      if (to !== from) await api.renameSpace(from, to);
       refresh();
+      goToSpace(to);
+    } catch (e) {
+      setSpaceError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // The space whose deliveries are on screen: the settings page's, or the
+  // one the home view is filtered to. Refetched with everything else.
+  const deliveriesSpace =
+    view.kind === "space" ? view.name : view.kind === "home" && active.kind === "space" ? active.name : null;
+  const deliveriesSpaceHasWebhooks =
+    deliveriesSpace !== null && agents.some((a) => a.space === deliveriesSpace && a.trigger === "webhook");
+  useEffect(() => {
+    if (deliveriesSpace === null) return setSpaceDeliveries([]);
+    void api
+      .spaceDeliveries(deliveriesSpace)
+      .then(setSpaceDeliveries)
+      .catch(() => setSpaceDeliveries([]));
+  }, [deliveriesSpace, refreshTick]);
+
+  async function removeSpace(name: string) {
+    setSpaceError(null);
+    try {
+      await api.removeSpace(name);
+      refresh();
+      goToSpace(DEFAULT_SPACE);
     } catch (e) {
       setSpaceError(e instanceof Error ? e.message : String(e));
     }
@@ -444,6 +606,9 @@ export function App() {
   const failing = visibleAgents.filter((a) => latestByAgent[a.id]?.status === "failed");
   const paused = visibleAgents.filter((a) => !a.enabled);
   const scopedUpcoming = upcoming.filter((u) => scopedIds.has(u.agentId));
+  // With nothing to show beside it, the activity list takes the page alone.
+  const quiet =
+    awaiting.length + failing.length + paused.length + drops.length + scopedUpcoming.length === 0;
 
   const selectedAgentId =
     view.kind === "detail"
@@ -455,9 +620,25 @@ export function App() {
           : null;
   const detailAgent = view.kind === "detail" ? agents.find((a) => a.id === view.id) : undefined;
 
+  // Nothing can run without a credential, so there is no dashboard to show
+  // behind a dialog — setup replaces it until health says otherwise.
+  if (credentialSource === null) return <div className="h-screen bg-neutral-950" />;
+  if (credentialSource === "none" || forceSetup) {
+    return (
+      <SetupView
+        onDone={() => {
+          setForceSetup(false);
+          if (location.search) history.replaceState(null, "", location.pathname);
+          setSetupGeneration((g) => g + 1);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen bg-neutral-950 font-sans text-neutral-100">
-      <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-neutral-800 p-4">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-neutral-800">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
         <button
           onClick={() => setView({ kind: "home" })}
           className="flex shrink-0 items-center gap-2 text-left"
@@ -480,10 +661,10 @@ export function App() {
                   {sp}
                   <button
                     onClick={() => setView({ kind: "space", name: sp })}
-                    title={`Settings for "${sp}"`}
-                    className="max-w-0 overflow-hidden text-neutral-500 opacity-0 transition-all duration-150 hover:text-neutral-100 focus:ml-1 focus:max-w-5 focus:opacity-100 group-hover:ml-1 group-hover:max-w-5 group-hover:opacity-100"
+                    title={`Edit "${sp}"`}
+                    className="flex max-w-0 items-center overflow-hidden text-neutral-500 opacity-0 transition-all duration-150 hover:text-neutral-100 focus:ml-1 focus:max-w-5 focus:opacity-100 group-hover:ml-1 group-hover:max-w-5 group-hover:opacity-100"
                   >
-                    &#9881;
+                    <PencilIcon className="h-3 w-3 shrink-0" />
                   </button>
                 </span>
               ) : (
@@ -494,13 +675,6 @@ export function App() {
                   onClick={() => setSpace({ kind: "space", name: sp })}
                 />
               ),
-            )}
-            {hasUnassigned && (
-              <SpaceChip
-                label="Unassigned"
-                selected={active.kind === "unassigned"}
-                onClick={() => setSpace({ kind: "unassigned" })}
-              />
             )}
           </div>
         )}
@@ -543,7 +717,10 @@ export function App() {
                   </div>
                   <div className="mt-0.5 text-xs">
                     {live > 0 ? (
-                      <span className="text-sky-400">{live} running</span>
+                      <span className="text-sky-400">
+                        {live} running
+                        {(stats?.queued[a.id] ?? 0) > 0 ? ` · ${stats!.queued[a.id]} queued` : ""}
+                      </span>
                     ) : last ? (
                       <span className="text-neutral-500">
                         <span className={STATUS_COLOR[last.status] ?? "text-neutral-400"}>●</span>{" "}
@@ -559,13 +736,14 @@ export function App() {
                     e.stopPropagation();
                     setView({ kind: "edit", agent: a });
                   }}
-                  className="shrink-0 text-xs text-neutral-500 hover:text-neutral-100"
+                  title="Edit"
+                  className="shrink-0 rounded p-0.5 text-neutral-500 hover:text-neutral-100"
                 >
-                  Edit
+                  <PencilIcon />
                 </span>
               </div>
               {/* A webhook or poll agent reads its payload from disk; run bare, there is none. */}
-              {!a.webhookSecret && !a.pollUrl && (
+              {(a.trigger === "manual" || a.trigger === "schedule") && (
                 <span
                   onClick={(e) => {
                     e.stopPropagation();
@@ -579,9 +757,32 @@ export function App() {
             </button>
           );
         })}
+        </div>
+        <div className="flex shrink-0 items-center gap-1 border-t border-neutral-800 px-3 py-2">
+          <button
+            onClick={() => setView({ kind: "settings" })}
+            title="Settings"
+            className={`rounded p-1.5 ${
+              view.kind === "settings" ? "text-neutral-100" : "text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200"
+            }`}
+          >
+            <GearIcon />
+          </button>
+          <button
+            onClick={() => setView({ kind: "usage" })}
+            title="Usage"
+            className={`rounded p-1.5 ${
+              view.kind === "usage" ? "text-neutral-100" : "text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200"
+            }`}
+          >
+            <BarsIcon />
+          </button>
+        </div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
+        {view.kind === "usage" && <UsageView />}
+
         {view.kind === "edit" && (
           <div className="flex-1 overflow-y-auto">
             <AgentEditor
@@ -630,7 +831,7 @@ export function App() {
                 >
                   Copy
                 </button>
-                {!detailAgent.webhookSecret && !detailAgent.pollUrl && (
+                {(detailAgent.trigger === "manual" || detailAgent.trigger === "schedule") && (
                   <button
                     onClick={() => void start(detailAgent.id)}
                     className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white"
@@ -641,7 +842,7 @@ export function App() {
               </div>
             </div>
 
-            <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
+            <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
               <section className="min-w-0">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Runs
@@ -709,7 +910,7 @@ export function App() {
                   ))}
                 </RailSection>
 
-                {detailAgent.webhookSecret && (
+                {detailAgent.trigger === "webhook" && (
                   <RailSection title="Recent webhook deliveries">
                     {deliveries.length > 0 ? (
                       <DeliveryList deliveries={deliveries} limit={10} />
@@ -732,7 +933,6 @@ export function App() {
 
                 <RailSection title="Runs with">
                   <RailRow label="Workspace" value={workspaceSummary(detailAgent)} />
-                  <RailRow label="Kind" value={workspaceKindLabel(detailAgent.workspaceKind)} />
                   <RailRow label="Model" value={detailAgent.model ?? "default"} />
                   {Object.keys(detailAgent.mcpServers).length > 0 && (
                     <RailRow label="MCP" value={Object.keys(detailAgent.mcpServers).join(", ")} />
@@ -741,7 +941,7 @@ export function App() {
 
                 <RailSection title="Details">
                   <RailRow label="Permissions" value={modeLabel(detailAgent.permissionMode)} />
-                  <RailRow label="Space" value={detailAgent.space ?? "unassigned"} />
+                  <RailRow label="Space" value={detailAgent.space} />
                   <RailRow label="Concurrency" value={detailAgent.concurrency} />
                   {detailAgent.maxTurns != null && (
                     <RailRow label="Max turns" value={detailAgent.maxTurns} />
@@ -767,12 +967,12 @@ export function App() {
         {view.kind === "space" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <button
-              onClick={() => setView({ kind: "home" })}
+              onClick={() => { if (confirmLeave({ kind: "home" })) goToSpace(view.name); }}
               className="text-xs text-neutral-500 hover:text-neutral-300"
             >
-              &larr; Home
+              &larr; {view.name}
             </button>
-            <h2 className="mt-2 text-lg font-semibold">{view.name}</h2>
+            <h2 className="mt-2 text-lg font-semibold">Edit space</h2>
             <p className="mt-1 text-xs text-neutral-500">
               {agents.filter((a) => a.space === view.name).length} agent
               {agents.filter((a) => a.space === view.name).length === 1 ? "" : "s"} in this space
@@ -780,154 +980,548 @@ export function App() {
 
             <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="min-w-0 space-y-8">
-              <RailSection title="Name">
-                <div className="flex gap-2">
-                  <input
-                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
-                    value={spaceDraft}
-                    onChange={(e) => setSpaceDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void moveSpace(view.name, spaceDraft.trim());
-                    }}
-                  />
-                  <button
-                    onClick={() => void moveSpace(view.name, spaceDraft.trim())}
-                    disabled={spaceDraft.trim() === view.name || spaceDraft.trim() === ""}
-                    className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-900 disabled:opacity-40"
-                  >
-                    Rename
-                  </button>
-                </div>
-                <p className="text-xs text-neutral-600">
-                  Renaming moves every agent in the space and carries the shared secret with it, but
-                  the webhook URL below changes — repoint the sender afterwards.
-                </p>
-                {spaceError && <p className="text-xs text-red-400">{spaceError}</p>}
-              </RailSection>
+                <RailSection title="Name">
+                  {view.name === DEFAULT_SPACE ? (
+                    <>
+                      <input
+                        readOnly
+                        value={view.name}
+                        className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-500 outline-none"
+                      />
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Agents land here when no space is chosen, and when their space is removed, so
+                        this one can&rsquo;t be renamed or removed.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
+                        value={spaceDraft}
+                        onChange={(e) => setSpaceDraft(e.target.value)}
+                      />
+                      <p className="text-xs text-neutral-600">
+                        Renaming moves every agent in the space and keeps the shared webhook URL, secret
+                        and environment.
+                      </p>
+                    </>
+                  )}
+                </RailSection>
 
-              <RailSection title="Shared webhook">
-                <span className="block text-xs font-medium uppercase tracking-wide text-neutral-500">URL</span>
-                <div className="flex gap-2">
-                  <input
-                    readOnly
-                    value={spaceHookUrl}
-                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs text-neutral-400 outline-none"
-                  />
+                <RailSection title="Environment">
+                  {spaceEnvMap === null ? null : (
+                    <>
+                      <EnvEditor
+                        key={`${view.name}-${Object.keys(spaceEnvMap).join("|")}`}
+                        value={spaceEnvMap}
+                        onChange={setSpaceEnvMap}
+                        inherited={[{ from: "global", keys: Object.keys(globalEnvMap ?? {}) }]}
+                      />
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Every agent in this space gets these, under its own. Values are stored once
+                        and never shown again — a saved field is blank until you type a replacement.
+                      </p>
+                    </>
+                  )}
+                </RailSection>
+
+                <div className="flex items-center gap-2 border-t border-neutral-800 pt-4">
                   <button
-                    onClick={() =>
-                      void navigator.clipboard.writeText(
-                        spaceHookUrl,
-                      )
-                    }
-                    className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
+                    onClick={() => void saveSpace(view.name)}
+                    disabled={!spaceDirty}
+                    className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
                   >
-                    Copy
+                    Save
                   </button>
+                  <button
+                    onClick={() => { if (confirmLeave({ kind: "home" })) goToSpace(view.name); }}
+                    className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                  >
+                    Cancel
+                  </button>
+                  {spaceError && <span className="text-xs text-red-400">{spaceError}</span>}
                 </div>
-                <span className="block text-xs font-medium uppercase tracking-wide text-neutral-500 pt-2">Secret</span>
-                <div className="flex gap-2">
-                  <input
-                    readOnly
-                    value={
-                      spaceSecret?.value ??
-                      (spaceSecret?.configured ? "\u2022".repeat(24) : "no shared secret yet")
-                    }
-                    className={`w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none ${
-                      spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
-                    }`}
-                  />
-                  {spaceSecret?.value && (
+              </div>
+
+              <div className="min-w-0 space-y-8">
+                <RailSection title="Shared webhook">
+                  <span className="block text-xs font-medium uppercase tracking-wide text-neutral-500">URL</span>
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={spaceHookUrl}
+                      className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs text-neutral-400 outline-none"
+                    />
                     <button
-                      onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
+                      onClick={() => void navigator.clipboard.writeText(spaceHookUrl)}
                       className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
                     >
                       Copy
                     </button>
-                  )}
-                  <button
-                    onClick={async () => {
-                      if (
-                        spaceSecret?.configured &&
-                        !confirm(
-                          "Replace this space's secret? Every sender using the old one stops working until you repaste.",
-                        )
-                      ) {
-                        return;
+                  </div>
+                  <span className="block text-xs font-medium uppercase tracking-wide text-neutral-500 pt-2">Secret</span>
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={
+                        spaceSecret?.value ??
+                        (spaceSecret?.configured ? "\u2022".repeat(24) : "no shared secret yet")
                       }
-                      const r = await api.setSpaceSecret(view.name);
-                      setSpaceSecret({ configured: true, hookId: r.hookId, value: r.secret });
-                    }}
-                    className="shrink-0 rounded border border-neutral-700 px-3 text-xs text-amber-400 hover:bg-neutral-800"
-                  >
-                    {spaceSecret?.configured ? "Rotate" : "Generate"}
-                  </button>
-                </div>
-                <p className="text-xs leading-relaxed text-neutral-600">
-                  One webhook for the whole space. Every enabled agent in it gets the delivery and
-                  its own filters decide whether it runs, so agents split by author or action share
-                  one hook. This secret is the space&rsquo;s own — the per-agent secrets are not
-                  used here. It is shown once, when generated.
-                </p>
-              </RailSection>
-
-              <RailSection title="Recent webhook deliveries">
-                {spaceDeliveries.length === 0 ? (
-                  <p className="text-xs text-neutral-600">
-                    Nothing has arrived at this URL yet.
-                  </p>
-                ) : (
-                  <>
-                    <GroupedDeliveryList
-                      deliveries={spaceDeliveries}
-                      limit={8}
-                      agentName={agentName}
+                      className={`w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none ${
+                        spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
+                      }`}
                     />
-                    <p className="text-xs leading-relaxed text-neutral-600">
-                      One block per delivery. The shared URL hands each one to every agent in the
-                      space, so a single event normally shows one OK and several DROPs — the drops
-                      are the agents whose filters correctly declined it.
-                    </p>
-                  </>
-                )}
-              </RailSection>
+                    {spaceSecret?.value && (
+                      <button
+                        onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
+                        className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
+                      >
+                        Copy
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        if (
+                          spaceSecret?.configured &&
+                          !confirm(
+                            "Replace this space's secret? Every sender using the old one stops working until you repaste.",
+                          )
+                        ) {
+                          return;
+                        }
+                        const r = await api.setSpaceSecret(view.name);
+                        setSpaceSecret({ configured: true, hookId: r.hookId, value: r.secret });
+                      }}
+                      className="shrink-0 rounded border border-neutral-700 px-3 text-xs text-amber-400 hover:bg-neutral-800"
+                    >
+                      {spaceSecret?.configured ? "Rotate" : "Generate"}
+                    </button>
+                  </div>
+                  <p className="text-xs leading-relaxed text-neutral-600">
+                    One webhook for the whole space. Every enabled agent in it gets the delivery and
+                    its own filters decide whether it runs, so agents split by author or action share
+                    one hook. This secret is the space&rsquo;s own — the per-agent secrets are not
+                    used here. It is shown once, when generated, and takes effect immediately.
+                  </p>
+                </RailSection>
 
+                {view.name !== DEFAULT_SPACE && (
+                  <RailSection title="Remove this space">
+                    <button
+                      onClick={() => {
+                        const n = agents.filter((a) => a.space === view.name).length;
+                        if (confirm(`Remove "${view.name}" and move its ${n} agent(s) to ${DEFAULT_SPACE}?`)) {
+                          void removeSpace(view.name);
+                        }
+                      }}
+                      className="rounded border border-red-900 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950"
+                    >
+                      Move agents to {DEFAULT_SPACE} and remove
+                    </button>
+                    <p className="text-xs text-neutral-600">
+                      The agents keep working from {DEFAULT_SPACE}. This space&rsquo;s shared secret and
+                      environment are discarded, so its webhook URL stops answering.
+                    </p>
+                  </RailSection>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view.kind === "settings" && (
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <h2 className="text-lg font-semibold">Settings</h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              What this bullpen needs regardless of agent or space.
+            </p>
+
+            <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="min-w-0 space-y-8">
+                <RailSection title="Global environment">
+                  {globalEnvMap === null ? null : (
+                    <>
+                      <EnvEditor
+                        key={Object.keys(globalEnvMap).join("|")}
+                        value={globalEnvMap}
+                        onChange={setGlobalEnvMap}
+                      />
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            const r = await api.setGlobalEnv(globalEnvMap, Object.keys(globalEnvMap).length === 0);
+                            setGlobalEnvMap(r.env);
+                            setEnvSaved("Saved.");
+                            setTimeout(() => setEnvSaved(null), 2000);
+                          }}
+                          className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white"
+                        >
+                          Save environment
+                        </button>
+                        {envSaved && <span className="text-xs text-emerald-500">{envSaved}</span>}
+                      </div>
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Every agent inherits these, under its space&rsquo;s and its own. The
+                        server&rsquo;s own GitHub calls use <code>GITHUB_TOKEN</code> from here when
+                        the process has none, so on a headless box <code>.env</code> only needs the
+                        Claude token. Values are stored once and never shown again.
+                      </p>
+                    </>
+                  )}
+                </RailSection>
+
+                <RailSection title="Process environment">
+                  {processEnvNames === null ? null : (
+                    <>
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        {processEnvNames.length} variables the server was started with — from the
+                        shell, <code>.env</code>, or the container. Names only. This is the lowest
+                        layer: anything set in bullpen overrides a name here.
+                      </p>
+                      {(() => {
+                        const overridden = new Set(Object.keys(globalEnvMap ?? {}));
+                        const shown = showAllProcessEnv
+                          ? processEnvNames
+                          : processEnvNames.filter((n) => overridden.has(n) || INTERESTING_ENV.test(n));
+                        return (
+                          <>
+                            <div className="flex flex-wrap gap-1">
+                              {shown.map((n) => (
+                                <span
+                                  key={n}
+                                  title={overridden.has(n) ? "Also set in global env, which wins" : undefined}
+                                  className={`rounded border px-1.5 py-px font-mono text-[11px] ${
+                                    overridden.has(n)
+                                      ? "border-amber-900 text-amber-400 line-through decoration-amber-700"
+                                      : "border-neutral-800 text-neutral-400"
+                                  }`}
+                                >
+                                  {n}
+                                </span>
+                              ))}
+                              {shown.length === 0 && (
+                                <span className="text-xs text-neutral-600">Nothing that looks relevant.</span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => setShowAllProcessEnv((v) => !v)}
+                              className="text-xs text-neutral-500 hover:text-neutral-300"
+                            >
+                              {showAllProcessEnv
+                                ? "Show only the relevant ones"
+                                : `Show all ${processEnvNames.length}`}
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
+                </RailSection>
               </div>
 
               <div className="min-w-0 space-y-8">
-              <RailSection title="Agents">
-                {agents
-                  .filter((a) => a.space === view.name)
-                  .map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => setView({ kind: "detail", id: a.id })}
-                      className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-900"
-                    >
-                      <span className="truncate text-neutral-200">{a.name}</span>
-                      <span className="ml-auto shrink-0 truncate text-xs text-neutral-600">
-                        {triggersOf(a)[0]}
-                      </span>
-                    </button>
-                  ))}
-              </RailSection>
+                <RailSection title="This bullpen">
+                  <RailRow label="Data directory" value={health?.dataDir ?? "…"} />
+                  <RailRow label="Claude credential" value={health?.claudeCredential.source ?? "…"} />
+                  {health && (
+                    <p className="text-xs leading-relaxed text-neutral-600">{health.claudeCredential.detail}</p>
+                  )}
+                </RailSection>
 
-              <RailSection title="Empty this space">
-                <button
-                  onClick={() => {
-                    const n = agents.filter((a) => a.space === view.name).length;
-                    if (confirm(`Move ${n} agent(s) out of "${view.name}"? The space disappears.`)) {
-                      void moveSpace(view.name, null);
-                    }
-                  }}
-                  className="rounded border border-red-900 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950"
-                >
-                  Unassign every agent
-                </button>
-                <p className="text-xs text-neutral-600">
-                  The agents keep working; they just stop being grouped. The shared secret is
-                  discarded, so the webhook URL stops answering.
-                </p>
-              </RailSection>
+                <RailSection title="Skills">
+                  {skillsInfo && (
+                    <>
+                      <RailRow label="Directory" value={skillsInfo.dirDisplay} />
+                      <RailRow label="Installed" value={`${skillsInfo.count} skill${skillsInfo.count === 1 ? "" : "s"}`} />
+                      {skillsInfo.remote && (
+                        <RailRow
+                          label="From"
+                          value={`${skillsInfo.remote}${skillsInfo.subdir && skillsInfo.subdir !== "." ? ` · ${skillsInfo.subdir}` : ""}`}
+                        />
+                      )}
+                      {skillList.length > 0 && (
+                        <ul className="space-y-0.5 pt-1">
+                          {skillList.map((s) => (
+                            <li key={s.name} className="flex items-baseline gap-2 text-xs">
+                              <span className="shrink-0 font-mono text-neutral-200">/{s.name}</span>
+                              <span className="min-w-0 truncate text-neutral-500" title={s.description}>
+                                {s.description}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {skillsInfo.remote && (
+                          <button
+                            onClick={async () => {
+                              const r = await api.skillsPull().catch((e) => ({ error: String(e) }));
+                              if ("count" in r) { setSkillsInfo({ ...skillsInfo, count: r.count }); setSkillsNote("Pulled."); }
+                              else setSkillsNote(r.error);
+                            }}
+                            className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                          >
+                            Pull latest
+                          </button>
+                        )}
+                        {skillsNote && <span className="text-xs text-neutral-400">{skillsNote}</span>}
+                      </div>
+                      {skillsInfo.managed ? (
+                        <>
+                          <p className="text-xs leading-relaxed text-neutral-600">
+                            This directory is bullpen&rsquo;s to manage (<code>CLAUDE_CONFIG_DIR</code> is
+                            set), and it is pulled on every boot. To point it at a different repo:
+                          </p>
+                          <input
+                            className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                            placeholder="https://github.com/you/dotfiles"
+                            value={skillsSource.url}
+                            onChange={(e) => setSkillsSource({ ...skillsSource, url: e.target.value })}
+                          />
+                          <input
+                            className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                            placeholder="path inside the repo — blank to detect"
+                            value={skillsSource.path}
+                            onChange={(e) => setSkillsSource({ ...skillsSource, path: e.target.value })}
+                          />
+                          <button
+                            disabled={!skillsSource.url.trim()}
+                            onClick={async () => {
+                              if (skillsInfo.count > 0 && !confirm(`Replace the ${skillsInfo.count} installed skills with this repo's?`)) return;
+                              try {
+                                const r = await api.skillsClone(skillsSource.url.trim(), skillsSource.path.trim() || undefined);
+                                setSkillsInfo(await api.skillsState());
+                                setSkillsNote(`${r.count} skills installed.`);
+                                setSkillsSource({ url: "", path: "" });
+                              } catch (e) {
+                                const c = (e as { candidates?: string[] }).candidates;
+                                setSkillsNote(
+                                  c?.length ? `Skills found in: ${c.join(", ")} — put one in the path field.` : String((e as Error).message),
+                                );
+                              }
+                            }}
+                            className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900 disabled:opacity-40"
+                          >
+                            {skillsInfo.count > 0 ? "Replace skills" : "Clone skills"}
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-xs leading-relaxed text-neutral-600">
+                          Bullpen reads these but doesn&rsquo;t manage them — this is your own
+                          <code> ~/.claude</code>. Set <code>CLAUDE_CONFIG_DIR</code> (the container does)
+                          to have bullpen own the directory, pull it on boot, and let you change its source here.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </RailSection>
+
+                <RailSection title="Global CLAUDE.md">
+                  {claudeMd && (
+                    <>
+                      <RailRow label="File" value={claudeMd.path} />
+                      <RailRow
+                        label="Status"
+                        value={claudeMd.exists ? `${(claudeMd.size / 1024).toFixed(1)} KB` : "not present"}
+                      />
+                      <textarea
+                        className="h-40 w-full resize-y rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs leading-relaxed text-neutral-300 outline-none focus:border-neutral-600 read-only:text-neutral-500"
+                        value={claudeMdDraft}
+                        readOnly={!claudeMd.managed}
+                        spellCheck={false}
+                        placeholder={claudeMd.managed ? "Instructions every agent that uses the shared config will read." : ""}
+                        onChange={(e) => setClaudeMdDraft(e.target.value)}
+                      />
+                      {claudeMd.managed ? (
+                        <div className="flex items-center gap-3">
+                          <button
+                            disabled={claudeMdDraft === claudeMd.content}
+                            onClick={async () => {
+                              try {
+                                const m = await api.setClaudeMd(claudeMdDraft);
+                                setClaudeMd(m);
+                                setClaudeMdNote("Saved.");
+                              } catch (e) {
+                                setClaudeMdNote(String((e as Error).message));
+                              }
+                              setTimeout(() => setClaudeMdNote(null), 2500);
+                            }}
+                            className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
+                          >
+                            Save
+                          </button>
+                          {claudeMdNote && <span className="text-xs text-neutral-400">{claudeMdNote}</span>}
+                        </div>
+                      ) : null}
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Loaded by every agent with &ldquo;Use the shared skills and global CLAUDE.md&rdquo;
+                        checked, together with the skills and settings.json in the same directory.{" "}
+                        {claudeMd.managed
+                          ? "This directory is bullpen\u2019s, so it can be edited here."
+                          : "This is your own file; edit it on this machine."}
+                      </p>
+                    </>
+                  )}
+                </RailSection>
+
+                <RailSection title="MCP servers">
+                  {machineMcp && (() => {
+                    const writable = machineMcp.managed;
+                    return (
+                      <>
+                        {machineMcp.global.length === 0 ? (
+                          <p className="text-xs text-neutral-600">None. Agents that opt in with &ldquo;Use the shared MCP servers&rdquo; get what is listed here.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {machineMcp.global.map((s) => (
+                              <li key={s.name} className="flex items-baseline gap-2 text-xs">
+                                <McpHealthBadge h={machineMcp.health[s.name]} />
+                                <span className="shrink-0 font-mono text-neutral-200">{s.name}</span>
+                                <span className="shrink-0 text-neutral-600">{s.transport}</span>
+                                <span className="min-w-0 truncate font-mono text-neutral-500" title={s.detail}>{s.detail}</span>
+                                {s.secretKeys.length > 0 && (
+                                  <span className="shrink-0 text-neutral-600" title={s.secretKeys.join(", ")}>{s.secretKeys.length} secret{s.secretKeys.length === 1 ? "" : "s"}</span>
+                                )}
+                                {writable && (
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Remove ${s.name} from every run?`)) return;
+                                      try { setMachineMcp(await api.removeMachineMcp(s.name)); } catch (e) { setMcpNote(String((e as Error).message)); }
+                                    }}
+                                    className="ml-auto shrink-0 text-neutral-600 hover:text-red-400"
+                                    title="Remove"
+                                  >
+                                    &times;
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {writable ? (
+                          <McpServerForm onAdd={async (n, cfg) => { setMachineMcp(await api.addMachineMcp(n, cfg)); }} />
+                        ) : (
+                          <p className="text-xs leading-relaxed text-neutral-600">
+                            Loaded from your own <code>~/.claude.json</code> (user scope) and shown here so you can see what
+                            agents inherit; bullpen never changes it. Manage with{" "}
+                            <code>claude mcp add --scope user &hellip;</code>.
+                          </p>
+                        )}
+                        {machineMcp.connectors.length === 0 && (
+                          <p className="pt-1 text-xs text-neutral-600">
+                            claude.ai connectors (Gmail, Slack, &hellip;) come with the login &mdash; nothing to
+                            configure here. {machineMcp.managed
+                              ? "There is no record of them in this config; whether a run gets them shows in that run\u2019s MCP status, for agents with \u201cUse the shared MCP servers\u201d on."
+                              : "None have been connected from Claude Code on this machine yet."}
+                          </p>
+                        )}
+                        {machineMcp.connectors.length > 0 && (
+                          <div className="pt-1">
+                            <p className="text-xs text-neutral-500">
+                              claude.ai connectors &mdash; come with the login, nothing to configure here:
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {machineMcp.connectors.map((n) => (
+                                <span key={n} className="inline-flex items-center gap-1 rounded bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-400">
+                                  <McpHealthBadge h={machineMcp.health[n]} compact />
+                                  {n}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {mcpNote && <p className="text-xs text-red-400">{mcpNote}</p>}
+                        <p className="text-xs leading-relaxed text-neutral-600">
+                          The dot is what the most recent run that reached each server reported
+                          &mdash; connected, needs auth, or failed; none means no run has tried it yet.{" "}
+                          {machineMcp.managed
+                            ? "This config is bullpen\u2019s (CLAUDE_CONFIG_DIR is set), so it can be edited here. "
+                            : ""}
+                          Every agent with &ldquo;Use the shared MCP servers&rdquo; checked gets all of these
+                          &mdash; a server&rsquo;s credentials go to each of them.
+                        </p>
+                      </>
+                    );
+                  })()}
+                </RailSection>
+
+                <RailSection title="Export / import">
+                  <input
+                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                    type="password"
+                    autoComplete="off"
+                    placeholder="passphrase — leave blank to export without secrets"
+                    value={exportPassphrase}
+                    onChange={(e) => setExportPassphrase(e.target.value)}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        const pass = exportPassphrase.trim();
+                        const data = await api.exportAgents(pass || undefined);
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `bullpen-agents-${new Date().toISOString().slice(0, 10)}-${pass ? "with-secrets-encrypted" : "no-secrets"}.json`;
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                        setExportPassphrase("");
+                      }}
+                      className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                    >
+                      {exportPassphrase.trim() ? "Export with secrets (encrypted)" : "Export without secrets"}
+                    </button>
+                    <label className="cursor-pointer rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900">
+                      Import…
+                      <input
+                        type="file"
+                        accept="application/json,.json"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          try {
+                            const payload = JSON.parse(await f.text()) as Record<string, unknown>;
+                            let pass: string | undefined;
+                            if (payload.secrets) {
+                              pass = window.prompt("This file includes secrets. Passphrase to open them (cancel to import without):") ?? undefined;
+                            }
+                            const r = await api.importAgents(payload, pass?.trim() || undefined);
+                            const needs = Object.entries(r.envNeeded);
+                            setImportResult(
+                              `${r.created.length} created, ${r.updated.length} updated` +
+                                (r.errors.length ? `, ${r.errors.length} rejected` : "") +
+                                (r.secretsApplied
+                                  ? `. Secrets restored for ${r.secretsApplied.agents} agents, ${r.secretsApplied.spaces} spaces, ${r.secretsApplied.globalKeys} global keys` +
+                                    (r.secretsApplied.mcp ? `, ${r.secretsApplied.mcp} MCP servers` : "")
+                                  : "") +
+                                (r.secretsNote ? `. ${r.secretsNote}` : "") +
+                                (r.mcpNote ? `. ${r.mcpNote}` : "") +
+                                (needs.length
+                                  ? `. Set env for: ${needs.map(([n, k]) => `${n} (${k.join(", ")})`).join("; ")}`
+                                  : "."),
+                            );
+                            refresh();
+                          } catch (err) {
+                            setImportResult(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+                          }
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {importResult && <p className="text-xs text-neutral-300">{importResult}</p>}
+                  <p className="text-xs leading-relaxed text-neutral-600">
+                    Every agent as JSON — prompts, triggers, filters, workspace, permissions. Without
+                    a passphrase, secrets are left out: env keeps its keys but not its values, and
+                    webhook secrets are minted fresh on import. With one, every secret — agent env,
+                    webhook and space secrets, hook ids, global env — is included, encrypted with
+                    that passphrase, so the shared webhook URLs survive a move to another box. Ids
+                    are kept, so importing over an existing bullpen updates in place.
+                  </p>
+                </RailSection>
+
+
               </div>
             </div>
           </div>
@@ -935,16 +1529,17 @@ export function App() {
 
         {view.kind === "home" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="flex items-baseline gap-3">
+            <div className="flex items-start justify-between gap-4">
               <h2 className="text-lg font-semibold">
                 {active.kind === "space" ? active.name : "All agents"}
               </h2>
               {active.kind === "space" && (
                 <button
                   onClick={() => setView({ kind: "space", name: active.name })}
-                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                  title="Name, environment, shared webhook"
+                  className="flex shrink-0 items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
                 >
-                  Space settings
+                  <PencilIcon /> Edit
                 </button>
               )}
             </div>
@@ -1002,12 +1597,19 @@ export function App() {
               </p>
             )}
 
-            <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div
+              className={
+                quiet
+                  ? "mt-8 max-w-3xl"
+                  : "mt-8 grid gap-8 lg:grid-cols-[minmax(0,48rem)_18rem]"
+              }
+            >
+              <div className="min-w-0 space-y-8">
               <HomeSection title="Recent activity">
                 {scopedRuns.length === 0 ? (
                   <p className="text-sm text-neutral-600">Nothing has run yet.</p>
                 ) : (
-                  scopedRuns.slice(0, 15).map((r) => (
+                  scopedRuns.slice(0, active.kind === "space" && deliveriesSpaceHasWebhooks ? 8 : 15).map((r) => (
                     <button
                       key={r.id}
                       onClick={() => setView({ kind: "run", id: r.id })}
@@ -1033,6 +1635,27 @@ export function App() {
                 )}
               </HomeSection>
 
+              {active.kind === "space" && deliveriesSpaceHasWebhooks && (
+                <HomeSection
+                  title="Recent webhook deliveries"
+                  hint="What arrived at this space's shared webhook URL, and which agents it reached."
+                >
+                  {spaceDeliveries.length === 0 ? (
+                    <p className="text-sm text-neutral-600">Nothing has arrived yet.</p>
+                  ) : (
+                    <GroupedDeliveryList
+                      deliveries={spaceDeliveries}
+                      limit={10}
+                      agentName={agentName}
+                      onOpenRun={(id) => setView({ kind: "run", id })}
+                      onOpenAgent={(id) => setView({ kind: "detail", id })}
+                    />
+                  )}
+                </HomeSection>
+              )}
+              </div>
+
+              {!quiet && (
               <div className="space-y-8">
                 {awaiting.length > 0 && (
                   <HomeSection
@@ -1152,6 +1775,7 @@ export function App() {
                     <p className="text-sm text-neutral-600">Nothing needs you right now.</p>
                   )}
               </div>
+              )}
             </div>
           </div>
         )}
@@ -1170,6 +1794,27 @@ export function App() {
               {run.label && <span className="truncate font-mono text-xs text-neutral-400">{run.label}</span>}
               {run.branch && <span className="font-mono text-xs text-neutral-500">{run.branch}</span>}
               {run.numTurns != null && <span className="text-xs text-neutral-500">{run.numTurns} turns</span>}
+              {run.status === "queued" && (
+                <span className="text-xs text-neutral-500">starts when the current run ends</span>
+              )}
+              {took(run) && <span className="text-xs text-neutral-500">{took(run)}</span>}
+              {metered && run.costUsd != null && run.costUsd > 0 && (
+                <span className="text-xs text-neutral-500">${(run.costUsd / 1_000_000).toFixed(2)}</span>
+              )}
+              <span
+                className="text-xs tabular-nums text-neutral-500"
+                title={new Date(run.startedAt * 1000).toLocaleString()}
+              >
+                {ago(run.startedAt)}
+              </span>
+              {isQueued && (
+                <button
+                  onClick={() => api.stop(run.id).then(() => setView({ kind: "detail", id: run.agentId }))}
+                  className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-900"
+                >
+                  Cancel
+                </button>
+              )}
               {canReply && (
                 <>
                   <select

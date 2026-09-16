@@ -4,13 +4,15 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
-import { config, detectClaudeCredential } from "./config.ts";
+import { config } from "./config.ts";
+import { claudeCredential } from "./env.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { hub } from "./hub.ts";
 import { api } from "./routes/api.ts";
 import { eventsSince } from "./runs/eventLog.ts";
 import { recoverOrphanedRuns, shutdownLiveRuns } from "./runs/RunManager.ts";
 import { seedScratchAgent } from "./seed.ts";
+import { pullSkillsIfManaged } from "./skills.ts";
 import { startScheduler, stopScheduler } from "./triggers/cron.ts";
 
 process.on("unhandledRejection", (reason) => {
@@ -21,6 +23,8 @@ runMigrations();
 const recovered = recoverOrphanedRuns();
 if (recovered > 0) console.warn(`[bullpen] marked ${recovered} orphaned run(s) interrupted`);
 seedScratchAgent();
+const skillsNote = pullSkillsIfManaged();
+if (skillsNote) console.log(`[bullpen] ${skillsNote}`);
 const scheduled = startScheduler();
 if (scheduled > 0) console.log(`[bullpen] scheduled ${scheduled} cron agent(s)`);
 
@@ -34,7 +38,7 @@ if (existsSync(webDist)) {
 }
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
-  const credential = detectClaudeCredential();
+  const credential = claudeCredential();
   console.log(`[bullpen] listening on http://localhost:${info.port}`);
   console.log(`[bullpen] data dir ${config.dataDir}`);
   console.log(

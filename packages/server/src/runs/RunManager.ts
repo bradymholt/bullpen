@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "../config.ts";
+import { writePayload } from "../triggers/webhook.ts";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
-import { interpolateSecrets } from "../mcp.ts";
+import { resolveEnv } from "../env.ts";
+import { selectMcp } from "../mcp.ts";
+import { exportMachineMcp } from "../machineMcp.ts";
 import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
 import { dropPending, makeCanUseTool } from "./approvals.ts";
 import { claudeRunner } from "./ClaudeRunner.ts";
@@ -11,6 +17,7 @@ import { MODE_NAMES, type ModeName, type Runner, type RunnerHandle } from "./run
 import { appendEvent } from "./eventLog.ts";
 
 export type RunStatus =
+  | "queued"
   | "running"
   | "awaiting_approval"
   | "completed"
@@ -51,7 +58,7 @@ function setStatus(runId: string, status: RunStatus, patch: Partial<typeof runs.
   hub.broadcast(runId, { type: "status", runId, status });
 }
 
-export function startRun(opts: {
+export type RunRequest = {
   agent: Agent;
   trigger: "manual" | "cron" | "webhook" | "poll";
   prompt?: string;
@@ -59,13 +66,132 @@ export function startRun(opts: {
   permissionMode?: string;
   /** Ignores the agent's workspace and runs in a directory used once. */
   ephemeralWorkspace?: boolean;
-  /** Runs after the workspace exists, before the agent starts. */
-  onWorkspace?: (path: string) => void;
+  /** The delivery body, written to .bullpen/payload.json once the workspace exists. */
+  rawPayload?: string;
   /** Names this run in lists. The caller renders it; the payload lives there. */
   label?: string;
-}): string {
+};
+
+export class QueueFullError extends Error {
+  constructor(agentName: string, depth: number) {
+    super(`${agentName} already has ${depth} runs queued`);
+  }
+}
+
+/** Queued runs waiting behind an active one; beyond this a trigger is dropped, not queued. */
+export const QUEUE_DEPTH = 20;
+const queueDir = () => join(config.dataDir, "queue");
+const spoolPath = (runId: string) => join(queueDir(), `${runId}.json`);
+
+function queuedCount(agentId: string): number {
+  return (
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(runs)
+      .where(and(eq(runs.agentId, agentId), eq(runs.status, "queued")))
+      .get()?.n ?? 0
+  );
+}
+
+/**
+ * The one entry point triggers use. `skip` is decided by the caller (it needs to
+ * record why); this handles `queue`: while the agent has an active run, the
+ * request is parked as a `queued` row and starts when that run ends.
+ */
+export function requestRun(opts: RunRequest): { runId: string; queued: boolean } {
+  const { agent } = opts;
+  if (agent.concurrency === "queue" && agentHasActiveRun(agent.id)) {
+    const depth = queuedCount(agent.id);
+    if (depth >= QUEUE_DEPTH) throw new QueueFullError(agent.name, depth);
+    return { runId: enqueueRun(opts), queued: true };
+  }
+  return { runId: startRun(opts), queued: false };
+}
+
+/**
+ * Everything startRun would need later, spooled to disk rather than the DB: a
+ * webhook body can be a megabyte, and the row already holds prompt and mode.
+ */
+function enqueueRun(opts: RunRequest): string {
   const { agent, trigger } = opts;
   const runId = randomUUID();
+  mkdirSync(queueDir(), { recursive: true });
+  writeFileSync(
+    spoolPath(runId),
+    JSON.stringify({ ephemeralWorkspace: opts.ephemeralWorkspace ?? false, rawPayload: opts.rawPayload ?? null }),
+  );
+  db.insert(runs)
+    .values({
+      id: runId,
+      agentId: agent.id,
+      status: "queued",
+      trigger,
+      prompt: opts.prompt ?? agent.prompt,
+      permissionMode: opts.permissionMode ?? agent.permissionMode,
+      ...(opts.label ? { label: opts.label } : {}),
+    })
+    .run();
+  appendEvent(runId, "run.queued", { agentId: agent.id, trigger, behind: queuedCount(agent.id) - 1 });
+  return runId;
+}
+
+/**
+ * Starts the agent's oldest queued run if nothing is active. Called when a run
+ * ends and at boot. `start` is injectable so the ordering can be tested without
+ * spawning a harness.
+ */
+export function drainQueue(agentId: string, start: (opts: RunRequest, existingId: string) => string = startRun): void {
+  if (agentHasActiveRun(agentId)) return;
+  const next = db
+    .select()
+    .from(runs)
+    .where(and(eq(runs.agentId, agentId), eq(runs.status, "queued")))
+    .orderBy(asc(runs.startedAt), asc(runs.id))
+    .get();
+  if (!next) return;
+  const agent = getAgent(agentId);
+  if (!agent) return;
+
+  let spool: { ephemeralWorkspace?: boolean; rawPayload?: string | null } = {};
+  try {
+    spool = JSON.parse(readFileSync(spoolPath(next.id), "utf8"));
+  } catch {
+    // No spool means a manual run with nothing beyond what the row holds.
+  }
+  rmSync(spoolPath(next.id), { force: true });
+
+  try {
+    start(
+      {
+        agent,
+        trigger: next.trigger as RunRequest["trigger"],
+        prompt: next.prompt,
+        ...(next.permissionMode ? { permissionMode: next.permissionMode } : {}),
+        ...(spool.ephemeralWorkspace ? { ephemeralWorkspace: true } : {}),
+        ...(spool.rawPayload ? { rawPayload: spool.rawPayload } : {}),
+        ...(next.label ? { label: next.label } : {}),
+      },
+      next.id,
+    );
+  } catch (err) {
+    // A workspace that can't be prepared fails this run and moves on to the next.
+    setStatus(next.id, "failed", { error: String(err), endedAt: Math.floor(Date.now() / 1000) });
+    drainQueue(agentId, start);
+  }
+}
+
+/** Removes a run that never started. Not for live runs — stopRun handles those. */
+export function cancelQueued(runId: string): boolean {
+  const row = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
+  if (row?.status !== "queued") return false;
+  rmSync(spoolPath(runId), { force: true });
+  db.delete(runs).where(eq(runs.id, runId)).run();
+  return true;
+}
+
+export function startRun(opts: RunRequest, existingId?: string): string {
+  const { agent, trigger } = opts;
+  const runId = existingId ?? randomUUID();
   const prompt = opts.prompt ?? agent.prompt;
   const permissionMode = opts.permissionMode ?? agent.permissionMode;
   // Where the delivery body lives is bullpen's business, not something every
@@ -88,24 +214,28 @@ export function startRun(opts: {
     runId,
   });
 
-  opts.onWorkspace?.(workspace.path);
+  if (opts.rawPayload !== undefined) writePayload(workspace.path, opts.rawPayload);
 
-  db.insert(runs)
-    .values({
-      id: runId,
-      agentId: agent.id,
-      status: "running",
-      trigger,
-      prompt,
-      permissionMode,
-      workspacePath: workspace.path,
-      ...(opts.label ? { label: opts.label } : {}),
-      ...(workspace.branch ? { branch: workspace.branch } : {}),
-    })
-    .run();
+  const row = {
+    agentId: agent.id,
+    status: "running" as const,
+    trigger,
+    prompt,
+    permissionMode,
+    workspacePath: workspace.path,
+    startedAt: Math.floor(Date.now() / 1000),
+    ...(opts.label ? { label: opts.label } : {}),
+    ...(workspace.branch ? { branch: workspace.branch } : {}),
+  };
+  // A queued run already has its row; it is promoted rather than re-inserted.
+  if (existingId) db.update(runs).set(row).where(eq(runs.id, runId)).run();
+  else db.insert(runs).values({ id: runId, ...row }).run();
 
   appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, permissionMode, cwd: workspace.path });
 
+  // Global, then the space's, then the agent's own — later wins.
+  const env = resolveEnv(agent);
+  const mcp = selectMcp(agent, exportMachineMcp(), env);
   const handle = runner.start(
     {
       cwd: workspace.path,
@@ -114,11 +244,11 @@ export function startRun(opts: {
       permissionMode: isPermissionMode(permissionMode) ? permissionMode : "supervised",
       allowedTools: agent.allowedTools as string[],
       disallowedTools: agent.disallowedTools as string[],
-      mcpServers: interpolateSecrets(agent.mcpServers, agent.env as Record<string, string>) as never,
-      strictMcpConfig: !agent.inheritMachineMcp,
+      mcpServers: mcp.mcpServers as never,
+      strictMcpConfig: mcp.strictMcpConfig,
       inheritUserSettings: agent.inheritUserSettings,
       appendSystemPrompt: payloadNote,
-      env: agent.env as Record<string, string>,
+      env,
       maxTurns: agent.maxTurns ?? undefined,
       canUseTool: makeCanUseTool(runId, (hasPending) => {
         const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
@@ -177,6 +307,8 @@ export function startRun(opts: {
       // its diff can still be reviewed.
       const final = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
       if (ephemeral && final?.status === "completed") removeWorkspace(workspace.path);
+      // The next queued run, if any, waits on exactly this.
+      drainQueue(agent.id);
     });
 
   return runId;
@@ -197,6 +329,7 @@ export function sendToRun(runId: string, text: string): boolean {
 }
 
 export async function stopRun(runId: string): Promise<boolean> {
+  if (cancelQueued(runId)) return true;
   const handle = live.get(runId);
   if (!handle) return false;
   stopping.add(runId);
@@ -228,6 +361,13 @@ export function recoverOrphanedRuns(): number {
       .where(and(eq(approvals.runId, id), eq(approvals.status, "pending")))
       .run();
   }
+  // Queued runs survive a restart by design; with nothing active now, they can go.
+  const waiting = db
+    .selectDistinct({ agentId: runs.agentId })
+    .from(runs)
+    .where(eq(runs.status, "queued"))
+    .all();
+  for (const { agentId } of waiting) drainQueue(agentId);
   return orphans.length;
 }
 

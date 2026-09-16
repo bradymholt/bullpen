@@ -138,6 +138,7 @@ export function decideDelivery(opts: {
 }): Decision {
   const { agent, rawBody, headers } = opts;
   if (!agent.enabled) return { ok: false, status: 409, reason: "agent is disabled" };
+  if (agent.trigger !== "webhook") return { ok: false, status: 409, reason: "agent is not webhook-triggered" };
   if (!agent.webhookSecret) return { ok: false, status: 401, reason: "no webhook secret" };
   if (Buffer.byteLength(rawBody) > MAX_BODY_BYTES) {
     return { ok: false, status: 413, reason: "body too large" };

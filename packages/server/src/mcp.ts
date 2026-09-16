@@ -34,3 +34,39 @@ export function summarizeMcpStatus(initPayload: unknown): McpStatus[] {
     };
   });
 }
+
+export type McpSelection = { mcpServers: Record<string, unknown>; strictMcpConfig: boolean };
+
+/**
+ * What a run is handed. "All shared" has to go through the harness's own config
+ * read (strict off) because claude.ai connectors exist nowhere else; a pick is
+ * passed explicitly with strict on, so nothing unpicked — connectors included —
+ * reaches the run. The agent's own servers ride along in every case.
+ */
+export function selectMcp(
+  agent: { mcpServers: unknown; inheritMachineMcp: boolean; sharedMcpPick: string[] | null },
+  shared: Record<string, unknown>,
+  env: Record<string, string>,
+): McpSelection {
+  const own = (agent.mcpServers ?? {}) as Record<string, unknown>;
+  if (!agent.inheritMachineMcp) return { mcpServers: interpolateSecrets(own, env), strictMcpConfig: true };
+  if (agent.sharedMcpPick === null) return { mcpServers: interpolateSecrets(own, env), strictMcpConfig: false };
+  const picked = Object.fromEntries(agent.sharedMcpPick.filter((n) => n in shared).map((n) => [n, shared[n]]));
+  return { mcpServers: interpolateSecrets({ ...picked, ...own }, env), strictMcpConfig: true };
+}
+
+export type McpHealth = Record<string, { status: string; at: number; error?: string }>;
+
+/** Newest status per server from the runs' init messages, newest event first. */
+export function foldMcpHealth(events: { ts: number; payload: unknown }[]): McpHealth {
+  const out: McpHealth = {};
+  for (const e of events) {
+    const servers = (e.payload as { servers?: McpStatus[] })?.servers;
+    if (!Array.isArray(servers)) continue;
+    for (const s of servers) {
+      if (s.name in out) continue;
+      out[s.name] = { status: s.status, at: e.ts, ...(s.error ? { error: s.error } : {}) };
+    }
+  }
+  return out;
+}

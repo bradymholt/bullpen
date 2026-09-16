@@ -10,7 +10,15 @@ npm run dev        # API on :4322, Vite on :5173 — open :5173
 npm test           # vitest, server package
 npm run typecheck  # both packages
 npm run build && npm start   # single port, the way the container runs
+npm run dev:managed          # sandbox: own data dir + CLAUDE_CONFIG_DIR, so Settings is editable
+npm run dev:managed:fresh    # same, after wiping ~/.bullpen-managed
+npm run deploy               # kamal deploy --skip-push --version <HEAD sha>; CI must have built it
 ```
+
+Deployment is Kamal 2 (`config/deploy.yml`, `.kamal/secrets`), one host, `proxy: false`, container
+published on loopback, Tailscale on the host for exposure. Kamal never builds: CI tags the image
+with the bare git sha for exactly this. `.kamal/secrets` holds `$VAR` references only, so it is
+committed.
 
 Local runs need no credential setup: the SDK finds the existing `~/.claude` login. The
 container does need one — see README.
@@ -103,6 +111,15 @@ null reply blocks that tool for the life of the process. An abort resolves to an
 Separately, Claude Code auto-approves commands it classifies as trivially safe — a supervised
 agent running `echo` never prompts, but a file write does. Test approval changes with a write.
 
+**`queue` serializes; it is the mode for a scratch-workspace agent.** `requestRun()` is the one
+entry point every trigger uses. With `concurrency: queue` and an active run, the request becomes a
+`runs` row with status `queued` and its payload spooled to `dataDir/queue/<runId>.json` — bodies
+can be a megabyte, and the row already holds prompt and mode. `drainQueue()` starts the oldest one
+when a run ends and at boot, promoting the existing row rather than inserting a new one, so the id
+a webhook delivery recorded is the id that eventually runs. Depth is capped at `QUEUE_DEPTH`;
+beyond it a trigger is refused and recorded as a `queue full` delivery drop. `queued` is not an
+active status: it must never count toward `agentHasActiveRun`, or the queue would block itself.
+
 **New agents default to `allow` + `ephemeral`, and the two go together.** A dropped trigger is
 lost for good — there is no queue — so `skip` silently loses the second of two webhooks that land
 close together. Running in parallel is only safe when runs do not share a directory, which is why
@@ -121,15 +138,55 @@ misspelled field errors instead of vanishing — that is how the webhook allowli
 dead for a while. Server-owned fields are stripped before that check, since the UI round-trips
 whole agent records.
 
-**Secrets in `agents.env` are stored plaintext and masked in every API response.** A PATCH
-carrying the mask back must keep the stored value — otherwise editing an unrelated field
-destroys the agent's credentials. MCP config references them as `${NAME}` and interpolates once
-at run start, so the stored JSON stays credential-free.
+**Env is three layers, and the mask rule applies to all of them.** A run's env is
+`process.env` → global (`global_config`, one row) → the agent's space (`space_secrets.env`) →
+the agent's own, later winning; `resolveEnv()` in `env.ts` is the one place that order lives, and
+MCP `${NAME}` interpolation uses the same result. All three are stored plaintext and masked as
+`••••` in every response. A PUT or PATCH that sends the mask back keeps the stored value, a typed
+value replaces it, an omitted key deletes it — `mergeMaskedEnv()` is the one implementation, so
+don't hand-roll it for a new scope. The server's own GitHub calls read `githubToken()`, and
+credential detection reads `claudeCredential()`; both put **global env above the process**, the
+same order a run sees, so the dashboard and the agents can never disagree about which token is
+in force. That is also what lets a fresh install with no `.env` at all be set up from the
+browser: health reports `none`, the app renders `SetupView` instead of the dashboard, and the
+tokens it collects go to global env. Setting env on a space with no row yet mints a webhook secret and id it may never use;
+that's fine — neither is ever shown.
 
-**`strictMcpConfig` is on unless the agent opts out.** Without it a run inherits MCP servers
-from `~/.claude.json` (read regardless of `settingSources`), the cloned repo's `.mcp.json`, and
-claude.ai connectors. That makes agents non-deterministic and leaks one agent's MCP credentials
-to another.
+**Every agent is in a space, and `General` is the one that is always there.** `agents.space` is
+still a nullable column, but the API never writes null: the schema requires a name, new agents
+default to `DEFAULT_SPACE`, imports coerce a missing or null space, and migration 0017 backfilled
+the old "unassigned" rows. Spaces are otherwise a GROUP BY over that column plus a `space_secrets`
+side row, so removing a space (`DELETE /spaces/:name`) is "move the members to General and drop
+the row". General itself cannot be renamed or removed — it is where those members go — but has a
+shared webhook URL and env like any other. It shows in the rail only while it has agents.
+
+**An export carries the shared MCP servers, and import writes them only in managed mode.** The
+`SecretsBundle` has an optional `mcp` (older exports lack it) holding `mcpServers` verbatim, headers
+and env included — which is why it lives inside the sealed part. `importMachineMcp` refuses without
+`CLAUDE_CONFIG_DIR`, and the import route turns that refusal into `mcpNote` rather than failing the
+import: on a laptop the agents still land, and the note says what did not. Onboarding has no MCP
+step for the same reason there is nothing to list there: connectors come with the login, and the
+config cache that names them is empty until an agent has run.
+
+**Usage comes from the harness's own OAuth login, and on a Mac that login is one of several
+Keychain items.** `usage.ts` reads `GET api.anthropic.com/api/oauth/usage` with the
+`claudeAiOauth.accessToken` from `CLAUDE_CONFIG_DIR/.credentials.json`, or on macOS from the
+Keychain service `Claude Code-credentials` — where the VS Code extension and the MCP OAuth store
+keep items under the same service name, so the user's own account is asked for first and a hit
+without `claudeAiOauth` is skipped. The response also carries `{utilization: 0}` feature flags
+that are not windows; only entries with a `resets_at` are shown. The endpoint 429s freely, hence
+the one-minute cache. A `setup-token` token is tried last and may be refused.
+
+**`strictMcpConfig` is on unless the agent opts out — and a pick keeps it on.** Without it a run
+inherits MCP servers from `~/.claude.json` (read regardless of `settingSources`), the cloned repo's
+`.mcp.json`, and claude.ai connectors. That makes agents non-deterministic and leaks one agent's
+MCP credentials to another. `selectMcp()` in `mcp.ts` is the one place this is decided: sharing off
+→ own servers, strict; sharing on with `sharedMcpPick: null` → strict off, the harness reads
+everything (the only way connectors reach a run, since they exist in no config file); sharing on
+with a pick → the named shared configs are read by bullpen, `${NAME}`-interpolated from the run's
+env, and passed explicitly with strict on, so nothing unpicked leaks in. Settings shows each
+server's last-known state folded from runs' `mcp.status` events (`foldMcpHealth`), which is the
+only health signal there is — the harness never fails a run for a server that won't connect.
 
 **Webhook shape is per-agent, and header names are lowercased before lookup.** `presetFor()`
 resolves `webhookMode` to a signature header, prefix, event header and handshake header — `github`
@@ -158,6 +215,12 @@ a startup warning and grants nothing.
 agent just quietly lacks those tools. That's why the init message's per-server status is logged
 as an `mcp.status` event and rendered.
 
+**`handle.done` is not "the run finished."** In streaming-input mode the session stays open after
+the `result` message so a completed run can still be replied to — so `done` resolves only when the
+session is closed, by a stop or a shutdown. Anything one-shot (the setup token test, say) must treat
+`onResult` as the finish line and then call `stop()` itself. Awaiting `done` there hangs until the
+timeout, which is exactly how the token test first shipped.
+
 **A deliberate stop must not read as a failure.** The interrupted turn's `result` arrives after
 we set `cancelled` and would overwrite it, so `RunManager` tracks intentionally-stopped runs.
 
@@ -170,6 +233,17 @@ interrupted and denying their pending approvals.
 
 **`better-sqlite3` publishes no prebuilt binaries at all.** It always compiles from source, so
 the Dockerfile has a build stage with python3/make/g++ and the runtime stage ships no compiler.
+
+**The container's Claude config is `/data/claude`, not `~/.claude`.** `CLAUDE_CONFIG_DIR` is
+set in the image and honoured by both the harness and `detectClaudeCredential()`, so skills and
+`settings.json` live in the data volume as files you can version, and `~/.claude.json` (machine
+MCP) is simply absent — agents own their MCP config anyway. `GOG_HOME=/data/gog` does the same
+for gog. **Never put a `CLAUDE.md` under `/data`**: workspaces live there, and the harness
+collects `CLAUDE.md` from every parent of cwd — the same trap as `packages/server/data/`, one
+level up.
+
+**`gh` is in the image; `gog` only if `GOG_URL` was passed at build.** The SDK brings the
+`claude` binary and nothing else; the agents' `gh api` calls need the CLI installed separately.
 
 **Don't add a global `@anthropic-ai/claude-code`.** The Agent SDK spawns the harness binary it
 bundles; a global install is a second 200MB copy nothing runs. The build also deletes the musl
@@ -189,6 +263,11 @@ carry the `.ts` extension.
   like nothing to report. Status is visible in the UI and nowhere else.
 - **Nothing sweeps `workspacesDir`.** A failed ephemeral run keeps its directory on purpose, and
   no boot-time or age-based cleanup removes it, so failures accumulate on disk.
+- **claude.ai connectors don't reach runs in a fresh managed config dir.** Measured: after
+  `claude login` into the sandbox dir, `claude mcp list` there shows every connector, but a `-p`/SDK
+  run in that same dir reports `mcp_servers: []`, while the identical run against `~/.claude` lists
+  them all. Same account, same login type — some config-dir state we haven't identified. Until it
+  is, a headless box gets your own MCP servers (export → import) and no connectors.
 - **Cron doesn't catch up** on fires missed while the container was down. Deliberate.
 - **Single instance assumed.** Two containers on one DB double-fire every cron job.
 - **No UI auth by design** — private network only. Webhooks carry their own per-agent secret

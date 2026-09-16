@@ -1,10 +1,10 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { git } from "./workspaces.ts";
 
 export type Skill = { name: string; description: string };
 
-const skillsDir = () => join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "skills");
 
 /** name/description out of SKILL.md's frontmatter, without pulling in a YAML parser. */
 function readFrontmatter(path: string): Skill | null {
@@ -47,4 +47,118 @@ export function listSkills(): Skill[] {
     .filter((e) => e.isDirectory())
     .map((e) => readFrontmatter(join(dir, e.name, "SKILL.md")) ?? { name: e.name, description: "" })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Where the harness looks for skills: CLAUDE_CONFIG_DIR/skills, or ~/.claude/skills. */
+export function claudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+}
+export function skillsDir(): string {
+  return join(claudeConfigDir(), "skills");
+}
+/** Directories directly under `dir` that hold a SKILL.md. */
+export function skillDirsIn(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(dir, d.name, "SKILL.md")))
+    .map((d) => d.name);
+}
+/**
+ * Skills often live in a subdirectory of a bigger repo — a dotfiles checkout's
+ * `.claude/skills`, say. Finds directories, up to two levels down, that contain
+ * skill directories, so a blank path can be resolved or the user offered choices.
+ */
+export function findSkillRoots(checkout: string): string[] {
+  const roots: string[] = [];
+  const walk = (dir: string, rel: string, depth: number) => {
+    if (skillDirsIn(dir).length > 0) roots.push(rel || ".");
+    if (depth === 0) return;
+    for (const d of readdirSync(dir, { withFileTypes: true })) {
+      if (d.isDirectory() && d.name !== ".git" && d.name !== "node_modules") {
+        walk(join(dir, d.name), rel ? `${rel}/${d.name}` : d.name, depth - 1);
+      }
+    }
+  };
+  walk(checkout, "", 2);
+  return roots;
+}
+/**
+ * What settings.json pre-approves. An agent that loads the shared config
+ * inherits these, and anything on the list runs without a prompt — even on a
+ * Manual agent. A bare tool name (no pattern) approves every use of that tool.
+ */
+export function preapprovedTools(): { count: number; bare: string[] } {
+  const path = join(claudeConfigDir(), "settings.json");
+  if (!existsSync(path)) return { count: 0, bare: [] };
+  try {
+    const allow = (JSON.parse(readFileSync(path, "utf8")).permissions?.allow ?? []) as string[];
+    return { count: allow.length, bare: allow.filter((r) => typeof r === "string" && !r.includes("(")) };
+  } catch {
+    return { count: 0, bare: [] };
+  }
+}
+
+export function skillsState() {
+  const dir = skillsDir();
+  const count = skillDirsIn(dir).length;
+  let remote: string | null = null;
+  let subdir: string | null = null;
+  if (existsSync(dir)) {
+    try {
+      remote = git(dir, ["remote", "get-url", "origin"], 5_000).trim();
+      const top = git(dir, ["rev-parse", "--show-toplevel"], 5_000).trim();
+      const rel = relative(top, realpathSync(dir));
+      subdir = rel === "" ? "." : rel;
+    } catch {
+      remote = null;
+    }
+  }
+  // Set CLAUDE_CONFIG_DIR and the directory is bullpen's to manage; otherwise
+  // it is the user's own ~/.claude and bullpen only reads it.
+  const home = homedir();
+  const dirDisplay = dir === home || dir.startsWith(home + "/") ? "~" + dir.slice(home.length) : dir;
+  return { dir, dirDisplay, count, remote, subdir, managed: Boolean(process.env.CLAUDE_CONFIG_DIR), preapproved: preapprovedTools() };
+}
+
+
+/**
+ * Refreshes the skills checkout at boot — but only where bullpen owns the
+ * directory. CLAUDE_CONFIG_DIR being set is the signal: the container sets it
+ * to /data/claude, which exists to be managed. On a laptop using ~/.claude the
+ * checkout is the user's own working copy, and touching it uninvited would be a
+ * surprise, so there it stays manual (the Settings page has "Pull latest").
+ * Never fatal: stale skills beat a server that refuses to start.
+ */
+export function pullSkillsIfManaged(): string | null {
+  if (!process.env.CLAUDE_CONFIG_DIR) return null;
+  const state = skillsState();
+  if (!state.remote) return null;
+  try {
+    const out = git(state.dir, ["pull", "--ff-only"], 60_000).trim().split("\n").pop() ?? "";
+    return `skills: ${out || "up to date"} (${skillsState().count} installed)`;
+  } catch (e) {
+    return `skills: pull failed — ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`;
+  }
+}
+
+const CLAUDE_MD_MAX = 64 * 1024;
+
+/**
+ * The user-level CLAUDE.md the harness loads alongside skills and settings.json
+ * when an agent uses the shared config. Content comes back so it can be seen;
+ * it is only writable where bullpen owns the directory.
+ */
+export function claudeMdState() {
+  const path = join(claudeConfigDir(), "CLAUDE.md");
+  const managed = Boolean(process.env.CLAUDE_CONFIG_DIR);
+  if (!existsSync(path)) return { path, exists: false, size: 0, managed, content: "" };
+  const size = statSync(path).size;
+  const content = size <= CLAUDE_MD_MAX ? readFileSync(path, "utf8") : readFileSync(path, "utf8").slice(0, CLAUDE_MD_MAX);
+  return { path, exists: true, size, managed, content };
+}
+
+export function writeClaudeMd(content: string): void {
+  if (!process.env.CLAUDE_CONFIG_DIR) throw new Error("this CLAUDE.md is the user's own, not managed by bullpen");
+  if (Buffer.byteLength(content) > CLAUDE_MD_MAX) throw new Error(`CLAUDE.md is limited to ${CLAUDE_MD_MAX / 1024} KB`);
+  writeFileSync(join(claudeConfigDir(), "CLAUDE.md"), content);
 }

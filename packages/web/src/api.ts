@@ -9,12 +9,23 @@ import type {
   RepoList,
   Skill,
   Stats,
+  Usage,
   Run,
   RunEvent,
 } from "./types.ts";
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text;
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown };
+      if (typeof parsed.error === "string") message = parsed.error;
+    } catch {
+      // not JSON; the raw body is the message
+    }
+    throw new Error(message || `${res.status} ${res.statusText}`);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -65,6 +76,96 @@ export const api = {
   scheduleAll: () => fetch("/api/schedule").then(json<{ agentId: string; at: string }[]>),
   deleteAgent: (id: string) =>
     fetch(`/api/agents/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  setupGithub: (token: string) =>
+    fetch("/api/setup/github", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).then(json<{ login: string }>),
+  /** Spends a few cents on a one-turn run to prove the token. Opt-in from setup only. */
+  setupClaudeTest: (token: string) =>
+    fetch("/api/setup/claude-test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).then(json<{ ok: true; reply: string }>),
+  addMachineMcp: (name: string, config: Record<string, unknown>) =>
+    fetch("/api/machine-mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, config }),
+    }).then(json<MachineMcp>),
+  removeMachineMcp: (name: string) =>
+    fetch(`/api/machine-mcp/${encodeURIComponent(name)}`, { method: "DELETE" }).then(json<MachineMcp>),
+  claudeMd: () =>
+    fetch("/api/setup/claude-md").then(
+      json<{ path: string; exists: boolean; size: number; managed: boolean; content: string }>,
+    ),
+  setClaudeMd: (content: string) =>
+    fetch("/api/setup/claude-md", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content }),
+    }).then(json<{ path: string; exists: boolean; size: number; managed: boolean; content: string }>),
+  skillsState: () =>
+    fetch("/api/setup/skills").then(
+      json<{ dir: string; dirDisplay: string; count: number; remote: string | null; subdir: string | null; managed: boolean; preapproved: { count: number; bare: string[] } }>,
+    ),
+  /** Fails with `candidates` when skills live in more than one place or not where `path` says. */
+  skillsClone: async (url: string, path?: string) => {
+    const res = await fetch("/api/setup/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(path ? { url, path } : { url }),
+    });
+    const body = (await res.json()) as { error?: string; candidates?: string[]; count?: number };
+    if (!res.ok) throw Object.assign(new Error(body.error ?? `${res.status}`), { candidates: body.candidates });
+    return body as { count: number };
+  },
+  skillsPull: () =>
+    fetch("/api/setup/skills/pull", { method: "POST" }).then(json<{ count: number }>),
+  /** With a passphrase, secrets ride along sealed; without one they are left out. */
+  exportAgents: (passphrase?: string) =>
+    fetch("/api/export", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(passphrase ? { passphrase } : {}),
+    }).then(json<{ version: number; agents: unknown[]; secrets?: unknown }>),
+  importAgents: (payload: Record<string, unknown>, passphrase?: string) =>
+    fetch("/api/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(passphrase ? { ...payload, passphrase } : payload),
+    }).then(
+      json<{
+        created: string[];
+        updated: string[];
+        envNeeded: Record<string, string[]>;
+        errors: { name: string }[];
+        secretsApplied: { agents: number; spaces: number; globalKeys: number; mcp: number } | null;
+        secretsNote: string | null;
+        mcpNote: string | null;
+      }>,
+    ),
+  /** Names only — what the server process itself was started with. */
+  processEnvNames: () => fetch("/api/config/process-env").then(json<{ names: string[] }>),
+  /** Env maps come back masked; send the mask back to keep a value, a string to replace it. */
+  globalEnv: () => fetch("/api/config/env").then(json<{ env: Record<string, string> }>),
+  /** `force` is required to write an empty map over a non-empty one. */
+  setGlobalEnv: (env: Record<string, string>, force = false) =>
+    fetch("/api/config/env", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(force ? { env, force: true } : { env }),
+    }).then(json<{ env: Record<string, string> }>),
+  spaceEnv: (space: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/env`).then(json<{ env: Record<string, string> }>),
+  setSpaceEnv: (space: string, env: Record<string, string>, force = false) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/env`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(force ? { env, force: true } : { env }),
+    }).then(json<{ env: Record<string, string> }>),
   spaceSecretState: (space: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean; hookId: string | null }>),
   /** Omit `secret` to have the server mint one. Returns it once, then never again. */
@@ -79,15 +180,19 @@ export const api = {
       json<{ ok: true }>,
     ),
   /** `name: null` unassigns every member, which is how a space is removed. */
-  renameSpace: (from: string, name: string | null) =>
+  renameSpace: (from: string, name: string) =>
     fetch(`/api/spaces/${encodeURIComponent(from)}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name }),
-    }).then(json<{ moved: number; name: string | null }>),
+    }).then(json<{ moved: number; name: string }>),
+  /** Members go to the default space; the space's secret and env are dropped. */
+  removeSpace: (name: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(name)}`, { method: "DELETE" }).then(json<{ moved: number; name: string }>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
   stats: () => fetch("/api/stats").then(json<Stats>),
+  usage: (fresh = false) => fetch(fresh ? "/api/usage?fresh=1" : "/api/usage").then(json<Usage>),
   spaceDeliveries: (space: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/deliveries`).then(json<Delivery[]>),
   /** Deliveries refused for a reason worth knowing about; filter misses excluded. */
