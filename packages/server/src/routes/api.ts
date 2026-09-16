@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { agentCreateSchema, agentPatchSchema } from "../agentSchema.ts";
 import { nextRuns, rescheduleAgent } from "../triggers/cron.ts";
@@ -11,6 +11,7 @@ import {
   handshakeSecret,
   presetFor,
   recordDelivery,
+  renderPrompt,
   urlVerificationChallenge,
   writePayload,
 } from "../triggers/webhook.ts";
@@ -95,16 +96,42 @@ api.get("/agents/:id/schedule", (c) => {
   }
 });
 
-api.get("/agents/:id/deliveries", (c) =>
-  c.json(
-    db
-      .select()
-      .from(webhookDeliveries)
-      .where(eq(webhookDeliveries.agentId, c.req.param("id")))
-      .orderBy(desc(webhookDeliveries.ts))
-      .limit(20)
-      .all(),
-  ));
+/**
+ * A delivery refused by a filter or event allowlist is the system working — and
+ * with one URL fanning out to a space, most deliveries are refused that way. So
+ * they are noise in any list meant to show problems.
+ */
+const BY_DESIGN = /filter|allowlist|ping acknowledged|url_verification|handshake|duplicate/i;
+const isByDesign = (reason: string | null) => BY_DESIGN.test(reason ?? "");
+
+/**
+ * `?all=1` includes deliveries refused by this agent's own filters, which is
+ * what you want when working out why it didn't run. By default they are left
+ * out: they arrive constantly on a shared space URL and would bury everything.
+ */
+api.get("/agents/:id/deliveries", (c) => {
+  const rows = db
+    .select()
+    .from(webhookDeliveries)
+    .where(eq(webhookDeliveries.agentId, c.req.param("id")))
+    .orderBy(desc(webhookDeliveries.ts))
+    .limit(200)
+    .all();
+  const all = c.req.query("all") === "1";
+  return c.json((all ? rows : rows.filter((r) => r.accepted || !isByDesign(r.reason))).slice(0, 20));
+});
+
+/**
+ * A run's label comes from the agent's own template, in the same
+ * `{{payload.a.b}}` syntax the prompt uses — so it works for any sender rather
+ * than assuming a shape. Blank or unset means the run is simply unlabelled.
+ */
+function renderRunLabel(agent: Agent, payload: unknown): string | undefined {
+  const template = agent.labelTemplate?.trim();
+  if (!template) return undefined;
+  const rendered = renderPrompt(template, payload).trim();
+  return rendered.length > 0 ? rendered.slice(0, 200) : undefined;
+}
 
 type DeliveryOutcome =
   | { ok: true; agentId: string; runId: string; duplicate?: boolean }
@@ -117,17 +144,23 @@ type DeliveryOutcome =
 function deliverToAgent(opts: {
   agent: Agent;
   rawBody: string;
+  /** `rawBody` parsed once by the route; the signature is over the raw bytes, the label over this. */
+  payload: unknown;
   headers: Record<string, string | undefined>;
   sourceIp?: string;
   deliveryKey?: string;
+  /** Set when this came through a space's shared URL rather than the agent's own. */
+  viaSpace?: string;
 }): DeliveryOutcome {
-  const { agent, rawBody, headers, sourceIp, deliveryKey } = opts;
+  const { agent, rawBody, payload, headers, sourceIp, deliveryKey, viaSpace } = opts;
   const agentId = agent.id;
   const event = eventNameOf(presetFor(agent), headers);
+  // Named up front so a refusal can say what it refused, not just why.
+  const label = renderRunLabel(agent, payload);
   const decision = decideDelivery({ agent, rawBody, headers });
 
   if (!decision.ok) {
-    recordDelivery({ agentId, sourceIp, deliveryKey, event, accepted: false, reason: decision.reason });
+    recordDelivery({ agentId, sourceIp, deliveryKey, event, label, viaSpace, accepted: false, reason: decision.reason });
     return { ok: false, agentId, status: decision.status, reason: decision.reason };
   }
 
@@ -135,7 +168,7 @@ function deliverToAgent(opts: {
   if (duplicate) return { ok: true, agentId, runId: duplicate, duplicate: true };
 
   if (agent.concurrency === "skip" && agentHasActiveRun(agentId)) {
-    recordDelivery({ agentId, sourceIp, deliveryKey, event, accepted: false, reason: "run already active" });
+    recordDelivery({ agentId, sourceIp, deliveryKey, event, label, viaSpace, accepted: false, reason: "run already active" });
     return { ok: false, agentId, status: 409, reason: "agent already has an active run" };
   }
 
@@ -143,9 +176,10 @@ function deliverToAgent(opts: {
     agent,
     trigger: "webhook",
     prompt: decision.prompt,
+    ...(label ? { label } : {}),
     onWorkspace: (path) => writePayload(path, rawBody),
   });
-  recordDelivery({ agentId, sourceIp, deliveryKey, event, accepted: true, runId });
+  recordDelivery({ agentId, sourceIp, deliveryKey, event, label, viaSpace, accepted: true, runId });
   return { ok: true, agentId, runId };
 }
 
@@ -155,8 +189,12 @@ function deliverToAgent(opts: {
  * sender holds one secret, so each agent must be given that same secret — one
  * that doesn't match is simply skipped, which is what keeps this safe.
  */
-api.post("/hooks/space/:space", async (c) => {
-  const space = c.req.param("space");
+api.post("/hooks/space/:key", async (c) => {
+  const key = c.req.param("key");
+  // The key is the space's stable hook id. A space name is still accepted, so
+  // URLs handed out before ids existed keep working.
+  const byId = db.select().from(spaceSecrets).where(eq(spaceSecrets.hookId, key)).get();
+  const space = byId?.space ?? key;
   const headers = Object.fromEntries(
     [...c.req.raw.headers].map(([k, v]) => [k.toLowerCase(), v]),
   ) as Record<string, string | undefined>;
@@ -177,7 +215,7 @@ api.post("/hooks/space/:space", async (c) => {
   // The space's own secret is what the sender signs with, so every agent is
   // checked against it. Without one, each falls back to its own — which is how
   // this behaved before the table existed.
-  const shared = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get();
+  const shared = byId ?? db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get();
   const candidates = listAgents().filter(
     (a) => a.space === space && a.enabled && (shared ? true : a.webhookSecret),
   );
@@ -188,9 +226,11 @@ api.post("/hooks/space/:space", async (c) => {
     deliverToAgent({
       agent: shared ? { ...agent, webhookSecret: shared.secret } : agent,
       rawBody,
+      payload,
       headers,
       sourceIp,
       deliveryKey,
+      viaSpace: space,
     }),
   );
 
@@ -261,7 +301,7 @@ api.post("/hooks/:id", async (c) => {
     return c.text(challenge, 200);
   }
 
-  const outcome = deliverToAgent({ agent, rawBody, headers, sourceIp, deliveryKey });
+  const outcome = deliverToAgent({ agent, rawBody, payload, headers, sourceIp, deliveryKey });
   if (!outcome.ok) return c.json({ error: outcome.reason }, outcome.status as 400);
   return c.json(
     outcome.duplicate ? { runId: outcome.runId, duplicate: true } : { runId: outcome.runId },
@@ -330,8 +370,16 @@ api.patch("/agents/:id", async (c) => {
 
 /** The fan-out URL's own secret. Never returned — the UI can set or rotate, not read. */
 api.get("/spaces/:name/secret", (c) => {
-  const row = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, c.req.param("name"))).get();
-  return c.json({ configured: row !== undefined });
+  const space = c.req.param("name");
+  const row = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get();
+  // A row from before ids existed gets one here rather than on rotate: the id
+  // carries no secret, and minting it must never cost the caller their secret.
+  if (row && !row.hookId) {
+    const hookId = randomUUID();
+    db.update(spaceSecrets).set({ hookId }).where(eq(spaceSecrets.space, space)).run();
+    return c.json({ configured: true, hookId });
+  }
+  return c.json({ configured: row !== undefined, hookId: row?.hookId ?? null });
 });
 
 api.post("/spaces/:name/secret", async (c) => {
@@ -342,11 +390,14 @@ api.post("/spaces/:name/secret", async (c) => {
     return c.json({ error: "secret must be at least 16 characters" }, 400);
   }
   const secret = pasted || randomBytes(32).toString("base64url");
+  const existing = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get();
+  // Rotating a secret must not move the URL, so the id is kept once minted.
+  const hookId = existing?.hookId ?? randomUUID();
   db.insert(spaceSecrets)
-    .values({ space, secret })
-    .onConflictDoUpdate({ target: spaceSecrets.space, set: { secret } })
+    .values({ space, secret, hookId })
+    .onConflictDoUpdate({ target: spaceSecrets.space, set: { secret, hookId } })
     .run();
-  return c.json({ secret });
+  return c.json({ secret, hookId });
 });
 
 api.delete("/spaces/:name/secret", (c) => {
@@ -479,6 +530,99 @@ api.delete("/agents/:id", (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Counts the client can't compute: /runs is capped, so "how many ran today" has
+ * to be asked rather than derived from the page it already has.
+ */
+api.get("/stats", (c) => {
+  const now = Math.floor(Date.now() / 1000);
+  const since = (seconds: number) =>
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(runs)
+      .where(gte(runs.startedAt, now - seconds))
+      .get()?.n ?? 0;
+
+  const last24h = since(86_400);
+  const prev24h = Math.max(
+    0,
+    (db
+      .select({ n: sql<number>`count(*)` })
+      .from(runs)
+      .where(and(gte(runs.startedAt, now - 172_800), lt(runs.startedAt, now - 86_400)))
+      .get()?.n ?? 0),
+  );
+  const failed24h =
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(runs)
+      .where(and(gte(runs.startedAt, now - 86_400), eq(runs.status, "failed")))
+      .get()?.n ?? 0;
+
+  // Micro-dollars in the column; the client wants dollars.
+  const spend24h =
+    (db
+      .select({ n: sql<number>`coalesce(sum(cost_usd), 0)` })
+      .from(runs)
+      .where(gte(runs.startedAt, now - 86_400))
+      .get()?.n ?? 0) / 1_000_000;
+
+  // Each agent's newest run, regardless of how many other agents ran since.
+  // Derived from the capped /runs list this went wrong the moment one agent
+  // was busy enough to push another's last run out of the window.
+  const latest = db.all<{ agentId: string; id: string; status: string; startedAt: number }>(sql`
+    select agent_id as agentId, id, status, started_at as startedAt
+    from runs r
+    where started_at = (select max(started_at) from runs where agent_id = r.agent_id)
+  `);
+  const active = db.all<{ agentId: string; n: number }>(sql`
+    select agent_id as agentId, count(*) as n from runs
+    where status in ('running', 'awaiting_approval') group by agent_id
+  `);
+
+  return c.json({
+    last24h,
+    prev24h,
+    failed24h,
+    spend24h,
+    total: db.select({ n: sql<number>`count(*)` }).from(runs).get()?.n ?? 0,
+    latest: Object.fromEntries(latest.map((r) => [r.agentId, r])),
+    active: Object.fromEntries(active.map((r) => [r.agentId, r.n])),
+  });
+});
+
+/**
+ * Deliveries that were refused for a reason worth knowing about. A filter or
+ * event-allowlist miss is the system working — with one URL fanning out to a
+ * whole space, most deliveries are dropped by design — so those are excluded.
+ */
+/** Every delivery the space's shared URL fanned out, newest first. */
+api.get("/spaces/:name/deliveries", (c) =>
+  c.json(
+    db
+      .select()
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.viaSpace, c.req.param("name")))
+      .orderBy(desc(webhookDeliveries.ts))
+      .limit(25)
+      .all(),
+  ));
+
+api.get("/deliveries", (c) => {
+  // Bounded by age, not count: a standing list of problems already fixed is one
+  // you learn to ignore, which is the opposite of what this is for.
+  const hours = Number(c.req.query("hours") ?? 24);
+  const since = Math.floor(Date.now() / 1000) - Math.max(1, hours) * 3600;
+  const rows = db
+    .select()
+    .from(webhookDeliveries)
+    .where(and(eq(webhookDeliveries.accepted, false), gte(webhookDeliveries.ts, since)))
+    .orderBy(desc(webhookDeliveries.ts))
+    .limit(200)
+    .all();
+  return c.json(rows.filter((r) => !isByDesign(r.reason)).slice(0, 20));
+});
+
 api.get("/runs", (c) => {
   const agentId = c.req.query("agentId");
   const base = db.select().from(runs).orderBy(desc(runs.startedAt)).limit(50);
@@ -598,6 +742,7 @@ api.post("/approvals/:approvalId", async (c) => {
 api.post("/runs/:id/permission-mode", async (c) => {
   const body = await c.req.json<{ mode: string }>().catch(() => null);
   if (!body?.mode) return c.json({ error: "mode is required" }, 400);
+  if (!isPermissionMode(body.mode)) return c.json({ error: `unknown mode ${body.mode}` }, 400);
   const result = await setRunPermissionMode(c.req.param("id"), body.mode);
   if (result.ok) return c.json({ ok: true });
   return result.live

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
+import { MODES } from "./modes.ts";
 import { ListInput, randomSecret, TriggerSettings } from "./TriggerSettings.tsx";
 import type { Agent, AgentInput, MachineMcp, Repo, RepoList, WorkspaceConfig } from "./types.ts";
 
@@ -11,15 +12,6 @@ const MODELS = [
   ["claude-sonnet-5", "claude-sonnet-5"],
   ["claude-haiku-4-5", "claude-haiku-4-5"],
   ["claude-fable-5-1", "claude-fable-5-1 — most capable, priced above Opus"],
-] as const;
-
-const MODES = [
-  ["supervised", "Ask before commands and edits"],
-  ["acceptEdits", "Auto-accept file edits"],
-  ["plan", "Explore and plan, no edits"],
-  ["auto", "A classifier decides each call — never prompts"],
-  ["full", "No prompts at all"],
-  ["locked", "Deny anything not pre-approved"],
 ] as const;
 
 const field =
@@ -80,6 +72,7 @@ export function AgentEditor({
   onSaved,
   onDeleted,
   onCancel,
+  onDirtyChange,
 }: {
   agent: Agent | null;
   /** Fills a new agent in from an existing one, leaving the original alone. */
@@ -91,6 +84,8 @@ export function AgentEditor({
   onSaved: (a: Agent) => void;
   onDeleted: () => void;
   onCancel: () => void;
+  /** Fires as the draft diverges from what was loaded, so the shell can guard navigation. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<AgentInput>({});
   const [error, setError] = useState<string | null>(null);
@@ -109,9 +104,10 @@ export function AgentEditor({
       .catch((e) => setRepoError(String(e)));
   }, []);
 
+  const loadedRef = useRef<string>("");
   useEffect(() => {
     setError(null);
-    setDraft(
+    const seeded: AgentInput =
       agent ??
         (seed
           ? copyOf(seed)
@@ -128,10 +124,23 @@ export function AgentEditor({
               allowedTools: [],
               inheritMachineMcp: true,
               inheritUserSettings: true,
-            }),
-    );
+            });
+    loadedRef.current = JSON.stringify(seeded);
+    setDraft(seeded);
     setShowMcp(Object.keys((agent ?? seed)?.mcpServers ?? {}).length > 0);
   }, [agent?.id, seed?.id]);
+
+  const dirty = loadedRef.current !== "" && JSON.stringify(draft) !== loadedRef.current;
+  useEffect(() => onDirtyChange?.(dirty), [dirty]);
+  // In-app navigation is guarded by the shell; this covers the tab itself.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
@@ -167,6 +176,8 @@ export function AgentEditor({
       const saved = agent
         ? await api.updateAgent(agent.id, draft)
         : await api.createAgent(draft);
+      loadedRef.current = JSON.stringify(draft);
+      onDirtyChange?.(false);
       onSaved(saved);
     } catch (e) {
       setError(String(e));
@@ -176,7 +187,7 @@ export function AgentEditor({
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-6">
+    <div className="space-y-4 px-6 py-5">
       <h2 className="text-lg font-semibold">
         {agent ? `Edit ${agent.name}` : seed ? `Copy of ${seed.name}` : "New agent"}
       </h2>
@@ -187,11 +198,13 @@ export function AgentEditor({
         </p>
       )}
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-4">
       <div className="grid grid-cols-[1fr_12rem] gap-3">
         <Row title="Name">
           <input className={field} value={draft.name ?? ""} onChange={(e) => set("name", e.target.value)} />
         </Row>
-        <Row title="Space" hint="Groups the roster.">
+        <Row title="Space" hint="Groups your agents.">
           {naming ? (
             <input
               className={field}
@@ -227,80 +240,6 @@ export function AgentEditor({
       </div>
 
       <TriggerSettings agent={agent} draft={draft} set={set} />
-
-      <Row title="Prompt" hint="What this agent does every time you run it.">
-        <textarea
-          className={`${field} h-80 resize-y font-mono text-xs leading-relaxed`}
-          value={draft.prompt ?? ""}
-          onChange={(e) => set("prompt", e.target.value)}
-        />
-      </Row>
-
-      <Row
-        title="Model"
-        hint={
-          knownModel
-            ? "Aliases follow Anthropic's current model in that tier; a pinned id never moves."
-            : "Any model string Claude Code accepts."
-        }
-      >
-        <select
-          className={field}
-          value={knownModel ? (draft.model ?? "") : "__other__"}
-          onChange={(e) =>
-            set("model", e.target.value === "__other__" ? "" : e.target.value || null)
-          }
-        >
-          <option value="">Default — whatever Claude Code picks</option>
-          {MODELS.map(([v, desc]) => (
-            <option key={v} value={v}>
-              {desc}
-            </option>
-          ))}
-          <option value="__other__">Another model — enter an id</option>
-        </select>
-        {!knownModel && (
-          <input
-            className={`${field} mt-2`}
-            placeholder="claude-opus-4-8"
-            value={draft.model ?? ""}
-            onChange={(e) => set("model", e.target.value || null)}
-          />
-        )}
-      </Row>
-
-      <Row title="Permission mode">
-        <select
-          className={field}
-          value={draft.permissionMode ?? "auto"}
-          onChange={(e) => set("permissionMode", e.target.value)}
-        >
-          {MODES.map(([v, desc]) => (
-            <option key={v} value={v}>
-              {v} — {desc}
-            </option>
-          ))}
-        </select>
-      </Row>
-
-      {/* Nothing to allow in a mode that never asks. */}
-      {toolRulesApply && (
-        <Row
-          title="Allowed tools"
-          hint={
-            mode === "locked"
-              ? "Comma separated, and the whole allowance — anything unlisted is denied. MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
-              : "Comma separated. Anything listed is auto-approved and never reaches the approval prompt, so prefer scoped rules like Bash(ls *). MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
-          }
-        >
-          <ListInput
-            key={`tools-${agent?.id ?? "new"}`}
-            placeholder="Read, Grep, mcp__linear__*"
-            value={draft.allowedTools ?? []}
-            onChange={(next) => set("allowedTools", next)}
-          />
-        </Row>
-      )}
 
       <Row title="Workspace" hint="The directory each run works in — its cwd, and where the webhook payload is written.">
         <select
@@ -451,6 +390,85 @@ export function AgentEditor({
         )}
       </Row>
 
+        </div>
+
+        {/* The prompt is the agent; give it a column rather than a slot in the form. */}
+        <div className="min-w-0">
+          <div className="space-y-4">
+            <Row title="Prompt" hint="What this agent does every time you run it.">
+              <textarea
+                className={`${field} h-[32rem] resize-y font-mono text-xs leading-relaxed`}
+                value={draft.prompt ?? ""}
+                onChange={(e) => set("prompt", e.target.value)}
+              />
+            </Row>
+
+      <Row
+        title="Model"
+        hint={
+          knownModel
+            ? "Aliases follow Anthropic's current model in that tier; a pinned id never moves."
+            : "Any model string Claude Code accepts."
+        }
+      >
+        <select
+          className={field}
+          value={knownModel ? (draft.model ?? "") : "__other__"}
+          onChange={(e) =>
+            set("model", e.target.value === "__other__" ? "" : e.target.value || null)
+          }
+        >
+          <option value="">Default — whatever Claude Code picks</option>
+          {MODELS.map(([v, desc]) => (
+            <option key={v} value={v}>
+              {desc}
+            </option>
+          ))}
+          <option value="__other__">Another model — enter an id</option>
+        </select>
+        {!knownModel && (
+          <input
+            className={`${field} mt-2`}
+            placeholder="claude-opus-4-8"
+            value={draft.model ?? ""}
+            onChange={(e) => set("model", e.target.value || null)}
+          />
+        )}
+      </Row>
+
+      <Row title="Permission mode">
+        <select
+          className={field}
+          value={draft.permissionMode ?? "auto"}
+          onChange={(e) => set("permissionMode", e.target.value)}
+        >
+          {MODES.map(([v, label, desc]) => (
+            <option key={v} value={v}>
+              {label} — {desc}
+            </option>
+          ))}
+        </select>
+      </Row>
+
+      {/* Nothing to allow in a mode that never asks. */}
+      {toolRulesApply && (
+        <Row
+          title="Allowed tools"
+          hint={
+            mode === "locked"
+              ? "Comma separated, and the whole allowance — anything unlisted is denied. MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
+              : "Comma separated. Anything listed is auto-approved and never reaches the approval prompt, so prefer scoped rules like Bash(ls *). MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
+          }
+        >
+          <ListInput
+            key={`tools-${agent?.id ?? "new"}`}
+            placeholder="Read, Grep, mcp__linear__*"
+            value={draft.allowedTools ?? []}
+            onChange={(next) => set("allowedTools", next)}
+          />
+        </Row>
+      )}
+
       <div className="space-y-2 border-t border-neutral-800 pt-4">
         <span className={label}>MCP servers</span>
 
@@ -526,10 +544,13 @@ export function AgentEditor({
           rule turns the approval UI off entirely.
         </p>
       </div>
+          </div>
+        </div>
+      </div>
 
       {error && <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
 
-      <div className="flex items-center gap-2 pt-2">
+      <div className="sticky bottom-0 -mx-6 -mb-5 flex items-center gap-2 border-t border-neutral-800 bg-neutral-950 px-6 py-3">
         <button
           onClick={save}
           disabled={busy || !draft.name}
@@ -543,7 +564,9 @@ export function AgentEditor({
         {agent && (
           <button
             onClick={async () => {
+              if (!confirm(`Delete "${agent.name}"? Its runs and delivery history go with it.`)) return;
               await api.deleteAgent(agent.id);
+              onDirtyChange?.(false);
               onDeleted();
             }}
             className="ml-auto rounded border border-red-900 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950"

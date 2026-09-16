@@ -75,6 +75,7 @@ const fields = {
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
   filters: z.array(filterConditionSchema).max(10),
+  labelTemplate: z.string().max(300).nullish(),
   webhookSignatureHeader: z.string().max(120).nullish(),
   webhookSignaturePrefix: z.string().max(40).nullish(),
   webhookEvents: z.array(z.string()),
@@ -102,6 +103,7 @@ export const AGENT_DEFAULTS = {
   webhookEvents: [],
   filterValues: [],
   filters: [],
+  labelTemplate: null,
   concurrency: "allow",
   enabled: true,
 } as const;

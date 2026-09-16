@@ -37,6 +37,13 @@ credentials. The browser is a thin client that can drop and reconnect at any tim
 boundary is worth preserving — it's what makes remote access and restart-resilience fall out
 for free rather than needing design.
 
+`runs/runner.ts` is the seam between bullpen and the thing that executes an agent. `RunManager`
+speaks only `Runner`/`RunnerEvents`; `ClaudeRunner` is the one implementation and owns every
+Claude-shaped detail — SDK message types, mode translation, `settingSources`. A second backend
+is a second `Runner` plus its own Timeline renderer, not a change anywhere else. The seam is kept
+narrow on purpose: it normalizes the few facts bullpen acts on (session id, MCP status, result),
+and passes raw messages through for the log rather than inventing a universal event schema.
+
 `run_events` is append-only with a monotonic `seq` per run, and it is the source of truth for
 a run's timeline. A client subscribes with `sinceSeq`; the server replays from SQLite and then
 streams live over the same path. Reconnect, fresh page load, and server restart are all the

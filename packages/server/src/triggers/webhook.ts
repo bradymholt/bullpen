@@ -281,6 +281,8 @@ export function recordDelivery(row: {
   accepted: boolean;
   reason?: string | undefined;
   runId?: string | undefined;
+  label?: string | undefined;
+  viaSpace?: string | undefined;
 }): void {
   db.insert(webhookDeliveries)
     .values({ id: randomUUID(), ...row })

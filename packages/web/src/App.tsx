@@ -3,10 +3,12 @@ import { AgentEditor } from "./AgentEditor.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { GitPanel } from "./GitPanel.tsx";
 import { api } from "./api.ts";
-import { DeliveryList } from "./DeliveryList.tsx";
+import { MODES, modeLabel } from "./modes.ts";
+import { ago, took } from "./time.ts";
+import { DeliveryList, GroupedDeliveryList } from "./DeliveryList.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
-import type { Agent, Delivery, Run, Skill } from "./types.ts";
+import type { Agent, Delivery, Run, Skill, Stats } from "./types.ts";
 
 const ACTIVE = new Set(["running", "awaiting_approval"]);
 
@@ -68,7 +70,11 @@ function triggersOf(a: Agent): string[] {
 
 /** Stored records still carry the pre-rename spellings; only the display changes. */
 function workspaceKindLabel(kind: string): string {
-  return kind === "persistent" ? "scratch" : kind === "git" ? "clone" : kind;
+  // Each maps to the first word of the option in the editor's Workspace menu.
+  if (kind === "persistent") return "scratch";
+  if (kind === "git") return "clone";
+  if (kind === "ephemeral") return "fresh";
+  return kind;
 }
 
 function workspaceSummary(a: Agent): string {
@@ -124,17 +130,7 @@ function loadSpaceFilter(): SpaceFilter {
   return { kind: "all" };
 }
 
-/** Coarse on purpose: "when did this last do anything" reads better than a date. */
-function ago(epochSeconds: number): string {
-  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - epochSeconds));
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return days < 30 ? `${days}d ago` : new Date(epochSeconds * 1000).toLocaleDateString();
-}
+
 
 const STATUS_COLOR: Record<string, string> = {
   running: "text-sky-400",
@@ -151,6 +147,8 @@ type View =
   | { kind: "detail"; id: string }
   /** `seed` prefills a brand-new agent from an existing one. */
   | { kind: "edit"; agent: Agent | null; seed?: Agent }
+  /** Everything a space owns: its name, and the webhook the whole space answers. */
+  | { kind: "space"; name: string }
   /** The roster at a glance, outside any one agent. */
   | { kind: "home" };
 
@@ -158,6 +156,7 @@ function viewToPath(v: View): string {
   if (v.kind === "detail") return `/agents/${v.id}`;
   if (v.kind === "run") return `/runs/${v.id}`;
   if (v.kind === "edit") return v.agent ? `/agents/${v.agent.id}/edit` : "/agents/new";
+  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}`;
   return "/";
 }
 
@@ -174,6 +173,8 @@ function pathToView(path: string): { view: View; editId?: string } {
   if (m) return { view: { kind: "detail", id: m[1]! }, editId: m[1]! };
   m = /^\/agents\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]! } };
+  m = /^\/spaces\/([^/]+)$/.exec(p);
+  if (m) return { view: { kind: "space", name: decodeURIComponent(m[1]!) } };
   return { view: { kind: "home" } };
 }
 
@@ -184,31 +185,63 @@ export function App() {
   const [view, setViewState] = useState<View>(route.view);
   const [pendingEdit, setPendingEdit] = useState<string | null>(route.editId ?? null);
 
+  const [editDirty, setEditDirty] = useState(false);
+  const viewRef = useRef(view);
+  const dirtyRef = useRef(false);
+  viewRef.current = view;
+  dirtyRef.current = editDirty;
+
+  /** Leaving the editor with unsaved edits asks first; everything else is free. */
+  const confirmLeave = (next: View): boolean => {
+    const cur = viewRef.current;
+    if (cur.kind !== "edit" || next.kind === "edit" || !dirtyRef.current) return true;
+    return confirm("Discard unsaved changes to this agent?");
+  };
+
   const setView = (next: View) => {
+    if (!confirmLeave(next)) return;
+    setEditDirty(false);
     setViewState(next);
     setPendingEdit(null);
     const path = viewToPath(next);
     if (path !== location.pathname) history.pushState(null, "", path);
   };
   const [prompt, setPrompt] = useState("");
-  const [runMode, setRunMode] = useState("auto");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [metered, setMetered] = useState(false);
   const [skillIndex, setSkillIndex] = useState(0);
   const [liveMode, setLiveMode] = useState("auto");
   const [space, setSpace] = useState<SpaceFilter>(loadSpaceFilter);
-  const [editingSpace, setEditingSpace] = useState<string | null>(null);
   const [spaceDraft, setSpaceDraft] = useState("");
+  const [spaceSecret, setSpaceSecret] = useState<{
+    configured: boolean;
+    hookId: string | null;
+    value?: string;
+  } | null>(null);
   const [spaceError, setSpaceError] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
+  const promptRef = useRef<HTMLParagraphElement>(null);
+  const [promptOverflows, setPromptOverflows] = useState(false);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [showFiltered, setShowFiltered] = useState(false);
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  // null until fetched: an empty list would flash "nothing has run" before the answer arrives.
+  const [agentRuns, setAgentRuns] = useState<Run[] | null>(null);
+  const [drops, setDrops] = useState<Delivery[]>([]);
+  const [spaceDeliveries, setSpaceDeliveries] = useState<Delivery[]>([]);
 
   // Back and forward are the browser's, so the view follows the URL rather than
   // the other way round.
   useEffect(() => {
     const onPop = () => {
       const next = pathToView(location.pathname);
+      if (!confirmLeave(next.view)) {
+        // Back was refused: put the editor's URL back so the bar matches the page.
+        history.pushState(null, "", viewToPath(viewRef.current));
+        return;
+      }
+      setEditDirty(false);
       setViewState(next.view);
       setPendingEdit(next.editId ?? null);
     };
@@ -225,14 +258,48 @@ export function App() {
     }
   }, [pendingEdit, agents]);
 
+  const spaceName = view.kind === "space" ? view.name : null;
+  // Keyed by the stable id once one exists, so a rename can't move the URL.
+  const spaceHookUrl = spaceName
+    ? `${location.origin}/api/hooks/space/${encodeURIComponent(spaceSecret?.hookId ?? spaceName)}`
+    : "";
+  useEffect(() => {
+    setSpaceError(null);
+    if (spaceName === null) return setSpaceSecret(null);
+    setSpaceDraft(spaceName);
+    void api
+      .spaceDeliveries(spaceName)
+      .then(setSpaceDeliveries)
+      .catch(() => setSpaceDeliveries([]));
+    void api
+      .spaceSecretState(spaceName)
+      .then((s) => setSpaceSecret({ configured: s.configured, hookId: s.hookId }))
+      .catch(() => setSpaceSecret(null));
+  }, [spaceName]);
+
   const detailId = view.kind === "detail" ? view.id : null;
   useEffect(() => setPromptOpen(false), [detailId]);
+  // Only meaningful while clamped: an open paragraph never overflows.
+  useEffect(() => {
+    if (promptOpen) return;
+    const el = promptRef.current;
+    setPromptOverflows(el !== null && el.scrollHeight > el.clientHeight + 1);
+  }, [detailId, promptOpen, agents.find((a) => a.id === detailId)?.prompt]);
+
+  useEffect(() => {
+    setAgentRuns(null);
+    if (detailId === null) return;
+    void api.runsFor(detailId).then(setAgentRuns).catch(() => setAgentRuns([]));
+  }, [detailId, runs]);
 
   // Refetched when runs change so a delivery that just fired shows up without a reload.
   useEffect(() => {
     if (detailId === null) return setDeliveries([]);
-    void api.deliveries(detailId).then(setDeliveries).catch(() => setDeliveries([]));
-  }, [detailId, runs]);
+    void api
+      .deliveries(detailId, showFiltered)
+      .then(setDeliveries)
+      .catch(() => setDeliveries([]));
+  }, [detailId, runs, showFiltered]);
 
   useEffect(() => {
     try {
@@ -286,6 +353,8 @@ export function App() {
       .scheduleAll()
       .then(setUpcoming)
       .catch(() => setUpcoming([]));
+    api.stats().then(setStats).catch(() => setStats(null));
+    api.notableDrops().then(setDrops).catch(() => setDrops([]));
   };
   useEffect(refresh, []);
   useEffect(() => {
@@ -302,7 +371,8 @@ export function App() {
       const { runId } = await api.startRun(
         agentId,
         oneOff ? prompt.trim() || undefined : undefined,
-        oneOff ? runMode : undefined,
+        // No mode: the run uses whatever the agent is configured for.
+        undefined,
         oneOff,
       );
       setPrompt("");
@@ -350,14 +420,14 @@ export function App() {
 
   /** `to === null` unassigns every member, which is how a space is removed. */
   async function moveSpace(from: string, to: string | null) {
-    if (to === from) return setEditingSpace(null);
+    if (to === from) return;
     if (to !== null && to.length === 0) return;
     setSpaceError(null);
     try {
       await api.renameSpace(from, to);
       // Follow the agents so they don't vanish from under the selection.
       setSpace(to === null ? { kind: "unassigned" } : { kind: "space", name: to });
-      setEditingSpace(null);
+      setView(to === null ? { kind: "home" } : { kind: "space", name: to });
       refresh();
     } catch (e) {
       setSpaceError(e instanceof Error ? e.message : String(e));
@@ -370,16 +440,9 @@ export function App() {
   const scopedRuns = runs.filter((r) => scopedIds.has(r.agentId));
   const awaiting = scopedRuns.filter((r) => r.status === "awaiting_approval");
   const running = scopedRuns.filter((r) => r.status === "running");
-  // `runs` arrives newest first, so the first hit per agent is its latest run.
-  const latestByAgent = new Map<string, Run>();
-  for (const r of scopedRuns) if (!latestByAgent.has(r.agentId)) latestByAgent.set(r.agentId, r);
-  const failing = visibleAgents.filter((a) => latestByAgent.get(a.id)?.status === "failed");
-  const dayAgo = Date.now() / 1000 - 86400;
-  const recentRuns = scopedRuns.filter((r) => r.startedAt >= dayAgo);
-  const runsToday = recentRuns.length;
+  const latestByAgent = stats?.latest ?? {};
+  const failing = visibleAgents.filter((a) => latestByAgent[a.id]?.status === "failed");
   const paused = visibleAgents.filter((a) => !a.enabled);
-  // Only real money on an API key; a subscription reports cost that never bills.
-  const spendToday = recentRuns.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
   const scopedUpcoming = upcoming.filter((u) => scopedIds.has(u.agentId));
 
   const selectedAgentId =
@@ -391,8 +454,6 @@ export function App() {
           ? (view.agent?.id ?? null)
           : null;
   const detailAgent = view.kind === "detail" ? agents.find((a) => a.id === view.id) : undefined;
-  const agentRuns = detailAgent ? runs.filter((r) => r.agentId === detailAgent.id) : [];
-  const agentOf = (id: string) => agents.find((a) => a.id === id);
 
   return (
     <div className="flex h-screen bg-neutral-950 font-sans text-neutral-100">
@@ -400,7 +461,7 @@ export function App() {
         <button
           onClick={() => setView({ kind: "home" })}
           className="flex shrink-0 items-center gap-2 text-left"
-          title="Roster overview"
+          title="Home"
         >
           <img src="/favicon.svg" alt="" className="h-9 w-9" />
           <h1 className="text-lg font-semibold tracking-tight hover:text-white">Bullpen</h1>
@@ -417,18 +478,13 @@ export function App() {
               active.kind === "space" && active.name === sp ? (
                 <span key={sp} className={`group inline-flex items-center ${chipClass(true)}`}>
                   {sp}
-                  {editingSpace !== sp && (
-                    <button
-                      onClick={() => {
-                        setSpaceDraft(sp);
-                        setEditingSpace(sp);
-                      }}
-                      title={`Rename or empty "${sp}"`}
-                      className="max-w-0 overflow-hidden text-neutral-500 opacity-0 transition-all duration-150 hover:text-neutral-100 focus:ml-1 focus:max-w-5 focus:opacity-100 group-hover:ml-1 group-hover:max-w-5 group-hover:opacity-100"
-                    >
-                      &#9998;
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setView({ kind: "space", name: sp })}
+                    title={`Settings for "${sp}"`}
+                    className="max-w-0 overflow-hidden text-neutral-500 opacity-0 transition-all duration-150 hover:text-neutral-100 focus:ml-1 focus:max-w-5 focus:opacity-100 group-hover:ml-1 group-hover:max-w-5 group-hover:opacity-100"
+                  >
+                    &#9881;
+                  </button>
                 </span>
               ) : (
                 <SpaceChip
@@ -449,54 +505,6 @@ export function App() {
           </div>
         )}
 
-        {active.kind === "space" && editingSpace === active.name && (
-          <div className="mt-2 shrink-0 text-xs">
-            <div className="flex flex-col gap-1">
-              <input
-                autoFocus
-                className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs outline-none focus:border-neutral-500"
-                value={spaceDraft}
-                onChange={(e) => setSpaceDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void moveSpace(active.name, spaceDraft.trim());
-                  if (e.key === "Escape") setEditingSpace(null);
-                }}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() => void moveSpace(active.name, spaceDraft.trim())}
-                  className="text-neutral-300 hover:text-neutral-100"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingSpace(null);
-                    setSpaceError(null);
-                  }}
-                  className="text-neutral-500 hover:text-neutral-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (
-                      confirm(
-                        `Move ${visibleAgents.length} agent(s) out of "${active.name}"? The space disappears.`,
-                      )
-                    ) {
-                      void moveSpace(active.name, null);
-                    }
-                  }}
-                  className="ml-auto text-red-400 hover:text-red-300"
-                >
-                  Unassign all
-                </button>
-              </div>
-              {spaceError && <span className="text-red-400">{spaceError}</span>}
-            </div>
-          </div>
-        )}
 
         <div className="mt-6 flex shrink-0 items-center justify-between">
           <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Agents</h2>
@@ -509,10 +517,8 @@ export function App() {
         </div>
 
         {visibleAgents.map((a) => {
-          const mine = runs.filter((r) => r.agentId === a.id);
-          const live = mine.filter((r) => ACTIVE.has(r.status)).length;
-          // The list arrives newest first, so the head is the last run.
-          const last = mine[0];
+          const live = stats?.active[a.id] ?? 0;
+          const last = stats?.latest[a.id];
           return (
             <button
               key={a.id}
@@ -533,7 +539,7 @@ export function App() {
                         {a.space}
                       </span>
                     )}
-                    {workspaceKindLabel(a.workspaceKind)} · {a.permissionMode}
+                    {workspaceKindLabel(a.workspaceKind)} · {modeLabel(a.permissionMode)}
                   </div>
                   <div className="mt-0.5 text-xs">
                     {live > 0 ? (
@@ -558,15 +564,18 @@ export function App() {
                   Edit
                 </span>
               </div>
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void start(a.id);
-                }}
-                className="mt-2 inline-block rounded bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-900 hover:bg-white"
-              >
-                Run
-              </span>
+              {/* A webhook or poll agent reads its payload from disk; run bare, there is none. */}
+              {!a.webhookSecret && !a.pollUrl && (
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void start(a.id);
+                  }}
+                  className="mt-2 inline-block rounded bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-900 hover:bg-white"
+                >
+                  Run
+                </span>
+              )}
             </button>
           );
         })}
@@ -590,6 +599,7 @@ export function App() {
                 setView({ kind: "home" });
               }}
               onCancel={() => setView({ kind: "home" })}
+              onDirtyChange={setEditDirty}
             />
           </div>
         )}
@@ -620,12 +630,14 @@ export function App() {
                 >
                   Copy
                 </button>
-                <button
-                  onClick={() => void start(detailAgent.id)}
-                  className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white"
-                >
-                  Run
-                </button>
+                {!detailAgent.webhookSecret && !detailAgent.pollUrl && (
+                  <button
+                    onClick={() => void start(detailAgent.id)}
+                    className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white"
+                  >
+                    Run
+                  </button>
+                )}
               </div>
             </div>
 
@@ -634,7 +646,7 @@ export function App() {
                 <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Runs
                 </h3>
-                {agentRuns.length === 0 ? (
+                {agentRuns === null ? null : agentRuns.length === 0 ? (
                   <p className="mt-2 text-sm text-neutral-600">Nothing has run yet.</p>
                 ) : (
                   <ul className="mt-2 space-y-1">
@@ -645,13 +657,20 @@ export function App() {
                           className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-900"
                         >
                           <span className={STATUS_COLOR[r.status] ?? "text-neutral-400"}>●</span>
-                          <span className="text-neutral-300">{r.status}</span>
-                          <span className="text-xs text-neutral-600">{r.trigger}</span>
-                          <span className="ml-auto text-xs text-neutral-600">
-                            {new Date(r.startedAt * 1000).toLocaleString(undefined, {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            })}
+                          <span className="shrink-0 text-neutral-300">{r.status}</span>
+                          {r.label && (
+                            <span className="truncate text-xs text-neutral-400">{r.label}</span>
+                          )}
+                          <span className="shrink-0 text-xs text-neutral-600">{r.trigger}</span>
+                          {r.numTurns != null && (
+                            <span className="text-xs text-neutral-600">{r.numTurns} turns</span>
+                          )}
+                          {took(r) && <span className="text-xs text-neutral-600">{took(r)}</span>}
+                          <span
+                            className="ml-auto text-xs tabular-nums text-neutral-600"
+                            title={new Date(r.startedAt * 1000).toLocaleString()}
+                          >
+                            {ago(r.startedAt)}
                           </span>
                         </button>
                       </li>
@@ -662,16 +681,16 @@ export function App() {
 
               <aside className="space-y-5 lg:border-l lg:border-neutral-800 lg:pl-6">
                 {detailAgent.prompt && (
-                  <RailSection title="Instructions">
+                  <RailSection title="Prompt">
                     <p
+                      ref={promptRef}
                       className={`whitespace-pre-wrap text-xs leading-relaxed text-neutral-400 ${
                         promptOpen ? "" : "line-clamp-3"
                       }`}
                     >
                       {detailAgent.prompt}
                     </p>
-                    {/* Clamping is visual, so the toggle guesses from length rather than measuring. */}
-                    {detailAgent.prompt.length > 150 && (
+                    {(promptOpen || promptOverflows) && (
                       <button
                         onClick={() => setPromptOpen(!promptOpen)}
                         className="text-xs text-neutral-500 hover:text-neutral-300"
@@ -690,9 +709,24 @@ export function App() {
                   ))}
                 </RailSection>
 
-                {detailAgent.webhookSecret && deliveries.length > 0 && (
-                  <RailSection title="Recent deliveries">
-                    <DeliveryList deliveries={deliveries} limit={10} />
+                {detailAgent.webhookSecret && (
+                  <RailSection title="Recent webhook deliveries">
+                    {deliveries.length > 0 ? (
+                      <DeliveryList deliveries={deliveries} limit={10} />
+                    ) : (
+                      <p className="text-xs text-neutral-600">Nothing yet.</p>
+                    )}
+                    <button
+                      onClick={() => setShowFiltered((v) => !v)}
+                      className="text-xs text-neutral-500 hover:text-neutral-300"
+                    >
+                      {showFiltered ? "Hide filtered" : "Show filtered"}
+                    </button>
+                    <p className="text-xs leading-relaxed text-neutral-600">
+                      {showFiltered
+                        ? "Including deliveries this agent's own filters refused."
+                        : "Filter and allowlist misses are hidden — on a shared space URL they arrive constantly."}
+                    </p>
                   </RailSection>
                 )}
 
@@ -706,7 +740,7 @@ export function App() {
                 </RailSection>
 
                 <RailSection title="Details">
-                  <RailRow label="Permissions" value={detailAgent.permissionMode} />
+                  <RailRow label="Permissions" value={modeLabel(detailAgent.permissionMode)} />
                   <RailRow label="Space" value={detailAgent.space ?? "unassigned"} />
                   <RailRow label="Concurrency" value={detailAgent.concurrency} />
                   {detailAgent.maxTurns != null && (
@@ -725,21 +759,220 @@ export function App() {
               onClick={() => setView({ kind: "home" })}
               className="mt-2 text-neutral-400 hover:text-neutral-100"
             >
-              Back to the roster
+              Back to home
             </button>
+          </div>
+        )}
+
+        {view.kind === "space" && (
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <button
+              onClick={() => setView({ kind: "home" })}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              &larr; Home
+            </button>
+            <h2 className="mt-2 text-lg font-semibold">{view.name}</h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              {agents.filter((a) => a.space === view.name).length} agent
+              {agents.filter((a) => a.space === view.name).length === 1 ? "" : "s"} in this space
+            </p>
+
+            <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="min-w-0 space-y-8">
+              <RailSection title="Name">
+                <div className="flex gap-2">
+                  <input
+                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
+                    value={spaceDraft}
+                    onChange={(e) => setSpaceDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void moveSpace(view.name, spaceDraft.trim());
+                    }}
+                  />
+                  <button
+                    onClick={() => void moveSpace(view.name, spaceDraft.trim())}
+                    disabled={spaceDraft.trim() === view.name || spaceDraft.trim() === ""}
+                    className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-900 disabled:opacity-40"
+                  >
+                    Rename
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-600">
+                  Renaming moves every agent in the space and carries the shared secret with it, but
+                  the webhook URL below changes — repoint the sender afterwards.
+                </p>
+                {spaceError && <p className="text-xs text-red-400">{spaceError}</p>}
+              </RailSection>
+
+              <RailSection title="Shared webhook">
+                <span className="block text-xs font-medium uppercase tracking-wide text-neutral-500">URL</span>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={spaceHookUrl}
+                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs text-neutral-400 outline-none"
+                  />
+                  <button
+                    onClick={() =>
+                      void navigator.clipboard.writeText(
+                        spaceHookUrl,
+                      )
+                    }
+                    className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <span className="block text-xs font-medium uppercase tracking-wide text-neutral-500 pt-2">Secret</span>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={
+                      spaceSecret?.value ??
+                      (spaceSecret?.configured ? "\u2022".repeat(24) : "no shared secret yet")
+                    }
+                    className={`w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none ${
+                      spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
+                    }`}
+                  />
+                  {spaceSecret?.value && (
+                    <button
+                      onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
+                      className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
+                    >
+                      Copy
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      if (
+                        spaceSecret?.configured &&
+                        !confirm(
+                          "Replace this space's secret? Every sender using the old one stops working until you repaste.",
+                        )
+                      ) {
+                        return;
+                      }
+                      const r = await api.setSpaceSecret(view.name);
+                      setSpaceSecret({ configured: true, hookId: r.hookId, value: r.secret });
+                    }}
+                    className="shrink-0 rounded border border-neutral-700 px-3 text-xs text-amber-400 hover:bg-neutral-800"
+                  >
+                    {spaceSecret?.configured ? "Rotate" : "Generate"}
+                  </button>
+                </div>
+                <p className="text-xs leading-relaxed text-neutral-600">
+                  One webhook for the whole space. Every enabled agent in it gets the delivery and
+                  its own filters decide whether it runs, so agents split by author or action share
+                  one hook. This secret is the space&rsquo;s own — the per-agent secrets are not
+                  used here. It is shown once, when generated.
+                </p>
+              </RailSection>
+
+              <RailSection title="Recent webhook deliveries">
+                {spaceDeliveries.length === 0 ? (
+                  <p className="text-xs text-neutral-600">
+                    Nothing has arrived at this URL yet.
+                  </p>
+                ) : (
+                  <>
+                    <GroupedDeliveryList
+                      deliveries={spaceDeliveries}
+                      limit={8}
+                      agentName={agentName}
+                    />
+                    <p className="text-xs leading-relaxed text-neutral-600">
+                      One block per delivery. The shared URL hands each one to every agent in the
+                      space, so a single event normally shows one OK and several DROPs — the drops
+                      are the agents whose filters correctly declined it.
+                    </p>
+                  </>
+                )}
+              </RailSection>
+
+              </div>
+
+              <div className="min-w-0 space-y-8">
+              <RailSection title="Agents">
+                {agents
+                  .filter((a) => a.space === view.name)
+                  .map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => setView({ kind: "detail", id: a.id })}
+                      className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-900"
+                    >
+                      <span className="truncate text-neutral-200">{a.name}</span>
+                      <span className="ml-auto shrink-0 truncate text-xs text-neutral-600">
+                        {triggersOf(a)[0]}
+                      </span>
+                    </button>
+                  ))}
+              </RailSection>
+
+              <RailSection title="Empty this space">
+                <button
+                  onClick={() => {
+                    const n = agents.filter((a) => a.space === view.name).length;
+                    if (confirm(`Move ${n} agent(s) out of "${view.name}"? The space disappears.`)) {
+                      void moveSpace(view.name, null);
+                    }
+                  }}
+                  className="rounded border border-red-900 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950"
+                >
+                  Unassign every agent
+                </button>
+                <p className="text-xs text-neutral-600">
+                  The agents keep working; they just stop being grouped. The shared secret is
+                  discarded, so the webhook URL stops answering.
+                </p>
+              </RailSection>
+              </div>
+            </div>
           </div>
         )}
 
         {view.kind === "home" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <h2 className="text-lg font-semibold">
-              {active.kind === "space" ? active.name : "All agents"}
-            </h2>
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-lg font-semibold">
+                {active.kind === "space" ? active.name : "All agents"}
+              </h2>
+              {active.kind === "space" && (
+                <button
+                  onClick={() => setView({ kind: "space", name: active.name })}
+                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                >
+                  Space settings
+                </button>
+              )}
+            </div>
             <p className="mt-1 text-xs text-neutral-500">
-              {visibleAgents.length} agent{visibleAgents.length === 1 ? "" : "s"} · {runsToday} run
-              {runsToday === 1 ? "" : "s"} in the last 24h
+              {visibleAgents.length} agent{visibleAgents.length === 1 ? "" : "s"}
+              {stats && (
+                <>
+                  {" · "}
+                  {stats.last24h} run{stats.last24h === 1 ? "" : "s"} in the last 24h
+                  {stats.prev24h > 0 && (
+                    <span
+                      className="text-neutral-600"
+                    >
+                      {" "}
+                      ({stats.last24h > stats.prev24h ? "\u2191" : "\u2193"}{" "}
+                      {Math.abs(stats.last24h - stats.prev24h)} vs the day before)
+                    </span>
+                  )}
+                </>
+              )}
             </p>
 
+            {awaiting.length + running.length + failing.length + paused.length === 0 ? (
+              <p className="mt-4 text-sm text-neutral-500">
+                <span className="text-emerald-500">●</span> All clear — nothing awaiting approval,
+                running, failed, or paused.
+              </p>
+            ) : (
             <div className="mt-4 flex flex-wrap gap-2">
               <Stat
                 label="awaiting approval"
@@ -762,9 +995,10 @@ export function App() {
                 tone={paused.length > 0 ? "text-neutral-400" : ""}
               />
             </div>
-            {metered && spendToday > 0 && (
+            )}
+            {metered && (stats?.spend24h ?? 0) > 0 && (
               <p className="mt-2 text-xs text-neutral-500">
-                ${spendToday.toFixed(2)} spent in the last 24h
+                ${stats!.spend24h.toFixed(2)} spent in the last 24h
               </p>
             )}
 
@@ -780,8 +1014,17 @@ export function App() {
                       className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-900"
                     >
                       <span className={STATUS_COLOR[r.status] ?? "text-neutral-400"}>●</span>
-                      <span className="truncate text-neutral-200">{agentName(r.agentId)}</span>
+                      <span className="shrink-0 text-neutral-200">{agentName(r.agentId)}</span>
+                      {r.label && (
+                        <span className="truncate text-xs text-neutral-400">{r.label}</span>
+                      )}
                       <span className="shrink-0 text-xs text-neutral-600">{r.trigger}</span>
+                      {r.numTurns != null && (
+                        <span className="shrink-0 text-xs text-neutral-600">{r.numTurns} turns</span>
+                      )}
+                      {took(r) && (
+                        <span className="shrink-0 text-xs text-neutral-600">{took(r)}</span>
+                      )}
                       <span className="ml-auto shrink-0 text-xs text-neutral-600">
                         {ago(r.startedAt)}
                       </span>
@@ -826,7 +1069,7 @@ export function App() {
                         <span className="text-red-400">●</span>
                         <span className="truncate text-neutral-200">{a.name}</span>
                         <span className="ml-auto shrink-0 text-xs text-neutral-600">
-                          {ago(latestByAgent.get(a.id)!.startedAt)}
+                          {ago(latestByAgent[a.id]!.startedAt)}
                         </span>
                       </button>
                     ))}
@@ -873,9 +1116,41 @@ export function App() {
                   </HomeSection>
                 )}
 
-                {awaiting.length === 0 && failing.length === 0 && paused.length === 0 && (
-                  <p className="text-sm text-neutral-600">Nothing needs you right now.</p>
+                {drops.length > 0 && (
+                  <HomeSection
+                    title="Didn't run · last 24h"
+                    hint="Refused for a reason other than a filter miss. Nothing is retried — GitHub does not redeliver."
+                  >
+                    {drops.slice(0, 6).map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => setView({ kind: "detail", id: d.agentId })}
+                        className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-900"
+                      >
+                        <span className="text-amber-400">●</span>
+                        <span className="shrink-0 text-xs tabular-nums text-neutral-400">
+                          {ago(d.ts)}
+                        </span>
+                        <span className="shrink-0 text-neutral-300">{agentName(d.agentId)}</span>
+                        {d.label && (
+                          <span className="truncate font-mono text-xs text-neutral-400">
+                            {d.label}
+                          </span>
+                        )}
+                        <span className="ml-auto shrink-0 truncate text-xs text-neutral-600">
+                          {d.reason}
+                        </span>
+                      </button>
+                    ))}
+                  </HomeSection>
                 )}
+
+                {awaiting.length === 0 &&
+                  failing.length === 0 &&
+                  paused.length === 0 &&
+                  drops.length === 0 && (
+                    <p className="text-sm text-neutral-600">Nothing needs you right now.</p>
+                  )}
               </div>
             </div>
           </div>
@@ -885,7 +1160,14 @@ export function App() {
           <>
             <header className="flex items-center gap-3 border-b border-neutral-800 px-6 py-3">
               <span className={`text-sm font-medium ${STATUS_COLOR[run.status] ?? ""}`}>{run.status}</span>
-              <span className="text-sm text-neutral-300">{agentName(run.agentId)}</span>
+              <button
+                onClick={() => setView({ kind: "detail", id: run.agentId })}
+                className="text-sm text-neutral-300 hover:text-neutral-100"
+                title="Back to this agent"
+              >
+                &larr; {agentName(run.agentId)}
+              </button>
+              {run.label && <span className="truncate font-mono text-xs text-neutral-400">{run.label}</span>}
               {run.branch && <span className="font-mono text-xs text-neutral-500">{run.branch}</span>}
               {run.numTurns != null && <span className="text-xs text-neutral-500">{run.numTurns} turns</span>}
               {canReply && (
@@ -904,13 +1186,14 @@ export function App() {
                     title="Permission mode in force for this run"
                     className="ml-auto rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
                   >
-                    <option value="supervised">supervised</option>
-                    <option value="acceptEdits">auto-accept edits</option>
-                    <option value="plan">plan</option>
-                    <option value="auto">auto</option>
-                    <option value="locked">locked</option>
-                    {/* A run can only enter full access if it started there. */}
-                    {run.permissionMode === "full" && <option value="full">full access</option>}
+                    {/* A run can only enter Bypass if it started there. */}
+                    {MODES.filter(([v]) => v !== "full" || run.permissionMode === "full").map(
+                      ([v, label]) => (
+                        <option key={v} value={v}>
+                          {label}
+                        </option>
+                      ),
+                    )}
                   </select>
                   <button
                     onClick={() => api.stop(run.id)}
@@ -944,7 +1227,7 @@ export function App() {
           </>
         )}
 
-        {view.kind !== "edit" && (
+        {(view.kind === "run" || view.kind === "detail") && selectedAgentId && (
           <div className="border-t border-neutral-800 p-4">
             {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
             {skillMatches.length > 0 && (
@@ -1002,28 +1285,17 @@ export function App() {
                   if (canReply && run) {
                     api.send(run.id, prompt.trim());
                     setPrompt("");
-                  } else if (selectedAgentId ?? agents[0]) {
-                    void start(selectedAgentId ?? agents[0]!.id, true);
+                  } else if (selectedAgentId) {
+                    void start(selectedAgentId, true);
                   }
                 }}
-                placeholder={canReply ? "Reply to this run…" : "Prompt for a new run…"}
+                placeholder={
+                  canReply
+                    ? "Reply to this run…"
+                    : `One-off run of ${agentName(selectedAgentId ?? "")}…`
+                }
                 className="flex-1 rounded border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none placeholder:text-neutral-600 focus:border-neutral-600"
               />
-              {!canReply && (
-                <select
-                  value={runMode}
-                  onChange={(e) => setRunMode(e.target.value)}
-                  title="Permission mode for this run — the agent's saved mode is left alone"
-                  className="shrink-0 rounded border border-neutral-800 bg-neutral-900 px-2 py-2 text-xs text-neutral-400 outline-none focus:border-neutral-600"
-                >
-                  <option value="auto">auto</option>
-                  <option value="supervised">supervised</option>
-                  <option value="acceptEdits">auto-accept edits</option>
-                  <option value="plan">plan</option>
-                  <option value="locked">locked</option>
-                  <option value="full">full access</option>
-                </select>
-              )}
             </div>
           </div>
         )}

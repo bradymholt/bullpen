@@ -8,6 +8,7 @@ import type {
   Health,
   RepoList,
   Skill,
+  Stats,
   Run,
   RunEvent,
 } from "./types.ts";
@@ -41,7 +42,9 @@ export const api = {
   poll: (id: string) => fetch(`/api/agents/${id}/poll`, { method: "POST" }).then(json<PollOutcome>),
   clearPollState: (id: string) =>
     fetch(`/api/agents/${id}/poll-state`, { method: "DELETE" }).then(json<{ ok: true }>),
-  deliveries: (id: string) => fetch(`/api/agents/${id}/deliveries`).then(json<Delivery[]>),
+  /** `all` includes deliveries this agent's own filters refused, which are usually noise. */
+  deliveries: (id: string, all = false) =>
+    fetch(`/api/agents/${id}/deliveries${all ? "?all=1" : ""}`).then(json<Delivery[]>),
   setSecret: (id: string, webhookSecret: string) =>
     fetch(`/api/agents/${id}/webhook-secret`, {
       method: "PUT",
@@ -63,14 +66,14 @@ export const api = {
   deleteAgent: (id: string) =>
     fetch(`/api/agents/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
   spaceSecretState: (space: string) =>
-    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean }>),
+    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean; hookId: string | null }>),
   /** Omit `secret` to have the server mint one. Returns it once, then never again. */
   setSpaceSecret: (space: string, secret?: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/secret`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(secret ? { secret } : {}),
-    }).then(json<{ secret: string }>),
+    }).then(json<{ secret: string; hookId: string }>),
   clearSpaceSecret: (space: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/secret`, { method: "DELETE" }).then(
       json<{ ok: true }>,
@@ -84,6 +87,11 @@ export const api = {
     }).then(json<{ moved: number; name: string | null }>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
+  stats: () => fetch("/api/stats").then(json<Stats>),
+  spaceDeliveries: (space: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/deliveries`).then(json<Delivery[]>),
+  /** Deliveries refused for a reason worth knowing about; filter misses excluded. */
+  notableDrops: () => fetch("/api/deliveries").then(json<Delivery[]>),
   run: (id: string) => fetch(`/api/runs/${id}`).then(json<{ run: Run; events: RunEvent[] }>),
   startRun: (agentId: string, prompt?: string, permissionMode?: string, ephemeral?: boolean) =>
     fetch(`/api/agents/${agentId}/run`, {

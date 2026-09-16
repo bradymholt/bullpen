@@ -182,11 +182,11 @@ const FILTER_SUGGESTIONS: Record<string, { paths: string[] }> = {
   },
 };
 
-const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: string }> = {
-  slack: { path: "event.channel", values: "C0123ABC, C0456DEF", what: "a Slack channel id — Slack sends ids, never names" },
-  github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR" },
-  asana: { path: "events.0.action", values: "changed, added", what: "what Asana did to the resource" },
-  custom: { path: "type", values: "deploy.failed", what: "whatever field your sender uses to say what happened" },
+const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: string; label: string }> = {
+  slack: { path: "event.channel", values: "C0123ABC, C0456DEF", what: "a Slack channel id — Slack sends ids, never names", label: "{{payload.event.channel}}" },
+  github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR", label: "{{payload.repository.full_name}} #{{payload.number}}" },
+  asana: { path: "events.0.action", values: "changed, added", what: "what Asana did to the resource", label: "{{payload.events.0.resource.gid}}" },
+  custom: { path: "type", values: "deploy.failed", what: "whatever field your sender uses to say what happened", label: "{{payload.type}}" },
 };
 
 type Shape = {
@@ -336,7 +336,6 @@ function shapeOf(draft: AgentInput): Shape {
 
 function exampleRequest(url: string, draft: AgentInput): string {
   const shape = shapeOf(draft);
-  const example = FILTER_EXAMPLES[senderOption(draft.webhookMode)] ?? FILTER_EXAMPLES.custom!;
   const signed = shape.header.toLowerCase() !== "x-bullpen-token";
   if (signed) {
     return [
@@ -387,9 +386,6 @@ export function TriggerSettings({
   const [showTest, setShowTest] = useState(false);
   const [showNotes, setShowNotes] = useState(!agent);
   const [showFilterHelp, setShowFilterHelp] = useState(false);
-  const [spaceSecret, setSpaceSecret] = useState<{ configured: boolean; value?: string } | null>(
-    null,
-  );
   const [saved, setSaved] = useState<string | null>(null);
   const [pollNote, setPollNote] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -422,14 +418,6 @@ export function TriggerSettings({
     setTestResult(null);
   }, [agent?.id]);
 
-  useEffect(() => {
-    if (!draft.space) return setSpaceSecret(null);
-    void api
-      .spaceSecretState(draft.space)
-      .then((s) => setSpaceSecret({ configured: s.configured }))
-      .catch(() => setSpaceSecret(null));
-  }, [draft.space]);
-
   const pick = (k: TriggerKind) => {
     setKind(k);
     // Both schedule and poll run off the cron expression, so it only survives
@@ -444,9 +432,6 @@ export function TriggerSettings({
   // The draft carries its own id, so an unsaved agent can still show the URL it will answer on.
   const agentId = agent?.id ?? draft.id;
   const hookUrl = agentId ? `${location.origin}/api/hooks/${agentId}` : null;
-  const spaceHookUrl = draft.space
-    ? `${location.origin}/api/hooks/space/${encodeURIComponent(draft.space)}`
-    : null;
   const shownSecret = agent ? secret : (draft.webhookSecret ?? null);
   const shape = shapeOf(draft);
   const example = FILTER_EXAMPLES[senderOption(draft.webhookMode)] ?? FILTER_EXAMPLES.custom!;
@@ -808,65 +793,12 @@ export function TriggerSettings({
           )}
 
           {draft.space && (
-            <div className="rounded border border-neutral-800 bg-neutral-950 p-2.5">
-              <span className={label}>Shared URL for the &ldquo;{draft.space}&rdquo; space</span>
-              <div className="flex gap-2">
-                <input
-                  readOnly
-                  value={spaceHookUrl!}
-                  className={`${field} font-mono text-xs text-neutral-400`}
-                />
-                <button
-                  onClick={() => void navigator.clipboard.writeText(spaceHookUrl!)}
-                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-                >
-                  Copy
-                </button>
-              </div>
-              <span className={`${label} mt-3`}>Shared secret</span>
-              <div className="flex gap-2">
-                <input
-                  readOnly
-                  value={
-                    spaceSecret?.value ??
-                    (spaceSecret?.configured ? "•".repeat(24) : "no shared secret yet")
-                  }
-                  className={`${field} font-mono text-xs ${
-                    spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
-                  }`}
-                />
-                {spaceSecret?.value && (
-                  <button
-                    onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
-                    className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-                  >
-                    Copy
-                  </button>
-                )}
-                <button
-                  onClick={async () => {
-                    if (
-                      spaceSecret?.configured &&
-                      !confirm("Replace this space's secret? The current webhook stops working until you paste the new one into the sender.")
-                    ) {
-                      return;
-                    }
-                    const r = await api.setSpaceSecret(draft.space!);
-                    setSpaceSecret({ configured: true, value: r.secret });
-                  }}
-                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-                >
-                  {spaceSecret?.configured ? "Rotate" : "Generate"}
-                </button>
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-                One webhook for the whole space: every enabled agent in it gets the delivery, and
-                its own filters decide whether it runs. This secret is the space&rsquo;s own — the
-                per-agent secret above is not used here, so there is nothing to keep in sync. It is
-                shown once when generated and never again. Renaming the space carries the secret but
-                changes the URL.
-              </p>
-            </div>
+            <p className="text-xs leading-relaxed text-neutral-600">
+              This agent also answers the shared webhook for the{" "}
+              <strong>{draft.space}</strong> space, alongside every other agent in it. That URL and
+              its secret are configured in the space&rsquo;s settings — the pencil beside{" "}
+              <strong>{draft.space}</strong> in the sidebar.
+            </p>
           )}
 
           <div>
@@ -1061,6 +993,21 @@ export function TriggerSettings({
           >
             + Add another condition
           </button>
+          <div>
+            <span className={label}>Name each run</span>
+            <input
+              className={field}
+              placeholder={example.label}
+              value={draft.labelTemplate ?? ""}
+              onChange={(e) => set("labelTemplate", e.target.value || null)}
+            />
+            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+              Optional. Rendered per delivery and shown beside the run in lists, so a feed of
+              identical agent names becomes readable. Same <code>{"{{payload.a.b}}"}</code> syntax as
+              the prompt; any sender, any field. A field the payload lacks renders empty.
+            </p>
+          </div>
+
           <div>
             <button
               type="button"

@@ -39,6 +39,7 @@ export type Agent = {
   webhookEvents: string[];
   filterPath: string | null;
   filters: FilterCondition[];
+  labelTemplate: string | null;
   filterValues: string[];
   webhookSignatureHeader: string | null;
   webhookSignaturePrefix: string | null;
@@ -61,6 +62,8 @@ export type Run = {
   workspacePath: string | null;
   branch: string | null;
   costUsd: number | null;
+  /** What the run is about, from the agent's labelTemplate. */
+  label: string | null;
   numTurns: number | null;
   error: string | null;
   startedAt: number;
@@ -94,10 +97,16 @@ export type Approval = {
 
 export type Delivery = {
   id: string;
+  /** Present on the cross-agent feed; per-agent listings imply it. */
+  agentId: string;
+  /** The sender's own id for this delivery; shared by every agent it fanned out to. */
+  deliveryKey: string | null;
   ts: number;
   event: string | null;
   accepted: boolean;
   reason: string | null;
+  /** What the delivery was about, from the agent's labelTemplate. */
+  label: string | null;
   runId: string | null;
 };
 
@@ -124,4 +133,17 @@ export type Health = {
   ok: boolean;
   dataDir: string;
   claudeCredential: { source: string; detail: string };
+};
+
+/** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
+export type Stats = {
+  last24h: number;
+  prev24h: number;
+  failed24h: number;
+  spend24h: number;
+  total: number;
+  /** Each agent's newest run, keyed by agent id. */
+  latest: Record<string, { id: string; status: string; startedAt: number }>;
+  /** Count of running / awaiting-approval runs per agent. */
+  active: Record<string, number>;
 };

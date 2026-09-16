@@ -1,0 +1,1 @@
+ALTER TABLE `space_secrets` ADD `hook_id` text;

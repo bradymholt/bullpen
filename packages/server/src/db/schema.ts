@@ -43,6 +43,8 @@ export const agents = sqliteTable("agents", {
   filterValues: text("filter_values", { mode: "json" }).notNull().default(sql`'[]'`),
   /** `[{ path, op, values }]`, ANDed. Empty means no payload filtering. */
   filters: text("filters", { mode: "json" }).notNull().default(sql`'[]'`),
+  /** Template rendered per run to name it in lists, e.g. "{{payload.repository.full_name}} #{{payload.number}}". */
+  labelTemplate: text("label_template"),
   webhookSignatureHeader: text("webhook_signature_header"),
   webhookSignaturePrefix: text("webhook_signature_prefix"),
   concurrency: text("concurrency").notNull().default("skip"),
@@ -59,6 +61,8 @@ export const agents = sqliteTable("agents", {
  */
 export const spaceSecrets = sqliteTable("space_secrets", {
   space: text("space").primaryKey(),
+  /** Stable id for the shared webhook URL, so renaming the space can't break it. */
+  hookId: text("hook_id"),
   secret: text("secret").notNull(),
   createdAt: integer("created_at").notNull().default(now),
 });
@@ -78,6 +82,8 @@ export const runs = sqliteTable(
     workspacePath: text("workspace_path"),
     branch: text("branch"),
     costUsd: integer("cost_usd"),
+    /** What this run is about, from the agent's labelTemplate. Null when unset. */
+    label: text("label"),
     numTurns: integer("num_turns"),
     error: text("error"),
     startedAt: integer("started_at").notNull().default(now),
@@ -129,6 +135,10 @@ export const webhookDeliveries = sqliteTable(
     event: text("event"),
     accepted: integer("accepted", { mode: "boolean" }).notNull(),
     reason: text("reason"),
+    /** What the delivery was about, from the agent's labelTemplate — so a drop names the thing it dropped. */
+    label: text("label"),
+    /** The space whose shared URL this arrived on; null when sent to the agent's own URL. */
+    viaSpace: text("via_space"),
     runId: text("run_id"),
   },
   (t) => [index("webhook_deliveries_agent_ts_idx").on(t.agentId, t.ts)],
