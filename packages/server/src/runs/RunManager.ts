@@ -205,9 +205,12 @@ export function startRun(opts: RunRequest, existingId?: string): string {
         `payload had nothing at that path, not that it is missing from the file.`
       : null,
     // The workspace may be deleted when the run ends; this directory is the one thing kept.
-    `Any file the user should receive — a screenshot, a report, an export — save under ` +
-      `${OUT_DIR}/ in your working directory (create it if needed). Those files are kept after the ` +
-      `run and offered for download; nothing else in the working directory is.`,
+    `Rule for files: anything the user should end up with — a screenshot, a report, an export, ` +
+      `a download — must be written to ${OUT_DIR}/ inside your working directory (mkdir -p it first). ` +
+      `Not the working directory itself, not /tmp, not your home directory: those are deleted or ` +
+      `unreachable when the run ends, and only ${OUT_DIR}/ is kept and offered to the user for ` +
+      `download. When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming ` +
+      `the files you saved there.`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -285,11 +288,24 @@ export function startRun(opts: RunRequest, existingId?: string): string {
           .run();
         if (stopping.has(runId)) return;
         setStatus(runId, isError ? "failed" : "completed");
+        // The run is over here even though the session stays open (handle.done
+        // resolves only on close), so this is when the files are gathered.
+        keepArtifacts();
       },
     },
   );
 
   live.set(runId, handle);
+
+  // Idempotent: the second call finds an empty directory.
+  const keepArtifacts = () => {
+    try {
+      const kept = collectArtifacts(runId, workspace.path);
+      if (kept > 0) appendEvent(runId, "artifacts", { count: kept });
+    } catch (e) {
+      console.warn(`[bullpen] run ${runId}: could not collect artifacts: ${String(e)}`);
+    }
+  };
 
   handle.done
     .then(() => {
@@ -314,12 +330,8 @@ export function startRun(opts: RunRequest, existingId?: string): string {
       // directory is the only evidence it leaves, and a clone is always kept so
       // its diff can still be reviewed.
       const final = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
-      try {
-        const kept = collectArtifacts(runId, workspace.path);
-        if (kept > 0) appendEvent(runId, "artifacts", { count: kept });
-      } catch (e) {
-        console.warn(`[bullpen] run ${runId}: could not collect artifacts: ${String(e)}`);
-      }
+      // Stopped or interrupted runs never reached onResult; anything they left is gathered here.
+      keepArtifacts();
       if (ephemeral && final?.status === "completed") removeWorkspace(workspace.path);
       // The next queued run, if any, waits on exactly this.
       drainQueue(agent.id);
