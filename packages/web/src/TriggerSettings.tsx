@@ -393,19 +393,29 @@ export function TriggerSettings({
   }, [agent?.id, draft.id]);
 
   // Saved cron only: the preview describes what will actually fire.
+  // Previewed from the draft as it is typed, so a bad expression is caught
+  // before Save and a new agent sees its schedule too.
   useEffect(() => {
-    if (!agent?.cron) {
+    const cron = draft.cron?.trim();
+    if (!cron) {
       setNext(null);
+      setScheduleError(null);
       return;
     }
-    api
-      .schedule(agent.id)
-      .then((r) => {
-        setNext(r.next);
-        setScheduleError(null);
-      })
-      .catch((e) => setScheduleError(String(e)));
-  }, [agent?.id, agent?.cron, agent?.cronTimezone]);
+    const t = setTimeout(() => {
+      api
+        .cronPreview(cron, draft.cronTimezone ?? null)
+        .then((r) => {
+          setNext(r.next);
+          setScheduleError(null);
+        })
+        .catch((e) => {
+          setNext(null);
+          setScheduleError(e instanceof Error ? e.message : String(e));
+        });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [draft.cron, draft.cronTimezone]);
 
   useEffect(() => {
     setSecret(agent?.webhookSecret ?? null);
@@ -483,7 +493,7 @@ export function TriggerSettings({
 
       {kind === "manual" && (
         <p className="text-xs text-neutral-600">
-          Nothing starts this agent but you. Its webhook URL still exists and still needs its
+          Nothing starts this agent but you &mdash; the Run button, or a one-off prompt. Its webhook URL still exists and still needs its
           secret &mdash; pick Webhook to see it.
         </p>
       )}
@@ -531,7 +541,7 @@ export function TriggerSettings({
             </div>
           )}
           {!agent && draft.cron && (
-            <p className="text-xs text-neutral-600">Save the agent to see when this fires.</p>
+            <p className="text-xs text-neutral-600">Type a cron expression to see when it fires.</p>
           )}
         </div>
       )}

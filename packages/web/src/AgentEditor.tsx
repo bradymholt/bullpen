@@ -638,8 +638,6 @@ export function AgentEditor({
         </div>
       </div>
 
-      {error && <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
-
       <div className="sticky bottom-0 -mx-6 -mb-5 flex items-center gap-2 border-t border-neutral-800 bg-neutral-950 px-6 py-3">
         <button
           onClick={save}
@@ -651,6 +649,7 @@ export function AgentEditor({
         <button onClick={onCancel} className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900">
           Cancel
         </button>
+        {error && <span className="min-w-0 truncate text-sm text-red-400" title={error}>{error}</span>}
         {agent && (
           <button
             onClick={async () => {

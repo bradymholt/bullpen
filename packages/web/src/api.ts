@@ -20,8 +20,12 @@ async function json<T>(res: Response): Promise<T> {
     const text = await res.text();
     let message = text;
     try {
-      const parsed = JSON.parse(text) as { error?: unknown };
+      const parsed = JSON.parse(text) as { error?: unknown; issues?: { path?: (string | number)[]; message?: string }[] };
       if (typeof parsed.error === "string") message = parsed.error;
+      // Zod issues name the field; without them "invalid agent" says nothing.
+      if (Array.isArray(parsed.issues) && parsed.issues.length > 0) {
+        message += ": " + parsed.issues.map((i) => `${(i.path ?? []).join(".") || "input"} — ${i.message ?? "invalid"}`).join("; ");
+      }
     } catch {
       // not JSON; the raw body is the message
     }
@@ -203,10 +207,12 @@ export const api = {
   removeSpace: (name: string) =>
     fetch(`/api/spaces/${encodeURIComponent(name)}`, { method: "DELETE" }).then(json<{ moved: number; name: string }>),
   systemPrompt: () => fetch("/api/system-prompt").then(json<{ files: string; delivery: string }>),
+  cronPreview: (cron: string, tz: string | null) =>
+    fetch(`/api/cron/preview?cron=${encodeURIComponent(cron)}${tz ? `&tz=${encodeURIComponent(tz)}` : ""}`).then(json<{ next: string[] }>),
   runArtifacts: (runId: string) => fetch(`/api/runs/${runId}/artifacts`).then(json<Artifact[]>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
-  stats: () => fetch("/api/stats").then(json<Stats>),
+  stats: (space?: string | null) => fetch(space ? `/api/stats?space=${encodeURIComponent(space)}` : "/api/stats").then(json<Stats>),
   spaceDeliveries: (space: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/deliveries`).then(json<Delivery[]>),
   /** Deliveries refused for a reason worth knowing about; filter misses excluded. */

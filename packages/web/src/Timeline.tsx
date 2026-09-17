@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { RunEvent } from "./types.ts";
@@ -118,14 +119,8 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
       }
       items.push({ key: k, kind: "meta", body: `Started in ${e.payload.cwd}` });
     } else if (e.type === "mcp.status") {
-      const servers = e.payload.servers as { name: string; status: string; error?: string; toolCount?: number }[];
-      items.push({
-        key: k,
-        kind: servers.some((s) => s.status === "failed" || s.status === "needs-auth") ? "error" : "meta",
-        body: servers
-          .map((s) => `${s.name}: ${s.status}${s.error ? ` (${s.error})` : ""}${s.toolCount != null ? ` · ${s.toolCount} tools` : ""}`)
-          .join("\n"),
-      });
+      // Rendered by McpStatusItem: one summary line, the full list on demand.
+      items.push({ key: k, kind: "mcp", body: JSON.stringify(e.payload.servers ?? []) });
     } else if (e.type === "approval.decided") {
       items.push({
         key: k,
@@ -180,6 +175,42 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
   return items;
 }
 
+type McpServer = { name: string; status: string; error?: string; toolCount?: number };
+
+/** Twenty connectors with their auth state is noise on every run; the counts are the signal. */
+function McpStatusItem({ body }: { body: string }) {
+  const [open, setOpen] = useState(false);
+  const servers = JSON.parse(body) as McpServer[];
+  const by = (s: string) => servers.filter((x) => x.status === s).length;
+  const failed = by("failed");
+  const needsAuth = by("needs-auth");
+  const parts = [
+    `${by("connected")} connected`,
+    needsAuth ? `${needsAuth} need auth` : null,
+    by("pending") ? `${by("pending")} pending` : null,
+    failed ? `${failed} failed` : null,
+  ].filter(Boolean);
+  const tone = failed ? "border-red-900 bg-red-950/30 text-red-300" : needsAuth ? "border-amber-900/60 bg-amber-950/10 text-amber-400/90" : "border-neutral-800 text-neutral-500";
+  return (
+    <div className={`rounded border px-3 py-2 text-xs ${tone}`}>
+      <button onClick={() => setOpen((v) => !v)} className="hover:text-white">
+        {open ? "\u25be" : "\u25b8"} MCP: {parts.join(" \u00b7 ")}
+      </button>
+      {open && (
+        <ul className="mt-1.5 space-y-0.5 font-mono">
+          {servers.map((s) => (
+            <li key={s.name} className={s.status === "connected" ? "text-neutral-400" : s.status === "failed" ? "text-red-300" : "text-amber-400/90"}>
+              {s.name}: {s.status}
+              {s.error ? ` (${s.error})` : ""}
+              {s.toolCount != null ? ` \u00b7 ${s.toolCount} tools` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const STYLES: Record<string, string> = {
   user: "border-sky-700 bg-sky-950/40",
   text: "border-neutral-700 bg-neutral-900",
@@ -206,7 +237,7 @@ export function Timeline({
   const items = toItems(events, meteredBilling);
   return (
     <div className="space-y-2">
-      {items.map((it) => (
+      {items.map((it) => it.kind === "mcp" ? <McpStatusItem key={it.key} body={it.body} /> : (
         <div key={it.key} className={`rounded border px-3 py-2 ${STYLES[it.kind] ?? STYLES.text}`}>
           {it.label && (
             <div

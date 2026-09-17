@@ -319,6 +319,12 @@ export function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [spaceEnvMap, setSpaceEnvMap] = useState<Record<string, string> | null>(null);
   const [spaceEnvLoaded, setSpaceEnvLoaded] = useState<string>("");
+  const spaceKnown =
+    view.kind !== "space" ||
+    view.name === DEFAULT_SPACE ||
+    agents.some((a) => a.space === view.name) ||
+    spaceSecret?.configured === true;
+
   const spaceDirty =
     view.kind === "space" &&
     (spaceDraft.trim() !== view.name ||
@@ -475,7 +481,7 @@ export function App() {
   }, [setupGeneration]);
   const [error, setError] = useState<string | null>(null);
 
-  const { run, events, partial, approvals } = useRun(view.kind === "run" ? view.id : null);
+  const { run, events, partial, approvals, missing: runMissing } = useRun(view.kind === "run" ? view.id : null);
   const outputRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -511,7 +517,6 @@ export function App() {
       .scheduleAll()
       .then(setUpcoming)
       .catch(() => setUpcoming([]));
-    api.stats().then(setStats).catch(() => setStats(null));
     api.notableDrops().then(setDrops).catch(() => setDrops([]));
   };
   useEffect(refresh, []);
@@ -608,6 +613,11 @@ export function App() {
   // one the home view is filtered to. Refetched with everything else.
   const deliveriesSpace =
     view.kind === "space" ? view.name : view.kind === "home" && active.kind === "space" ? active.name : null;
+  // Stats follow the space filter: the landing's numbers are that space's.
+  useEffect(() => {
+    void api.stats(active.kind === "space" ? active.name : null).then(setStats).catch(() => setStats(null));
+  }, [active.kind === "space" ? active.name : "", refreshTick]);
+
   const deliveriesSpaceHasWebhooks =
     deliveriesSpace !== null && agents.some((a) => a.space === deliveriesSpace && a.trigger === "webhook");
   useEffect(() => {
@@ -686,7 +696,10 @@ export function App() {
             <SpaceChip
               label="All"
               selected={active.kind === "all"}
-              onClick={() => setSpace({ kind: "all" })}
+              onClick={() => {
+                setSpace({ kind: "all" });
+                if (view.kind !== "home") setView({ kind: "home" });
+              }}
             />
             {spaces.map((sp) =>
               active.kind === "space" && active.name === sp ? (
@@ -705,7 +718,10 @@ export function App() {
                   key={sp}
                   label={sp}
                   selected={false}
-                  onClick={() => setSpace({ kind: "space", name: sp })}
+                  onClick={() => {
+                    setSpace({ kind: "space", name: sp });
+                    if (view.kind !== "home") setView({ kind: "home" });
+                  }}
                 />
               ),
             )}
@@ -1035,7 +1051,16 @@ export function App() {
           </div>
         )}
 
-        {view.kind === "space" && (
+        {view.kind === "space" && !spaceKnown && (
+          <div className="m-auto text-center text-sm text-neutral-600">
+            <p>There is no space called &ldquo;{view.name}&rdquo;.</p>
+            <button onClick={() => setView({ kind: "home" })} className="mt-2 text-neutral-400 hover:text-neutral-100">
+              Back home
+            </button>
+          </div>
+        )}
+
+        {view.kind === "space" && spaceKnown && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <button
               onClick={() => { if (confirmLeave({ kind: "home" })) goToSpace(view.name); }}
@@ -1881,6 +1906,15 @@ export function App() {
           </div>
         )}
 
+        {view.kind === "run" && !run && runMissing && (
+          <div className="m-auto text-center text-sm text-neutral-600">
+            <p>That run no longer exists.</p>
+            <button onClick={() => setView({ kind: "home" })} className="mt-2 text-neutral-400 hover:text-neutral-100">
+              Back home
+            </button>
+          </div>
+        )}
+
         {view.kind === "run" && run && (
           <>
             <header className="flex items-center gap-3 border-b border-neutral-800 px-6 py-3">
@@ -1942,12 +1976,22 @@ export function App() {
                       ),
                     )}
                   </select>
-                  <button
-                    onClick={() => api.stop(run.id)}
-                    className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
-                  >
-                    Stop
-                  </button>
+                  {isLive ? (
+                    <button
+                      onClick={() => api.stop(run.id)}
+                      className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+                    >
+                      Stop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => api.stop(run.id)}
+                      title="End the session. The run is finished; this only removes the ability to reply to it."
+                      className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
+                    >
+                      Close
+                    </button>
+                  )}
                 </>
               )}
                 <a
