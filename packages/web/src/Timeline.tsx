@@ -129,10 +129,11 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
         });
       }
     } else if (e.type === "result") {
-      // On a subscription login nothing is charged per run; the SDK still
-      // reports what the same tokens would have cost on the API.
+      // On a subscription login nothing is charged per run. The SDK still
+      // reports what the tokens would have cost on the API, but a dollar figure
+      // nobody is paying only confuses, so it shows on metered billing alone.
       const cost = e.payload.total_cost_usd;
-      const money = cost ? (meteredBilling ? `, $${cost.toFixed(2)}` : `, ~$${cost.toFixed(2)} at API rates`) : "";
+      const money = cost && meteredBilling ? `, $${cost.toFixed(2)}` : "";
       items.push({
         key: k,
         kind: e.payload.is_error ? "error" : "meta",

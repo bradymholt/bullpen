@@ -36,7 +36,8 @@ function indent(text: string): string {
     .join("\n");
 }
 
-export function renderTranscript(run: RunLike, agentName: string, events: Ev[]): string {
+/** `metered`: an API key pays per token, so the cost is real; on a subscription it is left out. */
+export function renderTranscript(run: RunLike, agentName: string, events: Ev[], metered = false): string {
   const out: string[] = [];
   out.push(`${agentName} — run ${run.id.slice(0, 8)}`);
   const facts: [string, string | null][] = [
@@ -49,7 +50,7 @@ export function renderTranscript(run: RunLike, agentName: string, events: Ev[]):
     ["Started", stamp(run.startedAt)],
     ["Ended", run.endedAt ? stamp(run.endedAt) : null],
     ["Turns", run.numTurns != null ? String(run.numTurns) : null],
-    ["Cost", run.costUsd != null && run.costUsd > 0 ? `$${(run.costUsd / 1_000_000).toFixed(2)} at API rates` : null],
+    ["Cost", metered && run.costUsd != null && run.costUsd > 0 ? `$${(run.costUsd / 1_000_000).toFixed(2)}` : null],
   ];
   for (const [k, v] of facts) if (v) out.push(`${k}: ${v}`);
   out.push(RULE, "");
@@ -95,7 +96,7 @@ export function renderTranscript(run: RunLike, agentName: string, events: Ev[]):
         out.push(block.is_error ? "◀ error" : "◀ result", indent(clip(text, 4000)), "");
       }
     } else if (e.type === "result") {
-      const cost = p.total_cost_usd ? `, ~$${Number(p.total_cost_usd).toFixed(2)} at API rates` : "";
+      const cost = metered && p.total_cost_usd ? `, $${Number(p.total_cost_usd).toFixed(2)}` : "";
       out.push(`[finished — ${p.num_turns} turns${cost}${p.is_error ? " — with an error" : ""}]`, "");
     }
   }
