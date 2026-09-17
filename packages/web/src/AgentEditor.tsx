@@ -274,8 +274,8 @@ export function AgentEditor({
             );
           }}
         >
-          <option value="scratch">Scratch directory — one folder this agent reuses every run</option>
           <option value="ephemeral">Fresh directory — a new folder per run, deleted after</option>
+          <option value="scratch">Scratch directory — one folder this agent reuses every run</option>
           <option value="existing">Existing directory — run in a checkout you already have</option>
           <option value="clone">Git clone — new clone and branch per run, discarded after</option>
         </select>
