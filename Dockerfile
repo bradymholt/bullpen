@@ -37,8 +37,11 @@ ENV NODE_ENV=production BULLPEN_DATA=/data \
 # agents drive GitHub through it and it is not something the SDK brings along;
 # python3 and jq because agents reach for them unprompted to read a payload or
 # pipe JSON, and a `command not found` costs the run a turn to work around.
+# python3-venv rides along because the slim image's python3 carries no pip and
+# no ensurepip: without it `python3 -m venv` fails, and a skill with a
+# dependency of its own has no way to install one.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg python3 jq \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg python3 python3-venv jq \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
