@@ -34,9 +34,11 @@ ENV NODE_ENV=production BULLPEN_DATA=/data \
 
 # git for workspace clones; ripgrep because Claude Code's search tools use it;
 # ca-certificates for HTTPS to the API and remote MCP servers; gh because the
-# agents drive GitHub through it and it is not something the SDK brings along.
+# agents drive GitHub through it and it is not something the SDK brings along;
+# python3 and jq because agents reach for them unprompted to read a payload or
+# pipe JSON, and a `command not found` costs the run a turn to work around.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg python3 jq \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
@@ -46,17 +48,30 @@ RUN apt-get update \
  && apt-get purge -y gnupg && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
 
-# gog (Gmail CLI) has no apt package. Pass a release asset URL at build time —
-# a bare linux binary or a .tar.gz containing one — or leave it unset and the
-# image simply has no gog, which only the email-archiving agent notices.
-ARG GOG_URL=""
-RUN if [ -n "$GOG_URL" ]; then \
-      case "$GOG_URL" in \
-        *.tar.gz|*.tgz) curl -fsSL "$GOG_URL" | tar -xz -C /usr/local/bin --wildcards --no-anchored 'gog' ;; \
-        *) curl -fsSL "$GOG_URL" -o /usr/local/bin/gog ;; \
-      esac \
-      && chmod +x /usr/local/bin/gog && gog --version ; \
-    fi
+# gog (Gmail CLI) has no apt package and is a 44MB Go binary, so the image ships
+# a wrapper instead and the binary downloads into the data volume the first time
+# an agent runs it — the same trade the Chromium wrapper below makes. A box whose
+# agents never touch email never pays for it, and the volume keeps it across
+# deploys. GOG_VERSION is an ENV, not an ARG, because the wrapper reads it at run
+# time; GOG_URL overrides the whole URL with any binary or .tar.gz.
+ENV GOG_VERSION="0.40.0" GOG_BIN=/data/bin/gog
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  '# Downloads gog into the data volume on first use; the image ships only this wrapper.' \
+  'if [ ! -x "$GOG_BIN" ]; then' \
+  '  url="${GOG_URL:-https://github.com/openclaw/gogcli/releases/download/v${GOG_VERSION}/gogcli_${GOG_VERSION}_linux_$(dpkg --print-architecture).tar.gz}"' \
+  '  mkdir -p "$(dirname "$GOG_BIN")" || exit 1' \
+  '  tmp="$GOG_BIN.$$"' \
+  '  echo "gog: fetching $url" >&2' \
+  '  case "$url" in' \
+  '    *.tar.gz|*.tgz) curl -fsSL "$url" | tar -xzO --wildcards --no-anchored "gog" > "$tmp" ;;' \
+  '    *) curl -fsSL "$url" -o "$tmp" ;;' \
+  '  esac || { rm -f "$tmp"; echo "gog: download failed" >&2; exit 1; }' \
+  '  [ -s "$tmp" ] || { rm -f "$tmp"; echo "gog: empty download" >&2; exit 1; }' \
+  '  chmod +x "$tmp" && mv -f "$tmp" "$GOG_BIN" || { rm -f "$tmp"; exit 1; }' \
+  'fi' \
+  'exec "$GOG_BIN" "$@"' \
+  > /usr/local/bin/gog && chmod +x /usr/local/bin/gog
 
 # A browser for agents, on by default (WITH_BROWSER=0 opts out). The image carries the Playwright MCP server and
 # Chromium's OS libraries (root-only to install); the browser itself is
