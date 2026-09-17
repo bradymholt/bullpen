@@ -28,6 +28,7 @@ import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
 import { exportFilename, renderTranscript } from "../transcript.ts";
 import { artifactPath, listArtifacts } from "../artifacts.ts";
+import { SYSTEM_NOTE } from "../runs/systemNote.ts";
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 
@@ -986,6 +987,11 @@ api.delete("/agents/:id", (c) => {
  * Counts the client can't compute: /runs is capped, so "how many ran today" has
  * to be asked rather than derived from the page it already has.
  */
+/** The paragraph bullpen appends to every run's system prompt, so the operator can read what agents are told. */
+api.get("/system-prompt", (c) =>
+  c.json({ files: SYSTEM_NOTE.files, delivery: SYSTEM_NOTE.delivery("webhook") }),
+);
+
 api.get("/stats", (c) => {
   const now = Math.floor(Date.now() / 1000);
   const since = (seconds: number) =>

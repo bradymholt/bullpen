@@ -287,6 +287,7 @@ export function App() {
   // Webhook URLs are built from this: the funneled public base if the server has one, else this tab's origin.
   const [hookBase, setHookBase] = useState<string>(location.origin);
   const [build, setBuild] = useState<{ version: string; release: string | null; repoUrl: string | null } | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string } | null>(null);
   const [setupGeneration, setSetupGeneration] = useState(0);
   // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
   // `?setup=1` reopens onboarding on a configured install; there is no button for it.
@@ -408,6 +409,7 @@ export function App() {
       .then((r) => setGlobalEnvMap(r.env))
       .catch(() => setEnvSaved("Couldn\u2019t load the global environment \u2014 reload before editing."));
     void api.health().then(setHealth).catch(() => setHealth(null));
+    void api.systemPrompt().then(setSystemPrompt).catch(() => setSystemPrompt(null));
     void api
       .processEnvNames()
       .then((r) => setProcessEnvNames(r.names))
@@ -1294,6 +1296,21 @@ export function App() {
                   {health && (
                     <p className="text-xs leading-relaxed text-neutral-600">{health.claudeCredential.detail}</p>
                   )}
+                </RailSection>
+
+                <RailSection title="What every agent is told">
+                  {systemPrompt ? (
+                    <>
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Appended to Claude Code&rsquo;s own system prompt on every run, before the agent&rsquo;s
+                        prompt. Read-only &mdash; it is how the dashboard&rsquo;s files and webhook payloads work.
+                      </p>
+                      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Every run</span>
+                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.files}</pre>
+                      <span className="block pt-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Webhook and poll runs, additionally</span>
+                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.delivery}</pre>
+                    </>
+                  ) : null}
                 </RailSection>
 
                 <RailSection title="Skills">
