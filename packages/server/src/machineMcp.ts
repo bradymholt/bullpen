@@ -135,8 +135,9 @@ export function importMachineMcp(servers: Record<string, McpServerConfig>): numb
  */
 export const DEFAULT_PLAYWRIGHT: McpServerConfig = {
   command: "playwright-mcp",
-  // --output-dir: screenshots taken without a path land where the run keeps its files.
-  args: ["--browser", "chromium", "--headless", "--no-sandbox", "--isolated", "--output-dir", ".bullpen/out"],
+  // --output-dir: unnamed screenshots, page snapshots and console logs land in a folder the
+  // run keeps, kept apart from the files the agent names on purpose.
+  args: ["--browser", "chromium", "--headless", "--no-sandbox", "--isolated", "--output-dir", ".bullpen/out/playwright"],
 };
 
 export function seedDefaultMcp(opts: { markerDir: string; wrapper?: string; managed?: boolean }): string[] {
