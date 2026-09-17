@@ -534,10 +534,15 @@ export function App() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [events, partial, approvals]);
 
-  const refresh = () => {
+  /** The sidebar's live/last-run line comes from `stats`, so it has to move with the runs list. */
+  const refreshRuns = () => {
     setRefreshTick((t) => t + 1);
-    api.agents().then(setAgents);
     api.runs().then(setRuns);
+  };
+
+  const refresh = () => {
+    refreshRuns();
+    api.agents().then(setAgents);
     api
       .scheduleAll()
       .then(setUpcoming)
@@ -552,7 +557,7 @@ export function App() {
     refresh();
   }
   useEffect(() => {
-    if (run && !ACTIVE.has(run.status)) api.runs().then(setRuns);
+    if (run && !ACTIVE.has(run.status)) refreshRuns();
   }, [run?.status]);
 
   /**
@@ -571,7 +576,7 @@ export function App() {
       );
       setPrompt("");
       setView({ kind: "run", id: runId });
-      api.runs().then(setRuns);
+      refreshRuns();
     } catch (e) {
       setError(String(e));
     }
