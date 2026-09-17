@@ -132,8 +132,8 @@ docker compose run --rm -v bullpen-data:/data bullpen \
 ```
 
 **Suggested MCP servers.** Onboarding's last step offers servers that need no account: **Playwright**
-(a headless browser; the image carries the server and Chromium's libraries when built with
-`WITH_BROWSER=1`, and the browser itself downloads into `/data/browsers` on first use) and **Memory**
+(a headless browser; the image carries the server and Chromium's libraries unless built with
+`WITH_BROWSER=0`, and the browser itself downloads into `/data/browsers` on first use) and **Memory**
 (a local knowledge graph under `/data`, so an agent can remember across runs). Both are pre-selected;
 untick what you don't want, and add either later from Settings → MCP servers. `npx @playwright/mcp` alone is not enough on a box: it downloads
 the server, not a browser, and the browser needs system libraries the slim image lacks.

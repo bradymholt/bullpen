@@ -53,7 +53,7 @@ describe("mcp catalog", () => {
   it("offers playwright only when the image has the wrapper, and marks what is installed", () => {
     const dir = mkdtempSync(join(tmpdir(), "bullpen-cat-"));
     let cat = mcpCatalog({ wrapper: join(dir, "missing") });
-    expect(cat.find((c) => c.key === "playwright")?.unavailable).toMatch(/WITH_BROWSER/);
+    expect(cat.find((c) => c.key === "playwright")?.unavailable).toMatch(/WITH_BROWSER=0/);
     expect(cat.find((c) => c.key === "memory")).toMatchObject({ unavailable: null, installed: false });
     writeFileSync(join(dir, "playwright-mcp"), "#!/bin/sh\n");
     cat = mcpCatalog({ wrapper: join(dir, "playwright-mcp") });
