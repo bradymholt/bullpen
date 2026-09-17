@@ -170,8 +170,6 @@ export type McpLogin = {
   startedAt: number;
 };
 
-export type UsageWindow = { key: string; label: string; utilization: number; resetsAt: string | null };
-export type Usage = { windows: UsageWindow[]; fetchedAt: number; source: "config-dir" | "keychain" | "env" };
 
 export type Stats = {
   last24h: number;

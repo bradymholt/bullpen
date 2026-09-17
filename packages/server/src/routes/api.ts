@@ -25,7 +25,6 @@ import { join, resolve } from "node:path";
 import { addMachineMcp, exportMachineMcp, importMachineMcp, readMachineMcp, removeMachineMcp } from "../machineMcp.ts";
 import { listRepos } from "../github.ts";
 import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, writeClaudeMd } from "../skills.ts";
-import { fetchUsage, invalidateUsage, UsageError } from "../usage.ts";
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
 import { exportFilename, renderTranscript } from "../transcript.ts";
 import { foldMcpHealth } from "../mcp.ts";
@@ -977,17 +976,6 @@ api.delete("/agents/:id", (c) => {
  * Counts the client can't compute: /runs is capped, so "how many ran today" has
  * to be asked rather than derived from the page it already has.
  */
-/** Subscription rate-limit windows, as Claude Code's `/usage` shows them. `?fresh=1` skips the cache. */
-api.get("/usage", async (c) => {
-  if (c.req.query("fresh")) invalidateUsage();
-  try {
-    return c.json(await fetchUsage());
-  } catch (e) {
-    if (e instanceof UsageError) return c.json({ error: e.message }, e.status as 401 | 429 | 502);
-    return c.json({ error: e instanceof Error ? e.message : String(e) }, 502);
-  }
-});
-
 api.get("/stats", (c) => {
   const now = Math.floor(Date.now() / 1000);
   const since = (seconds: number) =>
