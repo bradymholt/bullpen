@@ -275,8 +275,29 @@ defaults to the `chrome` channel — Google Chrome at /opt/google/chrome, which 
 config needs `--browser chromium`; and under Docker's default seccomp profile Chromium's sandbox
 cannot start, hence `--no-sandbox`.
 
-**`gh` is in the image; `gog` only if `GOG_URL` was passed at build.** The SDK brings the
-`claude` binary and nothing else; the agents' `gh api` calls need the CLI installed separately.
+**`gh`, `gog`, `python3` and `jq` are all in the image, and none of them arrive on their own.**
+The SDK brings the `claude` binary and nothing else, so the agents' `gh api` calls need the CLI
+installed separately; `python3` and `jq` are there because agents reach for them unprompted to read
+a payload, and a `command not found` costs a turn. `gog` used to install only when `GOG_URL` was
+passed at build — but CI builds with no build args at all, so the deployed image never had it and
+the email-archiving skill failed every run. It is now a wrapper that downloads the 44MB binary into
+`/data/bin` on first use, the same trade the Chromium wrapper makes; `GOG_VERSION` and `GOG_URL` are
+`ENV`, not `ARG`, because the wrapper reads them at run time. There is no npx path — `openclaw/gogcli`
+publishes to GitHub releases, not npm — and `gog mcp` is a subcommand of that binary, so the MCP
+server needs the wrapper too. Being a static Go binary with no OS library dependencies is what lets
+the wrapper alone suffice, where Chromium also needed a root-time apt install.
+
+**A gog `GOG_HOME` is portable, but its layout is not the Mac's.** The file keyring is encrypted
+with `GOG_KEYRING_PASSWORD`, so copying the directory carries the OAuth tokens and no browser flow
+runs on the box — but `credentials.json` sits at `$GOG_HOME/data/`, not beside `config.json` in
+`$GOG_HOME/config/`, and a copy that puts it in the obvious place reports "No OAuth client
+credentials stored" while `auth list` still shows both accounts, which reads like a token problem
+and isn't. The client secret lives in the keyring, never in `credentials.json`. `GOG_KEYRING_PASSWORD`
+belongs in the agent's own env; nothing else reads it. `file` is the only backend that works on
+the box at all — `keychain` errors with "Specified keyring backend not available" and `auto` lands
+on `file` — but it is not required on the *source* machine: `gog auth tokens export/import` reads
+any backend and is the way in from one still on Keychain. It moves tokens only, so that route also
+needs `gog auth credentials set`; the copy route carries the client secret with it.
 
 **Don't add a global `@anthropic-ai/claude-code`.** The Agent SDK spawns the harness binary it
 bundles; a global install is a second 200MB copy nothing runs. The build also deletes the musl
