@@ -38,6 +38,18 @@ export function setGlobalEnv(env: Env): void {
     .run();
 }
 
+/** Hours between background skills pulls. 0 is off; the column defaults to 24. */
+export function skillsRefreshHours(): number {
+  return db.select().from(globalConfig).where(eq(globalConfig.id, 1)).get()?.skillsRefreshHours ?? 24;
+}
+
+export function setSkillsRefreshHours(hours: number): void {
+  db.insert(globalConfig)
+    .values({ id: 1, skillsRefreshHours: hours })
+    .onConflictDoUpdate({ target: globalConfig.id, set: { skillsRefreshHours: hours } })
+    .run();
+}
+
 export function spaceEnv(space: string | null | undefined): Env {
   if (!space) return {};
   return (db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get()?.env as Env) ?? {};
