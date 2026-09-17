@@ -64,7 +64,7 @@ RUN if [ -n "$GOG_URL" ]; then \
 # shell: with `--browser chromium` Playwright runs the full binary in its new
 # headless mode, and only a channel-less launch would use the shell. The Playwright inside the MCP package does the
 # download, so the build matches. Configure the shared server as
-# `playwright-mcp --browser chromium --headless --no-sandbox --isolated`: the
+# `playwright-mcp --browser chromium --headless --no-sandbox --isolated --output-dir .bullpen/out`: the
 # server defaults to the `chrome` channel (Google Chrome, not present), and
 # Chromium's own sandbox can't start under Docker's default seccomp profile.
 ARG WITH_BROWSER=""

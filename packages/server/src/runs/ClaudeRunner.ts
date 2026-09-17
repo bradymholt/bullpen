@@ -47,7 +47,11 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
         ...(spec.canUseTool ? { canUseTool: spec.canUseTool } : {}),
         ...(spec.maxTurns ? { maxTurns: spec.maxTurns } : {}),
         ...(spec.resumeSessionId ? { resume: spec.resumeSessionId } : {}),
-        ...(spec.appendSystemPrompt ? { appendSystemPrompt: spec.appendSystemPrompt } : {}),
+        // Not `appendSystemPrompt`: that is no Options key and a spread hides the
+        // typo from the compiler, so the note was silently dropped for months.
+        ...(spec.appendSystemPrompt
+          ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.appendSystemPrompt } }
+          : {}),
         settingSources: spec.inheritUserSettings ? ["project", "user"] : ["project"],
         includePartialMessages: true,
         abortController: abort,

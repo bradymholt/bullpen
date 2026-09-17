@@ -135,7 +135,8 @@ export function importMachineMcp(servers: Record<string, McpServerConfig>): numb
  */
 export const DEFAULT_PLAYWRIGHT: McpServerConfig = {
   command: "playwright-mcp",
-  args: ["--browser", "chromium", "--headless", "--no-sandbox", "--isolated"],
+  // --output-dir: screenshots taken without a path land where the run keeps its files.
+  args: ["--browser", "chromium", "--headless", "--no-sandbox", "--isolated", "--output-dir", ".bullpen/out"],
 };
 
 export function seedDefaultMcp(opts: { markerDir: string; wrapper?: string; managed?: boolean }): string[] {
