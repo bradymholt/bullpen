@@ -8,6 +8,14 @@ import type { RunEvent } from "./types.ts";
  */
 const MARKDOWN_KINDS = new Set(["text", "user"]);
 
+/**
+ * Tool output is usually plain text, but some servers (Playwright's, say)
+ * answer in Markdown. Headings, fences or bullets at line starts are the tell;
+ * a bare `ls` or a stack trace has none of them.
+ */
+const LOOKS_LIKE_MARKDOWN = /^(#{1,6} |```|[-*] |\d+\. )/m;
+const renderAsMarkdown = (it: Item) => MARKDOWN_KINDS.has(it.kind) || (it.kind === "result" && LOOKS_LIKE_MARKDOWN.test(it.body));
+
 const MD_COMPONENTS = {
   p: (props: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0" {...props} />,
   h1: (props: { children?: React.ReactNode }) => (
@@ -168,7 +176,7 @@ export function Timeline({
               {it.label}
             </div>
           )}
-          {MARKDOWN_KINDS.has(it.kind) ? (
+          {renderAsMarkdown(it) ? (
             <div className="text-sm leading-relaxed">
               <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
                 {it.body}
