@@ -161,6 +161,8 @@ export type Health = {
 };
 
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
+export type Artifact = { name: string; size: number };
+
 export type McpLogin = {
   id: string;
   name: string;

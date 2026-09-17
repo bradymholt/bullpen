@@ -95,6 +95,8 @@ export function renderTranscript(run: RunLike, agentName: string, events: Ev[], 
         if (!text.trim()) continue;
         out.push(block.is_error ? "◀ error" : "◀ result", indent(clip(text, 4000)), "");
       }
+    } else if (e.type === "artifacts") {
+      out.push(`[${p.count} file${p.count === 1 ? "" : "s"} kept for download on the run page]`, "");
     } else if (e.type === "result") {
       const cost = metered && p.total_cost_usd ? `, $${Number(p.total_cost_usd).toFixed(2)}` : "";
       out.push(`[finished — ${p.num_turns} turns${cost}${p.is_error ? " — with an error" : ""}]`, "");

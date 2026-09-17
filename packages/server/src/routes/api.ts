@@ -27,6 +27,16 @@ import { listRepos } from "../github.ts";
 import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, writeClaudeMd } from "../skills.ts";
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
 import { exportFilename, renderTranscript } from "../transcript.ts";
+import { artifactPath, listArtifacts } from "../artifacts.ts";
+import { readFile } from "node:fs/promises";
+import { basename, extname } from "node:path";
+
+const MIME: Record<string, string> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+  ".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8",
+  ".json": "application/json", ".csv": "text/csv; charset=utf-8", ".html": "text/html; charset=utf-8", ".zip": "application/zip",
+};
+const mimeOf = (name: string) => MIME[extname(name).toLowerCase()] ?? "application/octet-stream";
 import { foldMcpHealth } from "../mcp.ts";
 import {
   commit as gitCommit,
@@ -1123,6 +1133,21 @@ function gitRun(id: string) {
   if (!run?.workspacePath || !run.branch) return null;
   return run;
 }
+
+/** Files the run handed back through .bullpen/out, kept under the data dir after the workspace is gone. */
+api.get("/runs/:id/artifacts", (c) => c.json(listArtifacts(c.req.param("id"))));
+
+api.get("/runs/:id/artifacts/:name{.+}", async (c) => {
+  const p = artifactPath(c.req.param("id"), c.req.param("name"));
+  if (!p) return c.json({ error: "not found" }, 404);
+  const base = basename(p);
+  const file = await readFile(p);
+  return c.body(file, 200, {
+    "content-type": mimeOf(base),
+    "content-length": String(file.byteLength),
+    "content-disposition": `attachment; filename="${base.replace(/"/g, "")}"`,
+  });
+});
 
 /** The run as a file: a plain-text transcript, or `?format=json` for the run record plus every event. */
 api.get("/runs/:id/export", (c) => {

@@ -128,6 +128,12 @@ runs overwrite each other's files, `.bullpen/payload.json` included; the editor 
 An ephemeral directory is now kept when a run does not reach `completed`, since it is the only
 evidence a failure leaves.
 
+**Files an agent hands back live in `.bullpen/out/`, and only there.** Every run's system prompt
+says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under
+the data dir *before* an ephemeral workspace is deleted — that ordering is the whole point — and
+appends an `artifacts` event. The run page lists them from disk (nothing in the database) and the
+download route resolves names inside that one directory, refusing `..` outright.
+
 **Write to `run_events` before broadcasting.** A client asking for `sinceSeq` must never be
 able to miss an event a live subscriber already saw.
 
