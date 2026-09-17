@@ -3,7 +3,7 @@ import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { agentCreateSchema, agentPatchSchema, inferTrigger, DEFAULT_SPACE } from "../agentSchema.ts";
 import { nextRuns, rescheduleAgent } from "../triggers/cron.ts";
-import { pollOnce } from "../triggers/poll.ts";
+import { pollOnce, probePoll } from "../triggers/poll.ts";
 import {
   alreadyDelivered,
   decideDelivery,
@@ -16,7 +16,7 @@ import {
 } from "../triggers/webhook.ts";
 import { config } from "../config.ts";
 import { git } from "../workspaces.ts";
-import { claudeCredential, globalEnv, maskEnv, mergeMaskedEnv, setGlobalEnv, spaceEnv } from "../env.ts";
+import { claudeCredential, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setGlobalEnv, spaceEnv } from "../env.ts";
 import { claudeRunner } from "../runs/ClaudeRunner.ts";
 import { open, seal, type SealedBundle, type SecretsBundle } from "../secretsBundle.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
@@ -940,6 +940,20 @@ api.delete("/agents/:id/webhook-secret", (c) => {
 });
 
 /** Runs one poll now, so a new endpoint can be proved before waiting on cron. */
+/** The poll editor's "Check now" before anything is saved: the draft's URL, headers and path, with the env a run would get. */
+api.post("/poll/probe", async (c) => {
+  const body = await c.req
+    .json<{ url?: string; headers?: Record<string, string>; path?: string | null; space?: string | null; env?: Record<string, string> }>()
+    .catch(() => null);
+  if (!body?.url) return c.json({ error: "url is required" }, 400);
+  try {
+    const env = resolveEnv({ space: body.space ?? null, env: body.env ?? {} });
+    return c.json(await probePoll({ url: body.url, headers: body.headers ?? {}, path: body.path ?? null, env }));
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+
 api.post("/agents/:id/poll", async (c) => {
   const agent = getAgent(c.req.param("id"));
   if (!agent) return c.json({ error: "not found" }, 404);

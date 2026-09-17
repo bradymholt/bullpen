@@ -222,7 +222,7 @@ function loadSpaceFilter(): SpaceFilter {
 
 /** Process-env names shown by default; the rest hide behind "show all". */
 const INTERESTING_ENV =
-  /TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|^GITHUB_|^ANTHROPIC_|^CLAUDE_|^BULLPEN_|^GOG_|^OPENAI_|^TZ$|^NODE_ENV$|^PORT$/i;
+  /TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|^GITHUB_|^ANTHROPIC_|^CLAUDE_|^GOG_|^OPENAI_|^TZ$|^NODE_ENV$/i;
 
 const STATUS_COLOR: Record<string, string> = {
   queued: "text-neutral-500",
@@ -335,7 +335,8 @@ export function App() {
   const promptRef = useRef<HTMLParagraphElement>(null);
   const [promptOverflows, setPromptOverflows] = useState(false);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [showFiltered, setShowFiltered] = useState(false);
+  // On an agent's own page the full delivery history is the point; the home panel is the curated one.
+  const [showFiltered, setShowFiltered] = useState(true);
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   // null until fetched: an empty list would flash "nothing has run" before the answer arrives.
@@ -2054,7 +2055,7 @@ export function App() {
           </>
         )}
 
-        {(view.kind === "run" || view.kind === "detail") && selectedAgentId && (
+        {((view.kind === "detail" && selectedAgentId) || (view.kind === "run" && canReply)) && (
           <div className="border-t border-neutral-800 p-4">
             {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
             {skillMatches.length > 0 && (
