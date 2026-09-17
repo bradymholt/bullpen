@@ -482,6 +482,29 @@ export function AgentEditor({
         </select>
       </Row>
 
+      <div>
+        <label className="flex items-center gap-2 text-sm text-neutral-300">
+          <input
+            type="checkbox"
+            checked={canAsk}
+            onChange={(e) =>
+              set(
+                "disallowedTools",
+                e.target.checked
+                  ? (draft.disallowedTools ?? []).filter((t) => t !== ASK_TOOL)
+                  : [...(draft.disallowedTools ?? []), ASK_TOOL],
+              )
+            }
+          />
+          Let this agent ask me questions
+        </label>
+        <p className="mt-1 text-xs text-neutral-600">
+          {canAsk
+            ? "It can stop mid-run to ask. Nobody answering holds the run for 15 minutes before the question is denied — and on a queue or skip agent, that blocks every trigger behind it."
+            : "It must decide for itself or stop and explain, which is what an unattended run wants."}
+        </p>
+      </div>
+
       {/* Nothing to allow in a mode that never asks. */}
       {toolRulesApply && (
         <Row
@@ -593,27 +616,6 @@ export function AgentEditor({
             )}
           </div>
         )}
-
-        <label className="flex items-center gap-2 pt-1 text-sm text-neutral-300">
-          <input
-            type="checkbox"
-            checked={canAsk}
-            onChange={(e) =>
-              set(
-                "disallowedTools",
-                e.target.checked
-                  ? (draft.disallowedTools ?? []).filter((t) => t !== ASK_TOOL)
-                  : [...(draft.disallowedTools ?? []), ASK_TOOL],
-              )
-            }
-          />
-          Let this agent ask me questions
-        </label>
-        <p className="-mt-1 text-xs text-neutral-600">
-          {canAsk
-            ? "It can stop mid-run to ask. Nobody answering holds the run for 15 minutes before the question is denied — and on a queue or skip agent, that blocks every trigger behind it."
-            : "It must decide for itself or stop and explain, which is what an unattended run wants."}
-        </p>
 
         <label className="flex items-center gap-2 pt-1 text-sm text-neutral-300">
           <input
