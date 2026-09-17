@@ -22,7 +22,7 @@ import { open, seal, type SealedBundle, type SecretsBundle } from "../secretsBun
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { addMachineMcp, exportMachineMcp, importMachineMcp, readMachineMcp, removeMachineMcp } from "../machineMcp.ts";
+import { addMachineMcp, applyMcpCatalog, exportMachineMcp, importMachineMcp, mcpCatalog, readMachineMcp, removeMachineMcp } from "../machineMcp.ts";
 import { listRepos } from "../github.ts";
 import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, writeClaudeMd } from "../skills.ts";
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
@@ -672,6 +672,18 @@ api.post("/import", async (c) => {
     secretsApplied = { agents: n, spaces: Object.keys(secrets.spaces).length, globalKeys: Object.keys(secrets.global).length, mcp };
   }
   return c.json({ created, updated, envNeeded, errors, secretsApplied, secretsNote, mcpNote });
+});
+
+/** Suggested servers for a managed box: what is offered, what is installed, and applying a selection. */
+api.get("/setup/mcp-catalog", (c) => c.json({ managed: Boolean(process.env.CLAUDE_CONFIG_DIR), entries: mcpCatalog() }));
+api.post("/setup/mcp-catalog", async (c) => {
+  const body = await c.req.json<{ keys?: string[] }>().catch(() => null);
+  if (!Array.isArray(body?.keys)) return c.json({ error: "keys is required" }, 400);
+  try {
+    return c.json({ ...applyMcpCatalog(body.keys, { dataDir: config.dataDir }), entries: mcpCatalog() });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
 });
 
 api.get("/setup/skills", (c) => c.json(skillsState()));

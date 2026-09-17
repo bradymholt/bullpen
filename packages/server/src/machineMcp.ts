@@ -128,11 +128,22 @@ export function importMachineMcp(servers: Record<string, McpServerConfig>): numb
 }
 
 /**
- * A headless box should be able to browse out of the box. When the config dir
- * is bullpen's and the image carries the Playwright wrapper (WITH_BROWSER), the
- * shared config gets a `playwright` server on first boot. Once only: the marker
- * means a removal is respected, not undone at the next boot.
+ * Servers a headless box can use with no account and no key. Offered at
+ * onboarding, pre-selected, and again under Settings; declarative — applying a
+ * selection adds what is checked and removes catalog entries that are not.
+ * Nothing here is ever installed without that choice.
  */
+export type CatalogEntry = {
+  key: string;
+  name: string;
+  description: string;
+  /** Why it can't be offered on this box, or null. */
+  unavailable: string | null;
+  installed: boolean;
+};
+
+const PLAYWRIGHT_WRAPPER = "/usr/local/bin/playwright-mcp";
+
 export const DEFAULT_PLAYWRIGHT: McpServerConfig = {
   command: "playwright-mcp",
   // --output-dir: unnamed screenshots, page snapshots and console logs land in a folder the
@@ -140,18 +151,56 @@ export const DEFAULT_PLAYWRIGHT: McpServerConfig = {
   args: ["--browser", "chromium", "--headless", "--no-sandbox", "--isolated", "--output-dir", ".bullpen/out/playwright"],
 };
 
-export function seedDefaultMcp(opts: { markerDir: string; wrapper?: string; managed?: boolean }): string[] {
-  const managed = opts.managed ?? Boolean(process.env.CLAUDE_CONFIG_DIR);
-  const wrapper = opts.wrapper ?? "/usr/local/bin/playwright-mcp";
-  if (!managed || !existsSync(wrapper)) return [];
-  const marker = join(opts.markerDir, ".mcp-seeded");
-  if (existsSync(marker)) return [];
+const CATALOG: { key: string; name: string; description: string; config: (dataDir: string) => McpServerConfig; unavailable: (wrapper: string) => string | null }[] = [
+  {
+    key: "playwright",
+    name: "Playwright — a browser",
+    description: "Headless Chromium the agent can drive: open pages, click, fill forms, take screenshots. The browser downloads on first use.",
+    config: () => DEFAULT_PLAYWRIGHT,
+    unavailable: (wrapper) => (existsSync(wrapper) ? null : "this image was built without WITH_BROWSER"),
+  },
+  {
+    key: "memory",
+    name: "Memory — remembers across runs",
+    description: "A local knowledge graph in one file under /data. An agent that runs nightly can keep notes about what it saw last time. Nothing leaves the box.",
+    config: (dataDir) => ({
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-memory@2026.8.31"],
+      env: { MEMORY_FILE_PATH: join(dataDir, "mcp", "memory.json") },
+    }),
+    unavailable: () => null,
+  },
+];
+
+export function mcpCatalog(opts: { wrapper?: string } = {}): CatalogEntry[] {
+  const installed = new Set(Object.keys(readConfig()?.mcpServers ?? {}));
+  return CATALOG.map((c) => ({
+    key: c.key,
+    name: c.name,
+    description: c.description,
+    unavailable: c.unavailable(opts.wrapper ?? PLAYWRIGHT_WRAPPER),
+    installed: installed.has(c.key),
+  }));
+}
+
+/** Managed mode only. Returns what changed. */
+export function applyMcpCatalog(keys: string[], opts: { dataDir: string; wrapper?: string }): { added: string[]; removed: string[] } {
+  if (!process.env.CLAUDE_CONFIG_DIR) throw new Error("this is the user's own ~/.claude.json, not managed by bullpen");
+  const want = new Set(keys);
+  const state = mcpCatalog({ wrapper: opts.wrapper });
   const added: string[] = [];
-  if (!(readConfig()?.mcpServers ?? {}).playwright) {
-    addMachineMcp("playwright", DEFAULT_PLAYWRIGHT);
-    added.push("playwright");
+  const removed: string[] = [];
+  for (const entry of CATALOG) {
+    const cur = state.find((e) => e.key === entry.key)!;
+    if (want.has(entry.key) && !cur.installed) {
+      if (cur.unavailable) continue;
+      if (entry.key === "memory") mkdirSync(join(opts.dataDir, "mcp"), { recursive: true });
+      addMachineMcp(entry.key, entry.config(opts.dataDir));
+      added.push(entry.key);
+    } else if (!want.has(entry.key) && cur.installed) {
+      removeMachineMcp(entry.key);
+      removed.push(entry.key);
+    }
   }
-  mkdirSync(opts.markerDir, { recursive: true });
-  writeFileSync(marker, `${new Date().toISOString()}\n`);
-  return added;
+  return { added, removed };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
+import type { McpCatalogEntry } from "./types.ts";
 
 const field =
   "w-full rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none placeholder:text-neutral-700 focus:border-neutral-600";
@@ -19,7 +20,24 @@ async function saveGlobal(key: string, value: string) {
  * so they are editable afterwards under Settings and never shown again.
  */
 export function SetupView({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState<"claude" | "github" | "skills">("claude");
+  const [step, setStep] = useState<"claude" | "github" | "skills" | "mcp">("claude");
+  // The MCP step exists only on a managed box (a config dir that is bullpen's to write).
+  const [catalog, setCatalog] = useState<McpCatalogEntry[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    void api
+      .mcpCatalog()
+      .then((r) => {
+        if (!r.managed) return;
+        setCatalog(r.entries);
+        // Pre-selected: what is installed, or every available entry on a fresh box.
+        const installed = r.entries.filter((e) => e.installed).map((e) => e.key);
+        setPicked(new Set(installed.length > 0 ? installed : r.entries.filter((e) => !e.unavailable).map((e) => e.key)));
+      })
+      .catch(() => setCatalog(null));
+  }, []);
+  const total = catalog ? 4 : 3;
+  const afterSkills = () => (catalog ? setStep("mcp") : onDone());
   const [skillsUrl, setSkillsUrl] = useState("");
   const [skillsPath, setSkillsPath] = useState("");
   const [candidates, setCandidates] = useState<string[] | null>(null);
@@ -57,10 +75,12 @@ export function SetupView({ onDone }: { onDone: () => void }) {
             <h1 className="text-lg font-semibold tracking-tight">Set up Bullpen</h1>
             <p className="text-xs text-neutral-500">
               {step === "claude"
-                ? "Step 1 of 3 — Claude"
+                ? `Step 1 of ${total} — Claude`
                 : step === "github"
-                  ? "Step 2 of 3 — GitHub (optional)"
-                  : "Step 3 of 3 — Skills (optional)"}
+                  ? `Step 2 of ${total} — GitHub (optional)`
+                  : step === "skills"
+                    ? `Step 3 of ${total} — Skills (optional)`
+                    : `Step 4 of ${total} — MCP servers (optional)`}
             </p>
           </div>
         </div>
@@ -156,7 +176,7 @@ export function SetupView({ onDone }: { onDone: () => void }) {
                   {skills.remote ? <> from <code className="text-neutral-400">{skills.remote}</code></> : null}.
                   Nothing to do here.
                 </p>
-                <button onClick={onDone} className={primary}>Finish</button>
+                <button onClick={afterSkills} className={primary}>{catalog ? "Continue" : "Finish"}</button>
               </>
             ) : (
               <>
@@ -204,7 +224,7 @@ export function SetupView({ onDone }: { onDone: () => void }) {
                       run("clone", async () => {
                         try {
                           await api.skillsClone(skillsUrl.trim(), skillsPath.trim() || undefined);
-                          onDone();
+                          afterSkills();
                         } catch (e) {
                           const c = (e as { candidates?: string[] }).candidates;
                           if (c && c.length > 0) setCandidates(c);
@@ -214,17 +234,70 @@ export function SetupView({ onDone }: { onDone: () => void }) {
                     }
                     className={primary}
                   >
-                    {busy === "clone" ? "Cloning…" : "Clone and finish"}
+                    {busy === "clone" ? "Cloning…" : catalog ? "Clone and continue" : "Clone and finish"}
                   </button>
-                  <button disabled={busy !== null} onClick={onDone} className={secondary}>Skip</button>
+                  <button disabled={busy !== null} onClick={afterSkills} className={secondary}>Skip</button>
                 </div>
                 <p className="text-xs text-neutral-600">
                   Private repo? Save the GitHub token first — the clone uses it. Later, Settings has
-                  &ldquo;Pull latest&rdquo; for updates. MCP servers aren&rsquo;t set up here: bring them
-                  in an export from another bullpen (Settings &rarr; Import), or add them under Settings.
+                  &ldquo;Pull latest&rdquo; for updates.
                 </p>
               </>
             )}
+          </div>
+        )}
+
+        {step === "mcp" && catalog && (
+          <div className="space-y-4">
+            <p className="text-sm leading-relaxed text-neutral-300">
+              Servers agents can use with no account and no key. Agents opt in with &ldquo;Use the shared
+              MCP servers&rdquo;; you can change this later under Settings. Servers that need a sign-in
+              (Datadog, Cloudflare, &hellip;) are added there too, then authorized in place.
+            </p>
+            <div className="space-y-2">
+              {catalog.map((e) => (
+                <label
+                  key={e.key}
+                  className={`flex items-start gap-3 rounded border px-3 py-2 ${
+                    e.unavailable ? "border-neutral-900 opacity-60" : "border-neutral-800"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    disabled={!!e.unavailable}
+                    checked={!e.unavailable && picked.has(e.key)}
+                    onChange={(ev) =>
+                      setPicked((prev) => {
+                        const n = new Set(prev);
+                        ev.target.checked ? n.add(e.key) : n.delete(e.key);
+                        return n;
+                      })
+                    }
+                  />
+                  <span>
+                    <span className="text-sm text-neutral-200">{e.name}</span>
+                    <span className="block text-xs text-neutral-500">{e.description}</span>
+                    {e.unavailable && <span className="block text-xs text-amber-500/80">Not available: {e.unavailable}.</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={busy !== null}
+                onClick={() =>
+                  run("mcp", async () => {
+                    await api.applyMcpCatalog([...picked]);
+                    onDone();
+                  })
+                }
+                className={primary}
+              >
+                {busy === "mcp" ? "Applying…" : "Finish"}
+              </button>
+              <button disabled={busy !== null} onClick={onDone} className={secondary}>Skip</button>
+            </div>
           </div>
         )}
 

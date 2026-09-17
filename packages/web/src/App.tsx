@@ -12,7 +12,8 @@ import { SetupView } from "./SetupView.tsx";
 import { McpAuth } from "./McpAuth.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
-import type { Artifact, Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
+import type {
+  McpCatalogEntry, Artifact, Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
 import { DEFAULT_SPACE } from "./types.ts";
 
 const ACTIVE = new Set(["running", "awaiting_approval"]);
@@ -377,6 +378,7 @@ export function App() {
   const [claudeMdDraft, setClaudeMdDraft] = useState("");
   const [claudeMdNote, setClaudeMdNote] = useState<string | null>(null);
   const [mcpNote, setMcpNote] = useState<string | null>(null);
+  const [mcpCatalogEntries, setMcpCatalogEntries] = useState<McpCatalogEntry[] | null>(null);
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [showAllProcessEnv, setShowAllProcessEnv] = useState(false);
   const [health, setHealth] = useState<{
@@ -444,6 +446,7 @@ export function App() {
       .catch(() => setEnvSaved("Couldn\u2019t load the global environment \u2014 reload before editing."));
     void api.health().then(setHealth).catch(() => setHealth(null));
     void api.systemPrompt().then(setSystemPrompt).catch(() => setSystemPrompt(null));
+    void api.mcpCatalog().then((r) => setMcpCatalogEntries(r.managed ? r.entries : null)).catch(() => setMcpCatalogEntries(null));
     void api
       .processEnvNames()
       .then((r) => setProcessEnvNames(r.names))
@@ -1547,6 +1550,26 @@ export function App() {
                               </li>
                             ))}
                           </ul>
+                        )}
+                        {writable && mcpCatalogEntries?.some((e) => !e.installed && !e.unavailable) && (
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                            <span>Suggested:</span>
+                            {mcpCatalogEntries.filter((e) => !e.installed && !e.unavailable).map((e) => (
+                              <button
+                                key={e.key}
+                                title={e.description}
+                                onClick={async () => {
+                                  const installed = mcpCatalogEntries.filter((x) => x.installed).map((x) => x.key);
+                                  const r = await api.applyMcpCatalog([...installed, e.key]);
+                                  setMcpCatalogEntries(r.entries);
+                                  setMachineMcp(await api.machineMcp());
+                                }}
+                                className="rounded border border-neutral-700 px-2 py-0.5 text-neutral-300 hover:bg-neutral-900"
+                              >
+                                + {e.name.split(" — ")[0]}
+                              </button>
+                            ))}
+                          </div>
                         )}
                         {writable ? (
                           <McpServerForm onAdd={async (n, cfg) => { setMachineMcp(await api.addMachineMcp(n, cfg)); }} />

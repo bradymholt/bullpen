@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 // Managed mode: a temp CLAUDE_CONFIG_DIR that bullpen owns and may write.
 const dir = mkdtempSync(join(tmpdir(), "bullpen-mcp-"));
 process.env.CLAUDE_CONFIG_DIR = dir;
-const { addMachineMcp, exportMachineMcp, importMachineMcp, readMachineMcp, removeMachineMcp, seedDefaultMcp } = await import("./machineMcp.ts");
+const { addMachineMcp, applyMcpCatalog, exportMachineMcp, importMachineMcp, mcpCatalog, readMachineMcp, removeMachineMcp } = await import("./machineMcp.ts");
 const file = join(dir, ".claude.json");
 
 beforeEach(() => {
@@ -49,24 +49,30 @@ describe("machine MCP (managed)", () => {
   });
 });
 
-describe("seedDefaultMcp", () => {
-  it("adds playwright once when the image has the wrapper, and never re-adds after a removal", () => {
-    const markerDir = mkdtempSync(join(tmpdir(), "bullpen-seed-"));
-    const wrapper = join(markerDir, "playwright-mcp");
-    writeFileSync(wrapper, "#!/bin/sh\n");
-    expect(seedDefaultMcp({ markerDir, wrapper })).toEqual(["playwright"]);
-    expect(readMachineMcp().global.map((s) => s.name)).toEqual(["playwright"]);
-    expect(existsSync(join(markerDir, ".mcp-seeded"))).toBe(true);
-    removeMachineMcp("playwright");
-    expect(seedDefaultMcp({ markerDir, wrapper })).toEqual([]);
-    expect(readMachineMcp().global).toEqual([]);
+describe("mcp catalog", () => {
+  it("offers playwright only when the image has the wrapper, and marks what is installed", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bullpen-cat-"));
+    let cat = mcpCatalog({ wrapper: join(dir, "missing") });
+    expect(cat.find((c) => c.key === "playwright")?.unavailable).toMatch(/WITH_BROWSER/);
+    expect(cat.find((c) => c.key === "memory")).toMatchObject({ unavailable: null, installed: false });
+    writeFileSync(join(dir, "playwright-mcp"), "#!/bin/sh\n");
+    cat = mcpCatalog({ wrapper: join(dir, "playwright-mcp") });
+    expect(cat.find((c) => c.key === "playwright")?.unavailable).toBeNull();
   });
 
-  it("does nothing without the wrapper or outside managed mode", () => {
-    const markerDir = mkdtempSync(join(tmpdir(), "bullpen-seed-"));
-    expect(seedDefaultMcp({ markerDir, wrapper: join(markerDir, "missing") })).toEqual([]);
-    writeFileSync(join(markerDir, "playwright-mcp"), "");
-    expect(seedDefaultMcp({ markerDir, wrapper: join(markerDir, "playwright-mcp"), managed: false })).toEqual([]);
-    expect(readMachineMcp().global).toEqual([]);
+  it("applies a selection declaratively: adds what is checked, removes catalog entries that are not", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bullpen-cat-"));
+    const wrapper = join(dir, "playwright-mcp");
+    writeFileSync(wrapper, "");
+    expect(applyMcpCatalog(["playwright", "memory"], { dataDir: dir, wrapper })).toEqual({ added: ["playwright", "memory"], removed: [] });
+    const cfg = JSON.parse(readFileSync(file, "utf8")).mcpServers;
+    expect(cfg.memory.env.MEMORY_FILE_PATH).toBe(join(dir, "mcp", "memory.json"));
+    expect(existsSync(join(dir, "mcp"))).toBe(true);
+    expect(applyMcpCatalog(["memory"], { dataDir: dir, wrapper })).toEqual({ added: [], removed: ["playwright"] });
+    expect(Object.keys(JSON.parse(readFileSync(file, "utf8")).mcpServers)).toEqual(["memory"]);
+    // a server the user added by hand is not the catalog's to remove
+    addMachineMcp("mine", { type: "http", url: "https://x/mcp" });
+    expect(applyMcpCatalog([], { dataDir: dir, wrapper })).toEqual({ added: [], removed: ["memory"] });
+    expect(Object.keys(JSON.parse(readFileSync(file, "utf8")).mcpServers)).toEqual(["mine"]);
   });
 });
