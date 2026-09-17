@@ -16,6 +16,42 @@ const MARKDOWN_KINDS = new Set(["text", "user"]);
 const LOOKS_LIKE_MARKDOWN = /^(#{1,6} |```|[-*] |\d+\. )/m;
 const renderAsMarkdown = (it: Item) => MARKDOWN_KINDS.has(it.kind) || (it.kind === "result" && LOOKS_LIKE_MARKDOWN.test(it.body));
 
+/**
+ * Links in agent and tool output are written relative to the workspace —
+ * Playwright's "[Screenshot](.bullpen/out/x.png)" — and the browser would
+ * resolve them against the page URL, which the SPA answers with itself. Into
+ * .bullpen/out they become artifact downloads; other relative paths become
+ * plain text, since nothing they could point at is reachable.
+ */
+function artifactHref(runId: string | undefined, href: string | undefined): string | null {
+  if (!href) return null;
+  if (/^(https?:|mailto:|#)/i.test(href)) return href;
+  const m = /^(?:\.\/)?\.bullpen\/out\/(.+)$/.exec(href);
+  if (m && runId) return `/api/runs/${runId}/artifacts/${m[1]!.split("/").map(encodeURIComponent).join("/")}`;
+  return null;
+}
+
+function mdComponents(runId: string | undefined) {
+  return {
+    ...MD_COMPONENTS,
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+      const to = artifactHref(runId, href);
+      if (!to) return <span className="text-neutral-300">{children}</span>;
+      const download = to.startsWith("/api/");
+      return (
+        <a href={to} target={download ? undefined : "_blank"} rel="noreferrer" download={download || undefined} className="underline decoration-neutral-600 hover:text-white">
+          {children}
+        </a>
+      );
+    },
+    img: ({ src, alt }: { src?: string; alt?: string }) => {
+      const to = artifactHref(runId, src);
+      if (!to) return <span className="text-neutral-500">[image: {alt || src}]</span>;
+      return <img src={to} alt={alt ?? ""} className="my-2 max-h-96 rounded border border-neutral-800" />;
+    },
+  };
+}
+
 const MD_COMPONENTS = {
   p: (props: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0" {...props} />,
   h1: (props: { children?: React.ReactNode }) => (
@@ -158,11 +194,15 @@ export function Timeline({
   events,
   partial,
   meteredBilling = false,
+  runId,
 }: {
   events: RunEvent[];
   partial: string;
   meteredBilling?: boolean;
+  /** Lets relative links into .bullpen/out resolve to this run's downloads. */
+  runId?: string;
 }) {
+  const components = mdComponents(runId);
   const items = toItems(events, meteredBilling);
   return (
     <div className="space-y-2">
@@ -179,7 +219,7 @@ export function Timeline({
           )}
           {renderAsMarkdown(it) ? (
             <div className="text-sm leading-relaxed">
-              <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+              <Markdown remarkPlugins={[remarkGfm]} components={components}>
                 {it.body}
               </Markdown>
             </div>

@@ -1945,7 +1945,7 @@ export function App() {
               }}
               className="flex-1 overflow-y-auto px-6 py-4"
             >
-              <Timeline events={events} partial={partial} meteredBilling={metered} />
+              <Timeline events={events} partial={partial} meteredBilling={metered} runId={run.id} />
               {approvals.length > 0 && (
                 <div className="mt-3 space-y-2">
                   {approvals.map((a) => (
