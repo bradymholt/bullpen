@@ -73,6 +73,14 @@ jobs:
           else
             NOTES="Image: \`$IMAGE:$RELEASE_TAG\` (also \`$IMAGE:$VERSION\`)"
           fi
-          gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes --notes "$NOTES"
+          # The box is already running this version; a refused release call (GitHub
+          # has returned a stray 403 here) is retried, then reported, never a failure.
+          for attempt in 1 2 3; do
+            if gh release create "$RELEASE_TAG" --target "$VERSION" --title "$RELEASE_TAG" --generate-notes --notes "$NOTES"; then
+              exit 0
+            fi
+            sleep $((attempt * 10))
+          done
+          echo "::warning::deployed $VERSION but could not create release $RELEASE_TAG; create it by hand: gh release create $RELEASE_TAG --target $VERSION --title $RELEASE_TAG --generate-notes"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
