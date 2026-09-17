@@ -16,7 +16,7 @@ import {
 } from "../triggers/webhook.ts";
 import { config } from "../config.ts";
 import { git } from "../workspaces.ts";
-import { claudeCredential, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setGlobalEnv, spaceEnv } from "../env.ts";
+import { claudeCredential, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setGlobalEnv, setSkillsRefreshHours, spaceEnv } from "../env.ts";
 import { claudeRunner } from "../runs/ClaudeRunner.ts";
 import { open, seal, type SealedBundle, type SecretsBundle } from "../secretsBundle.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { addMachineMcp, applyMcpCatalog, exportMachineMcp, importMachineMcp, mcpCatalog, readMachineMcp, removeMachineMcp } from "../machineMcp.ts";
 import { listRepos } from "../github.ts";
-import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, writeClaudeMd } from "../skills.ts";
+import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn, skillsState, startSkillsRefresh, writeClaudeMd } from "../skills.ts";
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
 import { exportFilename, renderTranscript } from "../transcript.ts";
 import { artifactPath, listArtifacts } from "../artifacts.ts";
@@ -753,6 +753,17 @@ api.post("/setup/skills/pull", (c) => {
   } catch (e) {
     return c.json({ error: `pull failed: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}` }, 502);
   }
+  return c.json(skillsState());
+});
+
+api.put("/setup/skills/refresh", async (c) => {
+  const body = await c.req.json<{ hours?: number }>().catch(() => null);
+  const hours = body?.hours;
+  if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 0 || hours > 24 * 30) {
+    return c.json({ error: "hours must be a whole number between 0 and 720" }, 400);
+  }
+  setSkillsRefreshHours(hours);
+  startSkillsRefresh();
   return c.json(skillsState());
 });
 

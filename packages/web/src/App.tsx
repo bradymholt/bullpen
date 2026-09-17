@@ -369,6 +369,7 @@ export function App() {
     remote: string | null;
     subdir: string | null;
     managed: boolean;
+    refreshHours: number;
   } | null>(null);
   const [skillsSource, setSkillsSource] = useState({ url: "", path: "" });
   const [skillsNote, setSkillsNote] = useState<string | null>(null);
@@ -1391,13 +1392,39 @@ export function App() {
                             Pull latest
                           </button>
                         )}
+                        {skillsInfo.managed && skillsInfo.remote && (
+                          <select
+                            value={skillsInfo.refreshHours}
+                            onChange={async (e) => {
+                              const hours = Number(e.target.value);
+                              const previous = skillsInfo.refreshHours;
+                              setSkillsInfo({ ...skillsInfo, refreshHours: hours });
+                              try {
+                                await api.setSkillsRefresh(hours);
+                                setSkillsNote(hours === 0 ? "Auto-refresh off." : `Refreshing every ${hours}h.`);
+                              } catch (err) {
+                                setSkillsInfo({ ...skillsInfo, refreshHours: previous });
+                                setSkillsNote(String((err as Error).message));
+                              }
+                            }}
+                            title="How often bullpen pulls the skills repo in the background"
+                            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
+                          >
+                            <option value={0}>No auto-refresh</option>
+                            <option value={6}>Every 6 hours</option>
+                            <option value={12}>Every 12 hours</option>
+                            <option value={24}>Daily</option>
+                            <option value={168}>Weekly</option>
+                          </select>
+                        )}
                         {skillsNote && <span className="text-xs text-neutral-400">{skillsNote}</span>}
                       </div>
                       {skillsInfo.managed ? (
                         <>
                           <p className="text-xs leading-relaxed text-neutral-600">
                             This directory is bullpen&rsquo;s to manage (<code>CLAUDE_CONFIG_DIR</code> is
-                            set), and it is pulled on every boot. To point it at a different repo:
+                            set), and it is pulled on every boot and on the schedule above. To point it at a
+                            different repo:
                           </p>
                           <input
                             className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
@@ -1436,7 +1463,8 @@ export function App() {
                         <p className="text-xs leading-relaxed text-neutral-600">
                           Bullpen reads these but doesn&rsquo;t manage them — this is your own
                           <code> ~/.claude</code>. Set <code>CLAUDE_CONFIG_DIR</code> (the container does)
-                          to have bullpen own the directory, pull it on boot, and let you change its source here.
+                          to have bullpen own the directory, pull it on boot and daily after that, and let you
+                          change its source here.
                         </p>
                       )}
                     </>

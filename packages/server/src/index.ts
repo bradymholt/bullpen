@@ -12,7 +12,7 @@ import { api } from "./routes/api.ts";
 import { eventsSince } from "./runs/eventLog.ts";
 import { recoverOrphanedRuns, shutdownLiveRuns } from "./runs/RunManager.ts";
 import { seedScratchAgent } from "./seed.ts";
-import { pullSkillsIfManaged } from "./skills.ts";
+import { pullSkillsIfManaged, startSkillsRefresh, stopSkillsRefresh } from "./skills.ts";
 import { startScheduler, stopScheduler } from "./triggers/cron.ts";
 
 process.on("unhandledRejection", (reason) => {
@@ -25,6 +25,8 @@ if (recovered > 0) console.warn(`[bullpen] marked ${recovered} orphaned run(s) i
 seedScratchAgent();
 const skillsNote = pullSkillsIfManaged();
 if (skillsNote) console.log(`[bullpen] ${skillsNote}`);
+const refreshHours = startSkillsRefresh();
+if (refreshHours > 0) console.log(`[bullpen] skills refresh every ${refreshHours}h`);
 const scheduled = startScheduler();
 if (scheduled > 0) console.log(`[bullpen] scheduled ${scheduled} cron agent(s)`);
 
@@ -89,6 +91,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     void (async () => {
       stopScheduler();
+      stopSkillsRefresh();
       const stopped = await shutdownLiveRuns();
       if (stopped > 0) console.log(`[bullpen] stopped ${stopped} live run(s) on ${signal}`);
       server.close(() => process.exit(0));

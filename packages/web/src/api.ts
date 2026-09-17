@@ -132,7 +132,7 @@ export const api = {
     ),
   skillsState: () =>
     fetch("/api/setup/skills").then(
-      json<{ dir: string; dirDisplay: string; count: number; remote: string | null; subdir: string | null; managed: boolean; preapproved: { count: number; bare: string[] } }>,
+      json<{ dir: string; dirDisplay: string; count: number; remote: string | null; subdir: string | null; managed: boolean; refreshHours: number; preapproved: { count: number; bare: string[] } }>,
     ),
   /** Fails with `candidates` when skills live in more than one place or not where `path` says. */
   skillsClone: async (url: string, path?: string) => {
@@ -147,6 +147,13 @@ export const api = {
   },
   skillsPull: () =>
     fetch("/api/setup/skills/pull", { method: "POST" }).then(json<{ count: number }>),
+  /** Hours between background pulls of the skills checkout; 0 turns them off. */
+  setSkillsRefresh: (hours: number) =>
+    fetch("/api/setup/skills/refresh", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hours }),
+    }).then(json<{ refreshHours: number }>),
   /** With a passphrase, secrets ride along sealed; without one they are left out. */
   exportAgents: (passphrase?: string) =>
     fetch("/api/export", {

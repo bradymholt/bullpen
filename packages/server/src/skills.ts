@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
+import { skillsRefreshHours } from "./env.ts";
 import { git } from "./workspaces.ts";
 
 export type Skill = { name: string; description: string };
@@ -117,7 +118,16 @@ export function skillsState() {
   // it is the user's own ~/.claude and bullpen only reads it.
   const home = homedir();
   const dirDisplay = dir === home || dir.startsWith(home + "/") ? "~" + dir.slice(home.length) : dir;
-  return { dir, dirDisplay, count, remote, subdir, managed: Boolean(process.env.CLAUDE_CONFIG_DIR), preapproved: preapprovedTools() };
+  return {
+    dir,
+    dirDisplay,
+    count,
+    remote,
+    subdir,
+    managed: Boolean(process.env.CLAUDE_CONFIG_DIR),
+    refreshHours: skillsRefreshHours(),
+    preapproved: preapprovedTools(),
+  };
 }
 
 
@@ -139,6 +149,33 @@ export function pullSkillsIfManaged(): string | null {
   } catch (e) {
     return `skills: pull failed — ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`;
   }
+}
+
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Boot is the only pull a long-lived container would otherwise get, and it can
+ * run for weeks — so repeat it on a timer. Same rule as the boot pull: managed
+ * directories only. Returns the interval in hours, 0 when nothing was started.
+ */
+export function startSkillsRefresh(): number {
+  stopSkillsRefresh();
+  const hours = skillsRefreshHours();
+  if (hours <= 0 || !process.env.CLAUDE_CONFIG_DIR) return 0;
+  refreshTimer = setInterval(
+    () => {
+      const note = pullSkillsIfManaged();
+      if (note) console.log(`[bullpen] ${note}`);
+    },
+    hours * 60 * 60 * 1000,
+  );
+  refreshTimer.unref();
+  return hours;
+}
+
+export function stopSkillsRefresh(): void {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = null;
 }
 
 const CLAUDE_MD_MAX = 64 * 1024;

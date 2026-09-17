@@ -80,6 +80,8 @@ export const spaceSecrets = sqliteTable("space_secrets", {
 export const globalConfig = sqliteTable("global_config", {
   id: integer("id").primaryKey(),
   env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
+  /** Hours between background skills pulls; 0 turns the timer off. */
+  skillsRefreshHours: integer("skills_refresh_hours").notNull().default(24),
 });
 
 export const runs = sqliteTable(
