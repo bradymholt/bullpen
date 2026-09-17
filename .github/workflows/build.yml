@@ -44,8 +44,6 @@ jobs:
           push: true
           # No attestation manifests: they add a step and show up as untagged package versions.
           provenance: false
-          build-args: |
-            WITH_BROWSER=1
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

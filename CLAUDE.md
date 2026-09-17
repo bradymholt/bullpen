@@ -263,7 +263,7 @@ and the reference memory server, pre-selected at onboarding step 4 and as "Sugge
 Settings; applying is declarative over catalog keys only, so a hand-added server is never touched.
 `NPM_CONFIG_CACHE=/data/npm-cache` keeps an npx-run server's download on the volume across deploys.
 
-**A browser is opt-in at build (`WITH_BROWSER=1`, on in CI), and the binary is lazy.** `npx
+**A browser is in the image by default (`WITH_BROWSER=0` opts out), and the binary is lazy.** `npx
 @playwright/mcp` fetches the server, never a browser, and Chromium needs OS libraries the slim image
 lacks — so the image installs `@playwright/mcp` globally plus those libraries (root-only), and
 `/usr/local/bin/playwright-mcp` is a wrapper that downloads Chromium into

@@ -157,7 +157,7 @@ const CATALOG: { key: string; name: string; description: string; config: (dataDi
     name: "Playwright — a browser",
     description: "Headless Chromium the agent can drive: open pages, click, fill forms, take screenshots. The browser downloads on first use.",
     config: () => DEFAULT_PLAYWRIGHT,
-    unavailable: (wrapper) => (existsSync(wrapper) ? null : "this image was built without WITH_BROWSER"),
+    unavailable: (wrapper) => (existsSync(wrapper) ? null : "this image was built with WITH_BROWSER=0, or this isn't the container"),
   },
   {
     key: "memory",

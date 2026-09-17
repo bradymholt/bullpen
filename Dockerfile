@@ -58,7 +58,7 @@ RUN if [ -n "$GOG_URL" ]; then \
       && chmod +x /usr/local/bin/gog && gog --version ; \
     fi
 
-# A browser for agents, opt-in. The image carries the Playwright MCP server and
+# A browser for agents, on by default (WITH_BROWSER=0 opts out). The image carries the Playwright MCP server and
 # Chromium's OS libraries (root-only to install); the browser itself is
 # downloaded the first time a run asks for it, into the data volume, by the
 # wrapper below — so an image nobody browses from never pays for Chromium, and
@@ -69,9 +69,9 @@ RUN if [ -n "$GOG_URL" ]; then \
 # `playwright-mcp --browser chromium --headless --no-sandbox --isolated --output-dir .bullpen/out/playwright`: the
 # server defaults to the `chrome` channel (Google Chrome, not present), and
 # Chromium's own sandbox can't start under Docker's default seccomp profile.
-ARG WITH_BROWSER=""
+ARG WITH_BROWSER="1"
 ENV PLAYWRIGHT_BROWSERS_PATH=/data/browsers
-RUN if [ -n "$WITH_BROWSER" ]; then \
+RUN if [ -n "$WITH_BROWSER" ] && [ "$WITH_BROWSER" != "0" ]; then \
       npm install -g @playwright/mcp@0.0.81 \
       && MCP="$(npm root -g)/@playwright/mcp" \
       && node "$MCP/node_modules/playwright/cli.js" install-deps chromium \
