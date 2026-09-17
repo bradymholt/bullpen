@@ -59,6 +59,13 @@ same code path — keep it that way.
 
 ## Invariants that cost real debugging
 
+**The system-prompt note goes through `systemPrompt: { type: "preset", preset: "claude_code",
+append }`.** `appendSystemPrompt` is not an `Options` key — it exists only on an unrelated control
+type — and because it was passed inside a spread, the compiler's excess-property check never saw
+it. The payload note and the `.bullpen/out` rule were silently dropped for every run until this was
+found by an agent saving a screenshot to the workspace root. Anything added to `Options` via spread
+deserves a look at `sdk.d.ts` first.
+
 **Always streaming-input mode.** `ClaudeRunner` passes an `AsyncIterable` prompt, never a
 string. The SDK exposes `interrupt()`, `setPermissionMode()` and `setModel()` *only* in that
 mode, so a string prompt silently costs the stop button and mid-run mode changes.
