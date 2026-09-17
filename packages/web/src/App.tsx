@@ -316,6 +316,7 @@ export function App() {
   const [build, setBuild] = useState<{ version: string; release: string | null; repoUrl: string | null } | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string } | null>(null);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
+  const [showClaudeMd, setShowClaudeMd] = useState(false);
   const [setupGeneration, setSetupGeneration] = useState(0);
   // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
   // `?setup=1` reopens onboarding on a configured install; there is no button for it.
@@ -1354,28 +1355,6 @@ export function App() {
                   )}
                 </RailSection>
 
-                <RailSection title="What every agent is told">
-                  <p className="text-xs leading-relaxed text-neutral-600">
-                    A short paragraph bullpen appends to Claude Code&rsquo;s own system prompt on every run,
-                    before the agent&rsquo;s prompt &mdash; it is how the dashboard&rsquo;s files and webhook
-                    payloads work. Read-only.
-                  </p>
-                  <button
-                    onClick={() => setShowSystemPrompt((v) => !v)}
-                    className="text-xs text-neutral-500 hover:text-neutral-300"
-                  >
-                    {showSystemPrompt ? "\u25be" : "\u25b8"} {showSystemPrompt ? "Hide" : "Show"} the text
-                  </button>
-                  {showSystemPrompt && systemPrompt && (
-                    <>
-                      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Every run</span>
-                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.files}</pre>
-                      <span className="block pt-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Webhook and poll runs, additionally</span>
-                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.delivery}</pre>
-                    </>
-                  )}
-                </RailSection>
-
                 <RailSection title="Skills">
                   {skillsInfo && (
                     <>
@@ -1460,54 +1439,6 @@ export function App() {
                           to have bullpen own the directory, pull it on boot, and let you change its source here.
                         </p>
                       )}
-                    </>
-                  )}
-                </RailSection>
-
-                <RailSection title="Global CLAUDE.md">
-                  {claudeMd && (
-                    <>
-                      <RailRow label="File" value={claudeMd.path} />
-                      <RailRow
-                        label="Status"
-                        value={claudeMd.exists ? `${(claudeMd.size / 1024).toFixed(1)} KB` : "not present"}
-                      />
-                      <textarea
-                        className="h-40 w-full resize-y rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs leading-relaxed text-neutral-300 outline-none focus:border-neutral-600 read-only:text-neutral-500"
-                        value={claudeMdDraft}
-                        readOnly={!claudeMd.managed}
-                        spellCheck={false}
-                        placeholder={claudeMd.managed ? "Instructions every agent that uses the shared config will read." : ""}
-                        onChange={(e) => setClaudeMdDraft(e.target.value)}
-                      />
-                      {claudeMd.managed ? (
-                        <div className="flex items-center gap-3">
-                          <button
-                            disabled={claudeMdDraft === claudeMd.content}
-                            onClick={async () => {
-                              try {
-                                const m = await api.setClaudeMd(claudeMdDraft);
-                                setClaudeMd(m);
-                                setClaudeMdNote("Saved.");
-                              } catch (e) {
-                                setClaudeMdNote(String((e as Error).message));
-                              }
-                              setTimeout(() => setClaudeMdNote(null), 2500);
-                            }}
-                            className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
-                          >
-                            Save
-                          </button>
-                          {claudeMdNote && <span className="text-xs text-neutral-400">{claudeMdNote}</span>}
-                        </div>
-                      ) : null}
-                      <p className="text-xs leading-relaxed text-neutral-600">
-                        Loaded by every agent with &ldquo;Use the shared skills and global CLAUDE.md&rdquo;
-                        checked, together with the skills and settings.json in the same directory.{" "}
-                        {claudeMd.managed
-                          ? "This directory is bullpen\u2019s, so it can be edited here."
-                          : "This is your own file; edit it on this machine."}
-                      </p>
                     </>
                   )}
                 </RailSection>
@@ -1695,6 +1626,86 @@ export function App() {
                     that passphrase, so the shared webhook URLs survive a move to another box. Ids
                     are kept, so importing over an existing bullpen updates in place.
                   </p>
+                </RailSection>
+
+                <RailSection title="Instructions every agent receives">
+                  <p className="text-xs leading-relaxed text-neutral-600">
+                    Two things reach an agent before its own prompt does. Claude Code&rsquo;s built-in system
+                    prompt comes first; then these.
+                  </p>
+
+                  <button onClick={() => setShowSystemPrompt((v) => !v)} className="block text-left text-xs text-neutral-300 hover:text-white">
+                    {showSystemPrompt ? "\u25be" : "\u25b8"} Bullpen&rsquo;s note &mdash; every run
+                  </button>
+                  <p className="-mt-1 pl-4 text-xs leading-relaxed text-neutral-600">
+                    Appended to the system prompt of every run, unconditionally. It is not part of
+                    CLAUDE.md and cannot be turned off: it is how the dashboard&rsquo;s files and webhook
+                    payloads work. Read-only.
+                  </p>
+                  {showSystemPrompt && systemPrompt && (
+                    <div className="space-y-2 pl-4">
+                      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Every run</span>
+                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.files}</pre>
+                      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Webhook and poll runs, additionally</span>
+                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.delivery}</pre>
+                    </div>
+                  )}
+
+                  <button onClick={() => setShowClaudeMd((v) => !v)} className="block pt-1 text-left text-xs text-neutral-300 hover:text-white">
+                    {showClaudeMd ? "\u25be" : "\u25b8"} Global CLAUDE.md &mdash; agents that opt in
+                  </button>
+                  <p className="-mt-1 pl-4 text-xs leading-relaxed text-neutral-600">
+                    Your own standing instructions, the file Claude Code reads from its config directory.
+                    Loaded only for agents with &ldquo;Use the shared skills and global CLAUDE.md&rdquo;
+                    checked, together with that directory&rsquo;s skills and settings.json.
+                  </p>
+                  {showClaudeMd && (
+                    <div className="space-y-2 pl-4">
+                  {claudeMd && (
+                    <>
+                      <RailRow label="File" value={claudeMd.path} />
+                      <RailRow
+                        label="Status"
+                        value={claudeMd.exists ? `${(claudeMd.size / 1024).toFixed(1)} KB` : "not present"}
+                      />
+                      <textarea
+                        className="h-40 w-full resize-y rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs leading-relaxed text-neutral-300 outline-none focus:border-neutral-600 read-only:text-neutral-500"
+                        value={claudeMdDraft}
+                        readOnly={!claudeMd.managed}
+                        spellCheck={false}
+                        placeholder={claudeMd.managed ? "Standing instructions for agents that opt in." : ""}
+                        onChange={(e) => setClaudeMdDraft(e.target.value)}
+                      />
+                      {claudeMd.managed ? (
+                        <div className="flex items-center gap-3">
+                          <button
+                            disabled={claudeMdDraft === claudeMd.content}
+                            onClick={async () => {
+                              try {
+                                const m = await api.setClaudeMd(claudeMdDraft);
+                                setClaudeMd(m);
+                                setClaudeMdNote("Saved.");
+                              } catch (e) {
+                                setClaudeMdNote(String((e as Error).message));
+                              }
+                              setTimeout(() => setClaudeMdNote(null), 2500);
+                            }}
+                            className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
+                          >
+                            Save
+                          </button>
+                          {claudeMdNote && <span className="text-xs text-neutral-400">{claudeMdNote}</span>}
+                        </div>
+                      ) : null}
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        {claudeMd.managed
+                          ? "This directory is bullpen\u2019s, so the file can be edited here."
+                          : "This is your own file; edit it on this machine."}
+                      </p>
+                    </>
+                  )}
+                    </div>
+                  )}
                 </RailSection>
 
 
