@@ -20,10 +20,23 @@ export const SYSTEM_NOTE = {
     `unreachable when the run ends, and only ${OUT_DIR}/ is kept and offered to the user for ` +
     `download. When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming ` +
     `the files you saved there.`,
+  /**
+   * Only when the agent has the keyring password, since gog without it cannot
+   * authenticate and an agent told otherwise spends turns finding that out.
+   */
+  gog:
+    `The \`gog\` CLI is available and signed in to Google: Gmail, Calendar, Drive, Docs and ` +
+    `Sheets, for reading, sending and organising. Run it with Bash — \`gog --help\` lists the ` +
+    `commands, and \`--json\` or \`--plain\` give parseable output.`,
 };
 
-export function systemNote(trigger: string): string {
-  return [trigger === "webhook" || trigger === "poll" ? SYSTEM_NOTE.delivery(trigger) : null, SYSTEM_NOTE.files]
+export function systemNote(trigger: string, env: Record<string, string> = {}): string {
+  const hasGog = Boolean(env.GOG_KEYRING_PASSWORD ?? process.env.GOG_KEYRING_PASSWORD);
+  return [
+    trigger === "webhook" || trigger === "poll" ? SYSTEM_NOTE.delivery(trigger) : null,
+    SYSTEM_NOTE.files,
+    hasGog ? SYSTEM_NOTE.gog : null,
+  ]
     .filter(Boolean)
     .join("\n\n");
 }
