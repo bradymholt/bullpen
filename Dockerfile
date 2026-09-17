@@ -27,8 +27,10 @@ FROM node:22-slim
 # CLAUDE_CONFIG_DIR: the harness reads skills, settings.json and a global
 # CLAUDE.md from here instead of ~/.claude, so agent config is a directory in
 # the data volume rather than state on the box. GOG_HOME does the same for gog.
+# NPM_CONFIG_CACHE on the volume: an npx-run MCP server (the memory server, say)
+# is fetched once per box, not once per deploy.
 ENV NODE_ENV=production BULLPEN_DATA=/data \
-    CLAUDE_CONFIG_DIR=/data/claude GOG_HOME=/data/gog
+    CLAUDE_CONFIG_DIR=/data/claude GOG_HOME=/data/gog NPM_CONFIG_CACHE=/data/npm-cache
 
 # git for workspace clones; ripgrep because Claude Code's search tools use it;
 # ca-certificates for HTTPS to the API and remote MCP servers; gh because the

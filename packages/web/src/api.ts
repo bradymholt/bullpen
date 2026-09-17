@@ -6,6 +6,7 @@ import type {
   MachineMcp,
   McpLogin,
   Artifact,
+  McpCatalogEntry,
   PollOutcome,
   Health,
   RepoList,
@@ -124,6 +125,11 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ content }),
     }).then(json<{ path: string; exists: boolean; size: number; managed: boolean; content: string }>),
+  mcpCatalog: () => fetch("/api/setup/mcp-catalog").then(json<{ managed: boolean; entries: McpCatalogEntry[] }>),
+  applyMcpCatalog: (keys: string[]) =>
+    fetch("/api/setup/mcp-catalog", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) }).then(
+      json<{ added: string[]; removed: string[]; entries: McpCatalogEntry[] }>,
+    ),
   skillsState: () =>
     fetch("/api/setup/skills").then(
       json<{ dir: string; dirDisplay: string; count: number; remote: string | null; subdir: string | null; managed: boolean; preapproved: { count: number; bare: string[] } }>,
