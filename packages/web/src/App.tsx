@@ -9,7 +9,6 @@ import { DeliveryList, GroupedDeliveryList } from "./DeliveryList.tsx";
 import { EnvEditor } from "./EnvEditor.tsx";
 import { McpServerForm } from "./McpServerForm.tsx";
 import { SetupView } from "./SetupView.tsx";
-import { UsageView } from "./UsageView.tsx";
 import { McpAuth } from "./McpAuth.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
@@ -59,14 +58,6 @@ function GearIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-function BarsIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
-      <path d="M3 13.5V9M8 13.5V4M13 13.5V7" />
     </svg>
   );
 }
@@ -196,8 +187,6 @@ type View =
   | { kind: "space"; name: string }
   /** Global env and the box's own state — what `.env` used to be for. */
   | { kind: "settings" }
-  /** The subscription's rate-limit windows. */
-  | { kind: "usage" }
   /** The roster at a glance, outside any one agent. */
   | { kind: "home" };
 
@@ -207,7 +196,6 @@ function viewToPath(v: View): string {
   if (v.kind === "edit") return v.agent ? `/agents/${v.agent.id}/edit` : "/agents/new";
   if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/edit`;
   if (v.kind === "settings") return "/settings";
-  if (v.kind === "usage") return "/usage";
   return "/";
 }
 
@@ -219,7 +207,6 @@ function pathToView(path: string): { view: View; editId?: string; space?: string
   const p = path.replace(/\/+$/, "") || "/";
   if (p === "/agents/new") return { view: { kind: "edit", agent: null } };
   if (p === "/settings") return { view: { kind: "settings" } };
-  if (p === "/usage") return { view: { kind: "usage" } };
   let m = /^\/runs\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "run", id: m[1]! } };
   m = /^\/agents\/([\w-]+)\/edit$/.exec(p);
@@ -782,15 +769,6 @@ export function App() {
           >
             <GearIcon />
           </button>
-          <button
-            onClick={() => setView({ kind: "usage" })}
-            title="Usage"
-            className={`rounded p-1.5 ${
-              view.kind === "usage" ? "text-neutral-100" : "text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200"
-            }`}
-          >
-            <BarsIcon />
-          </button>
           {build && (
             <a
               href={
@@ -812,7 +790,6 @@ export function App() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        {view.kind === "usage" && <UsageView />}
 
         {view.kind === "edit" && (
           <div className="flex-1 overflow-y-auto">

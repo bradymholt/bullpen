@@ -10,7 +10,6 @@ import type {
   RepoList,
   Skill,
   Stats,
-  Usage,
   Run,
   RunEvent,
 } from "./types.ts";
@@ -205,7 +204,6 @@ export const api = {
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
   stats: () => fetch("/api/stats").then(json<Stats>),
-  usage: (fresh = false) => fetch(fresh ? "/api/usage?fresh=1" : "/api/usage").then(json<Usage>),
   spaceDeliveries: (space: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/deliveries`).then(json<Delivery[]>),
   /** Deliveries refused for a reason worth knowing about; filter misses excluded. */

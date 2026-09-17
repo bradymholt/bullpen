@@ -179,15 +179,6 @@ shares its network namespace. The CLI refuses a non-tty stdin, hence the pty: ut
 in the container, Python's `pty` on macOS (BSD `script` wants a real tty of its own). Everything
 else — token storage, refresh, the "needs-auth" status — stays the harness's.
 
-**Usage comes from the harness's own OAuth login, and on a Mac that login is one of several
-Keychain items.** `usage.ts` reads `GET api.anthropic.com/api/oauth/usage` with the
-`claudeAiOauth.accessToken` from `CLAUDE_CONFIG_DIR/.credentials.json`, or on macOS from the
-Keychain service `Claude Code-credentials` — where the VS Code extension and the MCP OAuth store
-keep items under the same service name, so the user's own account is asked for first and a hit
-without `claudeAiOauth` is skipped. The response also carries `{utilization: 0}` feature flags
-that are not windows; only entries with a `resets_at` are shown. The endpoint 429s freely, hence
-the one-minute cache. A `setup-token` token is tried last and may be refused.
-
 **`strictMcpConfig` is on unless the agent opts out — and a pick keeps it on.** Without it a run
 inherits MCP servers from `~/.claude.json` (read regardless of `settingSources`), the cloned repo's
 `.mcp.json`, and claude.ai connectors. That makes agents non-deterministic and leaks one agent's

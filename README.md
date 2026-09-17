@@ -106,8 +106,8 @@ if it doesn't); until then, `kamal accessory boot tunnel` plus
 `ssh -N -L 4322:127.0.0.1:4322 <user>@<host>` reaches the dashboard at `http://localhost:4322`.
 
 **Afterwards:** `kamal app logs -f`, `kamal app details`, and
-`kamal app exec -i --reuse 'claude login'` for a full Claude login on the box (what Usage and
-claude.ai connectors need).
+`kamal app exec -i --reuse 'claude login'` for a full Claude login on the box (what claude.ai
+connectors need).
 
 ### Running headless
 
