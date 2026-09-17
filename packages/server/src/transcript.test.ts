@@ -28,15 +28,21 @@ describe("renderTranscript", () => {
       },
       { seq: 4, ts: 2, type: "user", payload: { message: { content: [{ type: "tool_result", content: "a.txt\nb.txt" }] } } },
       { seq: 5, ts: 3, type: "result", payload: { num_turns: 2, total_cost_usd: 0.021 } },
-    ]);
+    ], true);
     expect(txt).toContain("Code Review — run 1a2b3c4d\n");
     expect(txt).toContain("Label: acme/widgets #1");
-    expect(txt).toContain("Cost: $0.02 at API rates");
+    expect(txt).toContain("Cost: $0.02");
     expect(txt).toContain("PROMPT (manual)\n    Review the PR.");
     expect(txt).toContain("[MCP: datadog-mcp connected, 3 tools]");
     expect(txt).toContain('▶ Bash\n    {\n      "command": "ls"\n    }');
     expect(txt).toContain("◀ result\n    a.txt\n    b.txt");
-    expect(txt).toContain("[finished — 2 turns, ~$0.02 at API rates]");
+    expect(txt).toContain("[finished — 2 turns, $0.02]");
+  });
+
+  it("leaves money out on a subscription, where nothing is charged per run", () => {
+    const txt = renderTranscript(run, "x", [{ seq: 1, ts: 3, type: "result", payload: { num_turns: 2, total_cost_usd: 0.021 } }]);
+    expect(txt).not.toContain("$");
+    expect(txt).toContain("[finished — 2 turns]");
   });
 
   it("keeps tool output verbatim, only indented", () => {

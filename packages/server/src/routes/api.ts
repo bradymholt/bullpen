@@ -1133,7 +1133,7 @@ api.get("/runs/:id/export", (c) => {
   const json = c.req.query("format") === "json";
   const body = json
     ? JSON.stringify({ exportedAt: new Date().toISOString(), agent: { id: run.agentId, name: agentName }, run, events }, null, 2)
-    : renderTranscript(run, agentName, events);
+    : renderTranscript(run, agentName, events, claudeCredential().source === "api-key");
   return c.body(body, 200, {
     "content-type": json ? "application/json; charset=utf-8" : "text/plain; charset=utf-8",
     "content-disposition": `attachment; filename="${exportFilename(agentName, run, json ? "json" : "txt")}"`,
