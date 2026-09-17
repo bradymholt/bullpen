@@ -386,9 +386,9 @@ export function AgentEditor({
           value={draft.concurrency ?? "allow"}
           onChange={(e) => set("concurrency", e.target.value)}
         >
-          <option value="skip">Skip — refuse a trigger while a run is active</option>
           <option value="allow">Allow — start it anyway, in parallel</option>
           <option value="queue">Queue — hold it and run one at a time, in order</option>
+          <option value="skip">Skip — refuse a trigger while a run is active</option>
         </select>
         {(draft.concurrency ?? "allow") === "allow" &&
         (wsKind === "scratch" || wsKind === "existing") ? (

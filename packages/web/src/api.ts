@@ -202,6 +202,7 @@ export const api = {
   /** Members go to the default space; the space's secret and env are dropped. */
   removeSpace: (name: string) =>
     fetch(`/api/spaces/${encodeURIComponent(name)}`, { method: "DELETE" }).then(json<{ moved: number; name: string }>),
+  systemPrompt: () => fetch("/api/system-prompt").then(json<{ files: string; delivery: string }>),
   runArtifacts: (runId: string) => fetch(`/api/runs/${runId}/artifacts`).then(json<Artifact[]>),
   runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
   runs: () => fetch("/api/runs").then(json<Run[]>),
