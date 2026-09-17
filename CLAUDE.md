@@ -3,6 +3,17 @@
 A dashboard for a roster of Claude Code agents. Read `README.md` for what it does and how to
 run it. This file covers what the code alone won't teach you.
 
+## Working on bullpen
+
+Ship each change end to end without being asked: commit to a feature branch, open a PR, and
+merge it. Merging `main` is what deploys — `build` pushes the image, `deploy` runs on
+`workflow_run` after it and cuts a release — so an unmerged PR is an undeployed change.
+`.claude/settings.json` carries the `gh pr merge` allow rule that makes this possible.
+
+Run `npm run typecheck` and `npm test` before merging; there are no PR checks, so those are
+the gate. Keep unrelated work out of the commit — the tree often holds more than one change in
+progress. Don't use `--admin`, and stop rather than merge when something looks wrong.
+
 ## Commands
 
 ```bash
