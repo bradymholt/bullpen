@@ -196,9 +196,12 @@ export function startRun(opts: RunRequest, existingId?: string): string {
   const runId = existingId ?? randomUUID();
   const prompt = opts.prompt ?? agent.prompt;
   const permissionMode = opts.permissionMode ?? agent.permissionMode;
+  // Global, then the space's, then the agent's own — later wins. Resolved here
+  // because the note names only the tools this agent's credentials can reach.
+  const env = resolveEnv(agent);
   // Where the delivery body lives is bullpen's business, not something every
   // prompt should have to restate.
-  const payloadNote = systemNote(trigger);
+  const payloadNote = systemNote(trigger, env);
 
   const spec: WorkspaceSpec = opts.ephemeralWorkspace
     ? { kind: "ephemeral" }
@@ -229,8 +232,6 @@ export function startRun(opts: RunRequest, existingId?: string): string {
 
   appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, permissionMode, cwd: workspace.path });
 
-  // Global, then the space's, then the agent's own — later wins.
-  const env = resolveEnv(agent);
   const mcp = selectMcp(agent, exportMachineMcp(), env);
   const handle = runner.start(
     {
