@@ -1457,7 +1457,8 @@ export function App() {
                                 <McpHealthBadge h={machineMcp.health[s.name]} />
                                 <span className="shrink-0 font-mono text-neutral-200">{s.name}</span>
                                 <span className="shrink-0 text-neutral-600">{s.transport}</span>
-                                <span className="min-w-0 truncate font-mono text-neutral-500" title={s.detail}>{s.detail}</span>
+                                {/* flex-1 gives it a zero hypothetical width, so the row never wraps for it — it truncates. */}
+                                <span className="min-w-0 flex-1 truncate font-mono text-neutral-500" title={s.detail}>{s.detail}</span>
                                 {s.secretKeys.length > 0 && (
                                   <span className="shrink-0 text-neutral-600" title={s.secretKeys.join(", ")}>{s.secretKeys.length} secret{s.secretKeys.length === 1 ? "" : "s"}</span>
                                 )}
