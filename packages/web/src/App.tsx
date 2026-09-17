@@ -12,7 +12,7 @@ import { SetupView } from "./SetupView.tsx";
 import { McpAuth } from "./McpAuth.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
-import type { Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
+import type { Artifact, Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
 import { DEFAULT_SPACE } from "./types.ts";
 
 const ACTIVE = new Set(["running", "awaiting_approval"]);
@@ -69,6 +69,37 @@ function McpHealthBadge({ h, compact = false }: { h?: { status: string; at: numb
     h.status === "connected" ? "bg-emerald-500" : h.status === "needs-auth" ? "bg-amber-500" : h.status === "pending" ? "bg-neutral-500" : "bg-red-500";
   const title = `${h.status} · ${ago(h.at)}${h.error ? ` · ${h.error}` : ""}`;
   return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} title={title} />;
+}
+
+/** Files the agent left in .bullpen/out — fetched once the run has ended, since that is when they are collected. */
+function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
+  const [files, setFiles] = useState<Artifact[] | null>(null);
+  const ended = !ACTIVE.has(status) && status !== "queued";
+  useEffect(() => {
+    if (!ended) return;
+    void api.runArtifacts(runId).then(setFiles).catch(() => setFiles([]));
+  }, [runId, ended]);
+  if (!files || files.length === 0) return null;
+  const fmt = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+  return (
+    <div className="mt-3 rounded border border-neutral-800 px-3 py-2">
+      <div className="mb-1 font-mono text-xs uppercase tracking-wide text-neutral-500">Files</div>
+      <ul className="space-y-0.5">
+        {files.map((f) => (
+          <li key={f.name} className="flex items-baseline gap-3 text-sm">
+            <a
+              href={`/api/runs/${runId}/artifacts/${f.name.split("/").map(encodeURIComponent).join("/")}`}
+              download
+              className="font-mono text-neutral-200 underline decoration-neutral-700 hover:text-white"
+            >
+              {f.name}
+            </a>
+            <span className="text-xs text-neutral-600">{fmt(f.size)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1922,6 +1953,7 @@ export function App() {
                   ))}
                 </div>
               )}
+              <ArtifactsPanel runId={run.id} status={run.status} />
               {run.branch && <GitPanel runId={run.id} />}
             </div>
           </>

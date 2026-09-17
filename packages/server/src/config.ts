@@ -48,6 +48,8 @@ export const config = {
   dbPath: resolve(dataDir, "bullpen.db"),
   workspacesDir: resolve(dataDir, "workspaces"),
   agentDataDir: resolve(dataDir, "agent-data"),
+  /** Files runs hand back (`.bullpen/out/` at run end), by run id. */
+  artifactsDir: resolve(dataDir, "artifacts"),
   port: Number(process.env.PORT ?? 4322),
   githubToken: process.env.GITHUB_TOKEN || undefined,
   /**
