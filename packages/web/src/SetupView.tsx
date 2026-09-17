@@ -240,7 +240,7 @@ export function SetupView({ onDone }: { onDone: () => void }) {
                 </div>
                 <p className="text-xs text-neutral-600">
                   Private repo? Save the GitHub token first — the clone uses it. Later, Settings has
-                  &ldquo;Pull latest&rdquo; for updates.
+                  &ldquo;Pull now&rdquo; for updates.
                 </p>
               </>
             )}

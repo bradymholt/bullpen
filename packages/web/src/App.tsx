@@ -13,7 +13,7 @@ import { McpAuth } from "./McpAuth.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { useRun } from "./useRun.ts";
 import type {
-  McpCatalogEntry, Artifact, Agent, Delivery, MachineMcp, Run, Skill, Stats } from "./types.ts";
+  McpCatalogEntry, Artifact, Agent, Delivery, MachineMcp, Run, Skill, SkillsState, Stats } from "./types.ts";
 import { DEFAULT_SPACE } from "./types.ts";
 
 const ACTIVE = new Set(["running", "awaiting_approval"]);
@@ -362,15 +362,8 @@ export function App() {
   const [globalEnvMap, setGlobalEnvMap] = useState<Record<string, string> | null>(null);
   const [envSaved, setEnvSaved] = useState<string | null>(null);
   const [processEnvNames, setProcessEnvNames] = useState<string[] | null>(null);
-  const [skillsInfo, setSkillsInfo] = useState<{
-    dir: string;
-    dirDisplay: string;
-    count: number;
-    remote: string | null;
-    subdir: string | null;
-    managed: boolean;
-    refreshHours: number;
-  } | null>(null);
+  const [skillsInfo, setSkillsInfo] = useState<SkillsState | null>(null);
+  const [skillsPulling, setSkillsPulling] = useState(false);
   const [skillsSource, setSkillsSource] = useState({ url: "", path: "" });
   const [skillsNote, setSkillsNote] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
@@ -1362,10 +1355,24 @@ export function App() {
                       <RailRow label="Directory" value={skillsInfo.dirDisplay} />
                       <RailRow label="Installed" value={`${skillsInfo.count} skill${skillsInfo.count === 1 ? "" : "s"}`} />
                       {skillsInfo.remote && (
-                        <RailRow
-                          label="From"
-                          value={`${skillsInfo.remote}${skillsInfo.subdir && skillsInfo.subdir !== "." ? ` · ${skillsInfo.subdir}` : ""}`}
-                        />
+                        <>
+                          <RailRow
+                            label="From"
+                            value={`${skillsInfo.remote}${skillsInfo.subdir && skillsInfo.subdir !== "." ? ` · ${skillsInfo.subdir}` : ""}`}
+                          />
+                          <RailRow
+                            label="Last pulled"
+                            value={
+                              skillsInfo.lastPulledAt === null ? (
+                                "never"
+                              ) : (
+                                <span title={new Date(skillsInfo.lastPulledAt * 1000).toLocaleString()}>
+                                  {ago(skillsInfo.lastPulledAt)}
+                                </span>
+                              )
+                            }
+                          />
+                        </>
                       )}
                       {skillList.length > 0 && (
                         <ul className="space-y-0.5 pt-1">
@@ -1379,48 +1386,63 @@ export function App() {
                           ))}
                         </ul>
                       )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {skillsInfo.remote && (
-                          <button
-                            onClick={async () => {
-                              const r = await api.skillsPull().catch((e) => ({ error: String(e) }));
-                              if ("count" in r) { setSkillsInfo({ ...skillsInfo, count: r.count }); setSkillsNote("Pulled."); }
-                              else setSkillsNote(r.error);
-                            }}
-                            className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
-                          >
-                            Pull latest
-                          </button>
-                        )}
-                        {skillsInfo.managed && skillsInfo.remote && (
-                          <select
-                            value={skillsInfo.refreshHours}
-                            onChange={async (e) => {
-                              const hours = Number(e.target.value);
-                              const previous = skillsInfo.refreshHours;
-                              setSkillsInfo({ ...skillsInfo, refreshHours: hours });
-                              try {
-                                await api.setSkillsRefresh(hours);
-                                setSkillsNote(hours === 0 ? "Auto-refresh off." : `Refreshing every ${hours}h.`);
-                              } catch (err) {
-                                setSkillsInfo({ ...skillsInfo, refreshHours: previous });
-                                setSkillsNote(String((err as Error).message));
-                              }
-                            }}
-                            title="How often bullpen pulls the skills repo in the background"
-                            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
-                          >
-                            <option value={0}>No auto-refresh</option>
-                            <option value={6}>Every 6 hours</option>
-                            <option value={12}>Every 12 hours</option>
-                            <option value={24}>Daily</option>
-                            <option value={168}>Weekly</option>
-                          </select>
-                        )}
-                        {skillsNote && <span className="text-xs text-neutral-400">{skillsNote}</span>}
-                      </div>
+                      {skillsInfo.remote && (
+                        <div className="space-y-2 pt-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              disabled={skillsPulling}
+                              onClick={async () => {
+                                setSkillsPulling(true);
+                                setSkillsNote(null);
+                                try {
+                                  setSkillsInfo(await api.skillsPull());
+                                  setSkillsNote("Pulled.");
+                                } catch (e) {
+                                  setSkillsNote(String((e as Error).message));
+                                } finally {
+                                  setSkillsPulling(false);
+                                }
+                              }}
+                              className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900 disabled:opacity-40"
+                            >
+                              {skillsPulling ? "Pulling…" : "Pull now"}
+                            </button>
+                            {skillsNote && <span className="text-xs text-neutral-400">{skillsNote}</span>}
+                          </div>
+                          {skillsInfo.managed && (
+                            <label className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                              Then pull again automatically
+                              <select
+                                value={skillsInfo.refreshHours}
+                                onChange={async (e) => {
+                                  const hours = Number(e.target.value);
+                                  const previous = skillsInfo.refreshHours;
+                                  setSkillsInfo({ ...skillsInfo, refreshHours: hours });
+                                  setSkillsNote(null);
+                                  try {
+                                    await api.setSkillsRefresh(hours);
+                                  } catch (err) {
+                                    setSkillsInfo({ ...skillsInfo, refreshHours: previous });
+                                    setSkillsNote(String((err as Error).message));
+                                  }
+                                }}
+                                className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                              >
+                                <option value={0}>never</option>
+                                <option value={6}>every 6 hours</option>
+                                <option value={12}>every 12 hours</option>
+                                <option value={24}>every day</option>
+                                <option value={168}>every week</option>
+                              </select>
+                            </label>
+                          )}
+                        </div>
+                      )}
                       {skillsInfo.managed ? (
                         <>
+                          {!skillsInfo.remote && skillsNote && (
+                            <span className="text-xs text-neutral-400">{skillsNote}</span>
+                          )}
                           <p className="text-xs leading-relaxed text-neutral-600">
                             This directory is bullpen&rsquo;s to manage (<code>CLAUDE_CONFIG_DIR</code> is
                             set), and it is pulled on every boot and on the schedule above. To point it at a

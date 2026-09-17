@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { skillsRefreshHours } from "./env.ts";
 import { git } from "./workspaces.ts";
 
@@ -99,17 +99,41 @@ export function preapprovedTools(): { count: number; bare: string[] } {
   }
 }
 
+/**
+ * When the checkout last heard from its remote. `FETCH_HEAD` is rewritten by
+ * every fetch or pull, including ones run outside bullpen; a clone that never
+ * fetched again has none, so `HEAD` stands in for it. Epoch seconds.
+ */
+function lastFetchedAt(dir: string): number | null {
+  let gitDir: string;
+  try {
+    gitDir = resolve(dir, git(dir, ["rev-parse", "--git-dir"], 5_000).trim());
+  } catch {
+    return null;
+  }
+  for (const name of ["FETCH_HEAD", "HEAD"]) {
+    try {
+      return Math.floor(statSync(join(gitDir, name)).mtimeMs / 1000);
+    } catch {
+      // try the next one
+    }
+  }
+  return null;
+}
+
 export function skillsState() {
   const dir = skillsDir();
   const count = skillDirsIn(dir).length;
   let remote: string | null = null;
   let subdir: string | null = null;
+  let lastPulledAt: number | null = null;
   if (existsSync(dir)) {
     try {
       remote = git(dir, ["remote", "get-url", "origin"], 5_000).trim();
       const top = git(dir, ["rev-parse", "--show-toplevel"], 5_000).trim();
       const rel = relative(top, realpathSync(dir));
       subdir = rel === "" ? "." : rel;
+      lastPulledAt = lastFetchedAt(dir);
     } catch {
       remote = null;
     }
@@ -124,6 +148,7 @@ export function skillsState() {
     count,
     remote,
     subdir,
+    lastPulledAt,
     managed: Boolean(process.env.CLAUDE_CONFIG_DIR),
     refreshHours: skillsRefreshHours(),
     preapproved: preapprovedTools(),
@@ -136,7 +161,7 @@ export function skillsState() {
  * directory. CLAUDE_CONFIG_DIR being set is the signal: the container sets it
  * to /data/claude, which exists to be managed. On a laptop using ~/.claude the
  * checkout is the user's own working copy, and touching it uninvited would be a
- * surprise, so there it stays manual (the Settings page has "Pull latest").
+ * surprise, so there it stays manual (the Settings page has "Pull now").
  * Never fatal: stale skills beat a server that refuses to start.
  */
 export function pullSkillsIfManaged(): string | null {

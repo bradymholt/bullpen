@@ -11,6 +11,7 @@ import type {
   Health,
   RepoList,
   Skill,
+  SkillsState,
   Stats,
   Run,
   RunEvent,
@@ -130,10 +131,7 @@ export const api = {
     fetch("/api/setup/mcp-catalog", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) }).then(
       json<{ added: string[]; removed: string[]; entries: McpCatalogEntry[] }>,
     ),
-  skillsState: () =>
-    fetch("/api/setup/skills").then(
-      json<{ dir: string; dirDisplay: string; count: number; remote: string | null; subdir: string | null; managed: boolean; refreshHours: number; preapproved: { count: number; bare: string[] } }>,
-    ),
+  skillsState: () => fetch("/api/setup/skills").then(json<SkillsState>),
   /** Fails with `candidates` when skills live in more than one place or not where `path` says. */
   skillsClone: async (url: string, path?: string) => {
     const res = await fetch("/api/setup/skills", {
@@ -145,8 +143,7 @@ export const api = {
     if (!res.ok) throw Object.assign(new Error(body.error ?? `${res.status}`), { candidates: body.candidates });
     return body as { count: number };
   },
-  skillsPull: () =>
-    fetch("/api/setup/skills/pull", { method: "POST" }).then(json<{ count: number }>),
+  skillsPull: () => fetch("/api/setup/skills/pull", { method: "POST" }).then(json<SkillsState>),
   /** Hours between background pulls of the skills checkout; 0 turns them off. */
   setSkillsRefresh: (hours: number) =>
     fetch("/api/setup/skills/refresh", {

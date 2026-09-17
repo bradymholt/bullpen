@@ -163,6 +163,19 @@ export type Health = {
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
 export type Artifact = { name: string; size: number };
 
+export type SkillsState = {
+  dir: string;
+  dirDisplay: string;
+  count: number;
+  remote: string | null;
+  subdir: string | null;
+  /** When the checkout last fetched from its remote; null when it is not a checkout. */
+  lastPulledAt: number | null;
+  managed: boolean;
+  refreshHours: number;
+  preapproved: { count: number; bare: string[] };
+};
+
 export type McpCatalogEntry = { key: string; name: string; description: string; unavailable: string | null; installed: boolean };
 
 export type McpLogin = {
