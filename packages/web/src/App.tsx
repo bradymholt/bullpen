@@ -1552,82 +1552,6 @@ export function App() {
                   })()}
                 </RailSection>
 
-                <RailSection title="Export / import">
-                  <input
-                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
-                    type="password"
-                    autoComplete="off"
-                    placeholder="passphrase — leave blank to export without secrets"
-                    value={exportPassphrase}
-                    onChange={(e) => setExportPassphrase(e.target.value)}
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={async () => {
-                        const pass = exportPassphrase.trim();
-                        const data = await api.exportAgents(pass || undefined);
-                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-                        const a = document.createElement("a");
-                        a.href = URL.createObjectURL(blob);
-                        a.download = `bullpen-agents-${new Date().toISOString().slice(0, 10)}-${pass ? "with-secrets-encrypted" : "no-secrets"}.json`;
-                        a.click();
-                        URL.revokeObjectURL(a.href);
-                        setExportPassphrase("");
-                      }}
-                      className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
-                    >
-                      {exportPassphrase.trim() ? "Export with secrets (encrypted)" : "Export without secrets"}
-                    </button>
-                    <label className="cursor-pointer rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900">
-                      Import…
-                      <input
-                        type="file"
-                        accept="application/json,.json"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          try {
-                            const payload = JSON.parse(await f.text()) as Record<string, unknown>;
-                            let pass: string | undefined;
-                            if (payload.secrets) {
-                              pass = window.prompt("This file includes secrets. Passphrase to open them (cancel to import without):") ?? undefined;
-                            }
-                            const r = await api.importAgents(payload, pass?.trim() || undefined);
-                            const needs = Object.entries(r.envNeeded);
-                            setImportResult(
-                              `${r.created.length} created, ${r.updated.length} updated` +
-                                (r.errors.length ? `, ${r.errors.length} rejected` : "") +
-                                (r.secretsApplied
-                                  ? `. Secrets restored for ${r.secretsApplied.agents} agents, ${r.secretsApplied.spaces} spaces, ${r.secretsApplied.globalKeys} global keys` +
-                                    (r.secretsApplied.mcp ? `, ${r.secretsApplied.mcp} MCP servers` : "")
-                                  : "") +
-                                (r.secretsNote ? `. ${r.secretsNote}` : "") +
-                                (r.mcpNote ? `. ${r.mcpNote}` : "") +
-                                (needs.length
-                                  ? `. Set env for: ${needs.map(([n, k]) => `${n} (${k.join(", ")})`).join("; ")}`
-                                  : "."),
-                            );
-                            refresh();
-                          } catch (err) {
-                            setImportResult(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
-                          }
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {importResult && <p className="text-xs text-neutral-300">{importResult}</p>}
-                  <p className="text-xs leading-relaxed text-neutral-600">
-                    Every agent as JSON — prompts, triggers, filters, workspace, permissions. Without
-                    a passphrase, secrets are left out: env keeps its keys but not its values, and
-                    webhook secrets are minted fresh on import. With one, every secret — agent env,
-                    webhook and space secrets, hook ids, global env — is included, encrypted with
-                    that passphrase, so the shared webhook URLs survive a move to another box. Ids
-                    are kept, so importing over an existing bullpen updates in place.
-                  </p>
-                </RailSection>
-
                 <RailSection title="Instructions every agent receives">
                   <p className="text-xs leading-relaxed text-neutral-600">
                     Two things reach an agent before its own prompt does. Claude Code&rsquo;s built-in system
@@ -1706,6 +1630,82 @@ export function App() {
                   )}
                     </div>
                   )}
+                </RailSection>
+
+                <RailSection title="Export / import">
+                  <input
+                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                    type="password"
+                    autoComplete="off"
+                    placeholder="passphrase — leave blank to export without secrets"
+                    value={exportPassphrase}
+                    onChange={(e) => setExportPassphrase(e.target.value)}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        const pass = exportPassphrase.trim();
+                        const data = await api.exportAgents(pass || undefined);
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `bullpen-agents-${new Date().toISOString().slice(0, 10)}-${pass ? "with-secrets-encrypted" : "no-secrets"}.json`;
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                        setExportPassphrase("");
+                      }}
+                      className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                    >
+                      {exportPassphrase.trim() ? "Export with secrets (encrypted)" : "Export without secrets"}
+                    </button>
+                    <label className="cursor-pointer rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900">
+                      Import…
+                      <input
+                        type="file"
+                        accept="application/json,.json"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          try {
+                            const payload = JSON.parse(await f.text()) as Record<string, unknown>;
+                            let pass: string | undefined;
+                            if (payload.secrets) {
+                              pass = window.prompt("This file includes secrets. Passphrase to open them (cancel to import without):") ?? undefined;
+                            }
+                            const r = await api.importAgents(payload, pass?.trim() || undefined);
+                            const needs = Object.entries(r.envNeeded);
+                            setImportResult(
+                              `${r.created.length} created, ${r.updated.length} updated` +
+                                (r.errors.length ? `, ${r.errors.length} rejected` : "") +
+                                (r.secretsApplied
+                                  ? `. Secrets restored for ${r.secretsApplied.agents} agents, ${r.secretsApplied.spaces} spaces, ${r.secretsApplied.globalKeys} global keys` +
+                                    (r.secretsApplied.mcp ? `, ${r.secretsApplied.mcp} MCP servers` : "")
+                                  : "") +
+                                (r.secretsNote ? `. ${r.secretsNote}` : "") +
+                                (r.mcpNote ? `. ${r.mcpNote}` : "") +
+                                (needs.length
+                                  ? `. Set env for: ${needs.map(([n, k]) => `${n} (${k.join(", ")})`).join("; ")}`
+                                  : "."),
+                            );
+                            refresh();
+                          } catch (err) {
+                            setImportResult(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+                          }
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {importResult && <p className="text-xs text-neutral-300">{importResult}</p>}
+                  <p className="text-xs leading-relaxed text-neutral-600">
+                    Every agent as JSON — prompts, triggers, filters, workspace, permissions. Without
+                    a passphrase, secrets are left out: env keeps its keys but not its values, and
+                    webhook secrets are minted fresh on import. With one, every secret — agent env,
+                    webhook and space secrets, hook ids, global env — is included, encrypted with
+                    that passphrase, so the shared webhook URLs survive a move to another box. Ids
+                    are kept, so importing over an existing bullpen updates in place.
+                  </p>
                 </RailSection>
 
 
