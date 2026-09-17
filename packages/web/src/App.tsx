@@ -79,25 +79,51 @@ function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
     if (!ended) return;
     void api.runArtifacts(runId).then(setFiles).catch(() => setFiles([]));
   }, [runId, ended]);
+  const [openDirs, setOpenDirs] = useState<Set<string>>(() => new Set());
   if (!files || files.length === 0) return null;
   const fmt = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+  const href = (name: string) => `/api/runs/${runId}/artifacts/${name.split("/").map(encodeURIComponent).join("/")}`;
+  // Top-level files are the deliverables; a subfolder (Playwright's snapshots, say) is one line until opened.
+  const top = files.filter((f) => !f.name.includes("/"));
+  const dirs = new Map<string, Artifact[]>();
+  for (const f of files) {
+    const i = f.name.indexOf("/");
+    if (i > 0) {
+      const dir = f.name.slice(0, i);
+      dirs.set(dir, [...(dirs.get(dir) ?? []), f]);
+    }
+  }
+  const FileLink = ({ f, short = false }: { f: Artifact; short?: boolean }) => (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <a href={href(f.name)} download className="font-mono text-sm text-neutral-200 underline decoration-neutral-700 hover:text-white">
+        {short ? f.name.slice(f.name.indexOf("/") + 1) : f.name}
+      </a>
+      <span className="text-xs text-neutral-600">{fmt(f.size)}</span>
+    </span>
+  );
   return (
     <div className="mt-3 rounded border border-neutral-800 px-3 py-2">
       <div className="mb-1 font-mono text-xs uppercase tracking-wide text-neutral-500">Files</div>
-      <ul className="space-y-0.5">
-        {files.map((f) => (
-          <li key={f.name} className="flex items-baseline gap-3 text-sm">
-            <a
-              href={`/api/runs/${runId}/artifacts/${f.name.split("/").map(encodeURIComponent).join("/")}`}
-              download
-              className="font-mono text-neutral-200 underline decoration-neutral-700 hover:text-white"
-            >
-              {f.name}
-            </a>
-            <span className="text-xs text-neutral-600">{fmt(f.size)}</span>
-          </li>
-        ))}
-      </ul>
+      {top.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {top.map((f) => <FileLink key={f.name} f={f} />)}
+        </div>
+      )}
+      {[...dirs.entries()].map(([dir, list]) => (
+        <div key={dir} className="mt-1">
+          <button
+            onClick={() => setOpenDirs((prev) => { const n = new Set(prev); n.has(dir) ? n.delete(dir) : n.add(dir); return n; })}
+            className="text-xs text-neutral-500 hover:text-neutral-300"
+          >
+            {openDirs.has(dir) ? "\u25be" : "\u25b8"} <span className="font-mono">{dir}/</span> {list.length} file{list.length === 1 ? "" : "s"}
+          </button>
+          {openDirs.has(dir) && (
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 pl-4">
+              {list.map((f) => <FileLink key={f.name} f={f} short />)}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
