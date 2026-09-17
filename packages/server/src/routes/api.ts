@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { agentCreateSchema, agentPatchSchema, inferTrigger, DEFAULT_SPACE } from "../agentSchema.ts";
 import { nextRuns, rescheduleAgent } from "../triggers/cron.ts";
@@ -247,6 +247,17 @@ function redact(agent: Agent): Agent {
 api.get("/agents", (c) => c.json(listAgents().map(redact)));
 
 /** The whole roster's upcoming cron fires, flattened — the home view's "up next". */
+/** Next fires for an expression being typed, so the editor can say so before anything is saved. */
+api.get("/cron/preview", (c) => {
+  const cron = c.req.query("cron")?.trim();
+  if (!cron) return c.json({ error: "cron is required" }, 400);
+  try {
+    return c.json({ next: nextRuns(cron, c.req.query("tz") || null, 3) });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "invalid cron expression" }, 400);
+  }
+});
+
 api.get("/schedule", (c) => {
   const upcoming: { agentId: string; at: string }[] = [];
   for (const agent of listAgents()) {
@@ -994,35 +1005,27 @@ api.get("/system-prompt", (c) =>
 
 api.get("/stats", (c) => {
   const now = Math.floor(Date.now() / 1000);
-  const since = (seconds: number) =>
+  // `?space=` scopes the counters to that space's agents, so a space's landing
+  // page reports its own day rather than the whole roster's.
+  const space = c.req.query("space");
+  const inSpace = space ? inArray(runs.agentId, db.select({ id: agents.id }).from(agents).where(eq(agents.space, space))) : undefined;
+  const count = (...conds: (SQL | undefined)[]) =>
     db
       .select({ n: sql<number>`count(*)` })
       .from(runs)
-      .where(gte(runs.startedAt, now - seconds))
+      .where(and(...conds.filter((x): x is SQL => x !== undefined), inSpace))
       .get()?.n ?? 0;
 
-  const last24h = since(86_400);
-  const prev24h = Math.max(
-    0,
-    (db
-      .select({ n: sql<number>`count(*)` })
-      .from(runs)
-      .where(and(gte(runs.startedAt, now - 172_800), lt(runs.startedAt, now - 86_400)))
-      .get()?.n ?? 0),
-  );
-  const failed24h =
-    db
-      .select({ n: sql<number>`count(*)` })
-      .from(runs)
-      .where(and(gte(runs.startedAt, now - 86_400), eq(runs.status, "failed")))
-      .get()?.n ?? 0;
+  const last24h = count(gte(runs.startedAt, now - 86_400));
+  const prev24h = count(gte(runs.startedAt, now - 172_800), lt(runs.startedAt, now - 86_400));
+  const failed24h = count(gte(runs.startedAt, now - 86_400), eq(runs.status, "failed"));
 
   // Micro-dollars in the column; the client wants dollars.
   const spend24h =
     (db
       .select({ n: sql<number>`coalesce(sum(cost_usd), 0)` })
       .from(runs)
-      .where(gte(runs.startedAt, now - 86_400))
+      .where(and(gte(runs.startedAt, now - 86_400), inSpace))
       .get()?.n ?? 0) / 1_000_000;
 
   // Each agent's newest run, regardless of how many other agents ran since.

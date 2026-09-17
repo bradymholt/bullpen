@@ -12,6 +12,8 @@ export function useRun(runId: string | null) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [partial, setPartial] = useState("");
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  /** The server said 404: a deleted run, or a link from somewhere else. */
+  const [missing, setMissing] = useState(false);
   const seqRef = useRef(0);
 
   useEffect(() => {
@@ -22,9 +24,11 @@ export function useRun(runId: string | null) {
       setEvents([]);
       setPartial("");
       setApprovals([]);
+      setMissing(false);
       seqRef.current = 0;
       return;
     }
+    setMissing(false);
     let closed = false;
     seqRef.current = 0;
     setEvents([]);
@@ -32,12 +36,17 @@ export function useRun(runId: string | null) {
 
     const loadApprovals = () => api.approvals(runId).then((a) => !closed && setApprovals(a));
 
-    api.run(runId).then(({ run, events }) => {
-      if (closed) return;
-      setRun(run);
-      setEvents(events);
-      seqRef.current = events.at(-1)?.seq ?? 0;
-    });
+    api
+      .run(runId)
+      .then(({ run, events }) => {
+        if (closed) return;
+        setRun(run);
+        setEvents(events);
+        seqRef.current = events.at(-1)?.seq ?? 0;
+      })
+      .catch(() => {
+        if (!closed) setMissing(true);
+      });
     setApprovals([]);
     void loadApprovals();
 
@@ -76,5 +85,5 @@ export function useRun(runId: string | null) {
     };
   }, [runId]);
 
-  return { run, events, partial, approvals };
+  return { run, events, partial, approvals, missing };
 }
