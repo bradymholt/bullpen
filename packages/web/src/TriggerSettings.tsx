@@ -655,7 +655,34 @@ export function TriggerSettings({
             </div>
           )}
           {pollNote && <p className="font-mono text-xs text-neutral-400">{pollNote}</p>}
-          {!agent && <p className="text-xs text-neutral-600">Save the agent, then check it here.</p>}
+          <div className="flex items-center gap-2">
+            <button
+              disabled={!draft.pollUrl}
+              onClick={async () => {
+                setPollNote("checking…");
+                try {
+                  const r = await api.pollProbe({
+                    url: draft.pollUrl ?? "",
+                    headers: (draft.pollHeaders as Record<string, string> | undefined) ?? {},
+                    path: draft.pollPath ?? null,
+                    space: draft.space ?? null,
+                    env: (draft.env as Record<string, string> | undefined) ?? {},
+                  });
+                  setPollNote(
+                    `HTTP ${r.status}, ${r.bytes} bytes; watching ${draft.pollPath?.trim() ? draft.pollPath : "the whole response"} → ` +
+                      (r.watched ? `"${r.watched.slice(0, 120)}${r.watched.length > 120 ? "…" : ""}"` : "(empty — nothing at that path)"),
+                  );
+                } catch (e) {
+                  setPollNote(e instanceof Error ? e.message : String(e));
+                }
+              }}
+              className="rounded border border-neutral-700 px-3 py-1 text-xs hover:bg-neutral-800 disabled:opacity-40"
+              title="Fetch the URL now with these settings and show what the watched path resolves to. Records nothing."
+            >
+              Try the URL
+            </button>
+            {!agent && pollNote && <span className="text-xs text-neutral-400">{pollNote}</span>}
+          </div>
         </div>
       )}
 

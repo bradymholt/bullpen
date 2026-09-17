@@ -122,7 +122,7 @@ export function AgentEditor({
               trigger: "manual",
               env: {},
               allowedTools: [],
-              inheritMachineMcp: true,
+              inheritMachineMcp: false,
               sharedMcpPick: null,
               inheritUserSettings: true,
             });
@@ -184,9 +184,14 @@ export function AgentEditor({
     setBusy(true);
     setError(null);
     try {
+      // A condition row left half-filled is a stray click, not a rule.
+      const filters = (draft.filters ?? [])
+        .map((f) => ({ ...f, path: f.path.trim(), values: f.values.map((v) => v.trim()).filter(Boolean) }))
+        .filter((f) => f.path && f.values.length > 0);
+      const payload = draft.filters ? { ...draft, filters } : draft;
       const saved = agent
-        ? await api.updateAgent(agent.id, draft)
-        : await api.createAgent(draft);
+        ? await api.updateAgent(agent.id, payload)
+        : await api.createAgent(payload);
       loadedRef.current = JSON.stringify(draft);
       onDirtyChange?.(false);
       onSaved(saved);

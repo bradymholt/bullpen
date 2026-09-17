@@ -41,6 +41,30 @@ function payloadOf(body: string): Record<string, unknown> {
 }
 
 /**
+ * A dry check for the editor: fetch the URL as a run would, report what came
+ * back and what the watched path resolves to. Nothing is recorded.
+ */
+export async function probePoll(
+  opts: { url: string; headers: Record<string, string>; path: string | null; env: Record<string, string> },
+  timeoutMs = 20_000,
+): Promise<{ status: number; bytes: number; watched: string; hash: string }> {
+  const res = await fetch(interpolateSecrets(opts.url, opts.env), {
+    headers: interpolateSecrets(opts.headers, opts.env),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`${res.status} ${body.slice(0, 200)}`);
+  if (Buffer.byteLength(body) > MAX_BODY_BYTES) throw new Error("response too large");
+  const watched = atPath(body, opts.path);
+  return {
+    status: res.status,
+    bytes: Buffer.byteLength(body),
+    watched: watched.slice(0, 300),
+    hash: createHash("sha256").update(watched).digest("hex").slice(0, 12),
+  };
+}
+
+/**
  * One check. A first poll only records the shape it found — firing there would
  * stampede an agent with everything the endpoint already had.
  */
