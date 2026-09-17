@@ -288,6 +288,7 @@ export function App() {
   const [hookBase, setHookBase] = useState<string>(location.origin);
   const [build, setBuild] = useState<{ version: string; release: string | null; repoUrl: string | null } | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string } | null>(null);
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [setupGeneration, setSetupGeneration] = useState(0);
   // Setup can be re-entered on purpose to replace a token; it saves over the same keys.
   // `?setup=1` reopens onboarding on a configured install; there is no button for it.
@@ -1299,18 +1300,25 @@ export function App() {
                 </RailSection>
 
                 <RailSection title="What every agent is told">
-                  {systemPrompt ? (
+                  <p className="text-xs leading-relaxed text-neutral-600">
+                    A short paragraph bullpen appends to Claude Code&rsquo;s own system prompt on every run,
+                    before the agent&rsquo;s prompt &mdash; it is how the dashboard&rsquo;s files and webhook
+                    payloads work. Read-only.
+                  </p>
+                  <button
+                    onClick={() => setShowSystemPrompt((v) => !v)}
+                    className="text-xs text-neutral-500 hover:text-neutral-300"
+                  >
+                    {showSystemPrompt ? "\u25be" : "\u25b8"} {showSystemPrompt ? "Hide" : "Show"} the text
+                  </button>
+                  {showSystemPrompt && systemPrompt && (
                     <>
-                      <p className="text-xs leading-relaxed text-neutral-600">
-                        Appended to Claude Code&rsquo;s own system prompt on every run, before the agent&rsquo;s
-                        prompt. Read-only &mdash; it is how the dashboard&rsquo;s files and webhook payloads work.
-                      </p>
                       <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Every run</span>
                       <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.files}</pre>
                       <span className="block pt-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Webhook and poll runs, additionally</span>
                       <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.delivery}</pre>
                     </>
-                  ) : null}
+                  )}
                 </RailSection>
 
                 <RailSection title="Skills">
