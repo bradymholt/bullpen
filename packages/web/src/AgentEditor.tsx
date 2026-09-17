@@ -19,6 +19,9 @@ const field =
   "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none placeholder:text-neutral-700 focus:border-neutral-600";
 const label = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
 
+/** Kept in step with the server's ASK_TOOL; a question holds the run until answered. */
+const ASK_TOOL = "AskUserQuestion";
+
 /** Last connection state a run reported for a server. */
 function McpHealthDot({ status }: { status: string }) {
   const tone =
@@ -122,6 +125,7 @@ export function AgentEditor({
               trigger: "manual",
               env: {},
               allowedTools: [],
+              disallowedTools: [ASK_TOOL],
               inheritMachineMcp: false,
               sharedMcpPick: null,
               inheritUserSettings: true,
@@ -176,6 +180,7 @@ export function AgentEditor({
   );
   const knownModel = !draft.model || MODELS.some(([v]) => v === draft.model);
   const mode = draft.permissionMode ?? "auto";
+  const canAsk = !(draft.disallowedTools ?? []).includes(ASK_TOOL);
   // `auto` and `full` never prompt, so a permission rule changes nothing there.
   const toolRulesApply = mode !== "auto" && mode !== "full";
   const droppedEnv = seed ? Object.keys(seed.env) : [];
@@ -588,6 +593,27 @@ export function AgentEditor({
             )}
           </div>
         )}
+
+        <label className="flex items-center gap-2 pt-1 text-sm text-neutral-300">
+          <input
+            type="checkbox"
+            checked={canAsk}
+            onChange={(e) =>
+              set(
+                "disallowedTools",
+                e.target.checked
+                  ? (draft.disallowedTools ?? []).filter((t) => t !== ASK_TOOL)
+                  : [...(draft.disallowedTools ?? []), ASK_TOOL],
+              )
+            }
+          />
+          Let this agent ask me questions
+        </label>
+        <p className="-mt-1 text-xs text-neutral-600">
+          {canAsk
+            ? "It can stop mid-run to ask. Nobody answering holds the run for 15 minutes before the question is denied — and on a queue or skip agent, that blocks every trigger behind it."
+            : "It must decide for itself or stop and explain, which is what an unattended run wants."}
+        </p>
 
         <label className="flex items-center gap-2 pt-1 text-sm text-neutral-300">
           <input
