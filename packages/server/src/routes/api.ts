@@ -1124,20 +1124,19 @@ function gitRun(id: string) {
   return run;
 }
 
-/** The run as a file: `md` for people, `json` for everything (the raw event log included). */
+/** The run as a file: a plain-text transcript, or `?format=json` for the run record plus every event. */
 api.get("/runs/:id/export", (c) => {
   const run = db.select().from(runs).where(eq(runs.id, c.req.param("id"))).get();
   if (!run) return c.json({ error: "not found" }, 404);
   const agentName = getAgent(run.agentId)?.name ?? "agent";
   const events = eventsSince(run.id, 0);
-  const format = c.req.query("format") === "json" ? "json" : "md";
-  const body =
-    format === "json"
-      ? JSON.stringify({ exportedAt: new Date().toISOString(), agent: { id: run.agentId, name: agentName }, run, events }, null, 2)
-      : renderTranscript(run, agentName, events);
+  const json = c.req.query("format") === "json";
+  const body = json
+    ? JSON.stringify({ exportedAt: new Date().toISOString(), agent: { id: run.agentId, name: agentName }, run, events }, null, 2)
+    : renderTranscript(run, agentName, events);
   return c.body(body, 200, {
-    "content-type": format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
-    "content-disposition": `attachment; filename="${exportFilename(agentName, run, format)}"`,
+    "content-type": json ? "application/json; charset=utf-8" : "text/plain; charset=utf-8",
+    "content-disposition": `attachment; filename="${exportFilename(agentName, run, json ? "json" : "txt")}"`,
   });
 });
 

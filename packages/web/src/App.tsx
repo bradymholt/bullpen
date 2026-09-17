@@ -1852,25 +1852,7 @@ export function App() {
               >
                 {ago(run.startedAt)}
               </span>
-              <span className="ml-auto flex items-center gap-1 text-xs text-neutral-500">
-                <span>Export</span>
-                <a
-                  href={`/api/runs/${run.id}/export?format=md`}
-                  download
-                  title="The run as a readable Markdown transcript"
-                  className="rounded border border-neutral-800 px-1.5 py-0.5 text-neutral-400 hover:border-neutral-600 hover:text-neutral-100"
-                >
-                  transcript
-                </a>
-                <a
-                  href={`/api/runs/${run.id}/export?format=json`}
-                  download
-                  title="Everything — the run record and every event"
-                  className="rounded border border-neutral-800 px-1.5 py-0.5 text-neutral-400 hover:border-neutral-600 hover:text-neutral-100"
-                >
-                  JSON
-                </a>
-              </span>
+              <span className="ml-auto flex items-center gap-2">
               {isQueued && (
                 <button
                   onClick={() => api.stop(run.id).then(() => setView({ kind: "detail", id: run.agentId }))}
@@ -1912,6 +1894,15 @@ export function App() {
                   </button>
                 </>
               )}
+                <a
+                  href={`/api/runs/${run.id}/export`}
+                  download
+                  title="Save this run as a text transcript"
+                  className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-900"
+                >
+                  Export
+                </a>
+              </span>
             </header>
             <div
               ref={outputRef}
