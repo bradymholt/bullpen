@@ -97,6 +97,19 @@ const fields = {
  * `supervised`, because an unattended run that stops for approval never
  * resumes — there is no prompt timeout and no one watching a cron fire.
  */
+/** The question tool, which holds a run open until somebody answers it. */
+export const ASK_TOOL = "AskUserQuestion";
+
+/**
+ * A mode that never shows a permission prompt has nobody watching to answer a
+ * question either, so the question would just hold the run until it times out.
+ * Only a create decides this; a PATCH must leave the agent's own list alone.
+ */
+export function defaultDisallowedTools(mode: string | undefined): string[] {
+  const prompts = mode === "supervised" || mode === "acceptEdits" || mode === "plan";
+  return prompts ? [] : [ASK_TOOL];
+}
+
 export const AGENT_DEFAULTS = {
   prompt: "",
   space: DEFAULT_SPACE,
@@ -164,7 +177,11 @@ export const agentCreateSchema = z.preprocess(
     // issued — Slack's signing secret is 32 hex, so shape can't be assumed.
     webhookSecret: z.string().min(16).max(200).optional(),
   }),
-).transform((v) => ({ ...AGENT_DEFAULTS, ...v }));
+).transform((v) => ({
+  ...AGENT_DEFAULTS,
+  ...(v.disallowedTools === undefined ? { disallowedTools: defaultDisallowedTools(v.permissionMode) } : {}),
+  ...v,
+}));
 
 export const agentPatchSchema = z.preprocess(withoutServerFields, base.partial());
 

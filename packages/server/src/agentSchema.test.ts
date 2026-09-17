@@ -112,3 +112,29 @@ describe("patching", () => {
     expect("allowedTools" in parsed).toBe(false);
   });
 });
+
+describe("the question tool", () => {
+  it("is disallowed by default in modes that never prompt", () => {
+    for (const permissionMode of ["auto", "full", "locked"]) {
+      const agent = agentCreateSchema.parse({ name: "a", permissionMode });
+      expect(agent.disallowedTools).toEqual(["AskUserQuestion"]);
+    }
+  });
+
+  it("is allowed by default in modes that do prompt", () => {
+    for (const permissionMode of ["supervised", "acceptEdits", "plan"]) {
+      const agent = agentCreateSchema.parse({ name: "a", permissionMode });
+      expect(agent.disallowedTools).toEqual([]);
+    }
+  });
+
+  it("never overrides a list the caller sent", () => {
+    const agent = agentCreateSchema.parse({ name: "a", permissionMode: "auto", disallowedTools: [] });
+    expect(agent.disallowedTools).toEqual([]);
+  });
+
+  it("is not applied by a patch, which must leave the agent's own list alone", () => {
+    const patched = agentPatchSchema.parse({ permissionMode: "auto" });
+    expect(patched).not.toHaveProperty("disallowedTools");
+  });
+});
