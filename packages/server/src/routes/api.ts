@@ -28,7 +28,7 @@ import { claudeConfigDir, claudeMdState, findSkillRoots, listSkills, skillDirsIn
 import { cancelMcpLogin, completeMcpLogin, getMcpLogin, mcpLogout, startMcpLogin } from "../mcpLogin.ts";
 import { exportFilename, renderTranscript } from "../transcript.ts";
 import { artifactPath, listArtifacts } from "../artifacts.ts";
-import { SYSTEM_NOTE } from "../runs/systemNote.ts";
+import { noteworthyConfigDir, SYSTEM_NOTE } from "../runs/systemNote.ts";
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 
@@ -38,6 +38,12 @@ const MIME: Record<string, string> = {
   ".json": "application/json", ".csv": "text/csv; charset=utf-8", ".html": "text/html; charset=utf-8", ".zip": "application/zip",
 };
 const mimeOf = (name: string) => MIME[extname(name).toLowerCase()] ?? "application/octet-stream";
+/**
+ * Types a browser can show in place. An HTML report is usually the email the
+ * agent just sent, and downloading a file to see what went out is a poor way
+ * to read it. Anything else still downloads.
+ */
+const INLINE_TYPES = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".txt", ".md", ".json", ".csv", ".html"]);
 import { foldMcpHealth } from "../mcp.ts";
 import {
   commit as gitCommit,
@@ -1036,9 +1042,16 @@ api.delete("/agents/:id", (c) => {
  * to be asked rather than derived from the page it already has.
  */
 /** The paragraph bullpen appends to every run's system prompt, so the operator can read what agents are told. */
-api.get("/system-prompt", (c) =>
-  c.json({ files: SYSTEM_NOTE.files, delivery: SYSTEM_NOTE.delivery("webhook") }),
-);
+api.get("/system-prompt", (c) => {
+  // The config-dir paragraph is conditional, so report it as null rather than
+  // as prose every box gets: on a laptop `~/.claude` is right and saying so is noise.
+  const configDir = noteworthyConfigDir();
+  return c.json({
+    files: SYSTEM_NOTE.files,
+    delivery: SYSTEM_NOTE.delivery("webhook"),
+    config: configDir ? SYSTEM_NOTE.config(configDir) : null,
+  });
+});
 
 api.get("/stats", (c) => {
   const now = Math.floor(Date.now() / 1000);
@@ -1188,10 +1201,19 @@ api.get("/runs/:id/artifacts/:name{.+}", async (c) => {
   if (!p) return c.json({ error: "not found" }, 404);
   const base = basename(p);
   const file = await readFile(p);
+  // `?inline=1` previews instead of downloading. An agent wrote this markup, and
+  // it would otherwise render on the dashboard's own origin, so the response is
+  // sandboxed: an opaque origin with no scripts, plugins, forms or top-level
+  // navigation, and nosniff so a mislabelled file can't become something else.
+  // Both headers are inline-only — a download has no origin to abuse, and
+  // nosniff on one would stop the browser rendering a screenshot saved under an
+  // extension `MIME` doesn't know, which is how `<img>` in the timeline works.
+  const inline = c.req.query("inline") === "1" && INLINE_TYPES.has(extname(base).toLowerCase());
   return c.body(file, 200, {
     "content-type": mimeOf(base),
     "content-length": String(file.byteLength),
-    "content-disposition": `attachment; filename="${base.replace(/"/g, "")}"`,
+    "content-disposition": `${inline ? "inline" : "attachment"}; filename="${base.replace(/"/g, "")}"`,
+    ...(inline ? { "content-security-policy": "sandbox", "x-content-type-options": "nosniff" } : {}),
   });
 });
 

@@ -22,7 +22,23 @@ type RunLike = {
 };
 
 const RULE = "─".repeat(72);
-const stamp = (s: number) => new Date(s * 1000).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+
+/**
+ * The server's own zone, not UTC: the container runs with a TZ set, so that is
+ * the clock every timestamp an agent writes — into a report, an email, a
+ * calendar event — is on. A transcript in UTC reads a day off from the run it
+ * describes. The zone is named so the reading is never ambiguous, and a box
+ * left on UTC still prints "UTC".
+ */
+const CLOCK = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+  hour12: false, timeZoneName: "short",
+});
+const stamp = (s: number) => {
+  const p = Object.fromEntries(CLOCK.formatToParts(new Date(s * 1000)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} ${p.timeZoneName}`;
+};
 
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n… (${text.length - max} more characters)` : text;
@@ -105,9 +121,13 @@ export function renderTranscript(run: RunLike, agentName: string, events: Ev[], 
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
-/** A file name that says what it is and sorts by time: `agent-2026-09-16T2305-1a2b3c4d.txt`. */
+/**
+ * A file name that says what it is and sorts by time: `agent-2026-09-16T2305-1a2b3c4d.txt`.
+ * On the server's clock, like the stamps inside the file — a name an hour off
+ * from its own header is how you end up looking for the wrong export.
+ */
 export function exportFilename(agentName: string, run: { id: string; startedAt: number }, ext: string): string {
   const slug = agentName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "run";
-  const when = new Date(run.startedAt * 1000).toISOString().slice(0, 16).replace(":", "");
-  return `${slug}-${when}-${run.id.slice(0, 8)}.${ext}`;
+  const p = Object.fromEntries(CLOCK.formatToParts(new Date(run.startedAt * 1000)).map((x) => [x.type, x.value]));
+  return `${slug}-${p.year}-${p.month}-${p.day}T${p.hour}${p.minute}-${run.id.slice(0, 8)}.${ext}`;
 }

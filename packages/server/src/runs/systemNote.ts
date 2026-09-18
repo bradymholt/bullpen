@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { OUT_DIR } from "../artifacts.ts";
 
 /**
@@ -21,6 +23,18 @@ export const SYSTEM_NOTE = {
     `download. When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming ` +
     `the files you saved there.`,
   /**
+   * Only when the config dir is not `~/.claude`. Agents reach for
+   * `~/.claude/skills` by reflex, and in the container HOME is /home/node
+   * while CLAUDE_CONFIG_DIR is on the data volume — so that guess costs a
+   * turn, and a failed `cd` at the top of a run, every time.
+   */
+  config: (dir: string) =>
+    `Claude Code's configuration directory on this machine is ${dir}, not ~/.claude: skills are ` +
+    `in ${join(dir, "skills")} and settings in ${join(dir, "settings.json")}. $CLAUDE_CONFIG_DIR ` +
+    `holds the same path. A skill's own files — its scripts, config and data — sit in its ` +
+    `directory there, so reach them by absolute path; your working directory is somewhere else ` +
+    `entirely, and a shell that cd's out of it is reset on the next command.`,
+  /**
    * Only when the agent has the keyring password, since gog without it cannot
    * authenticate and an agent told otherwise spends turns finding that out.
    */
@@ -30,11 +44,24 @@ export const SYSTEM_NOTE = {
     `commands, and \`--json\` or \`--plain\` give parseable output.`,
 };
 
+/**
+ * The config dir a run will actually see: its own env wins over the process,
+ * the same order `resolveEnv()` hands to the harness. Null when it is the
+ * default `~/.claude`, which needs no explaining.
+ */
+export function noteworthyConfigDir(env: Record<string, string> = {}): string | null {
+  const dir = env.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR;
+  if (!dir) return null;
+  return resolve(dir) === join(homedir(), ".claude") ? null : dir;
+}
+
 export function systemNote(trigger: string, env: Record<string, string> = {}): string {
   const hasGog = Boolean(env.GOG_KEYRING_PASSWORD ?? process.env.GOG_KEYRING_PASSWORD);
+  const configDir = noteworthyConfigDir(env);
   return [
     trigger === "webhook" || trigger === "poll" ? SYSTEM_NOTE.delivery(trigger) : null,
     SYSTEM_NOTE.files,
+    configDir ? SYSTEM_NOTE.config(configDir) : null,
     hasGog ? SYSTEM_NOTE.gog : null,
   ]
     .filter(Boolean)

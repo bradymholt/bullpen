@@ -216,7 +216,7 @@ export const api = {
   /** Members go to the default space; the space's secret and env are dropped. */
   removeSpace: (name: string) =>
     fetch(`/api/spaces/${encodeURIComponent(name)}`, { method: "DELETE" }).then(json<{ moved: number; name: string }>),
-  systemPrompt: () => fetch("/api/system-prompt").then(json<{ files: string; delivery: string }>),
+  systemPrompt: () => fetch("/api/system-prompt").then(json<{ files: string; delivery: string; config: string | null }>),
   pollProbe: (body: { url: string; headers: Record<string, string>; path: string | null; space: string | null; env: Record<string, string> }) =>
     fetch("/api/poll/probe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(
       json<{ status: number; bytes: number; watched: string; hash: string }>,

@@ -48,7 +48,8 @@ function mdComponents(runId: string | undefined) {
     img: ({ src, alt }: { src?: string; alt?: string }) => {
       const to = artifactHref(runId, src);
       if (!to) return <span className="text-neutral-500">[image: {alt || src}]</span>;
-      return <img src={to} alt={alt ?? ""} className="my-2 max-h-96 rounded border border-neutral-800" />;
+      // Ask for the inline disposition: a screenshot here is meant to be looked at.
+      return <img src={to.startsWith("/api/") ? `${to}?inline=1` : to} alt={alt ?? ""} className="my-2 max-h-96 rounded border border-neutral-800" />;
     },
   };
 }

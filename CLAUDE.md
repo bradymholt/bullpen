@@ -150,7 +150,13 @@ evidence a failure leaves.
 says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under
 the data dir *before* an ephemeral workspace is deleted — that ordering is the whole point — and
 appends an `artifacts` event. The run page lists them from disk (nothing in the database) and the
-download route resolves names inside that one directory, refusing `..` outright.
+download route resolves names inside that one directory, refusing `..` outright. `?inline=1`
+previews a web type in place instead of downloading — an agent's `report.html` is usually the
+email it just sent, and downloading a file to find out what went out is a poor way to read it.
+That response is served `Content-Security-Policy: sandbox` plus `nosniff`: the markup is an
+agent's, it renders on the dashboard's own origin, and an opaque origin with no scripts is what
+keeps a preview from reaching the API that origin serves. Anything not in `INLINE_TYPES` ignores
+the parameter and downloads.
 
 **Write to `run_events` before broadcasting.** A client asking for `sinceSeq` must never be
 able to miss an event a live subscriber already saw.
@@ -266,7 +272,10 @@ set in the image and honoured by both the harness and `detectClaudeCredential()`
 MCP) is simply absent — agents own their MCP config anyway. `GOG_HOME=/data/gog` does the same
 for gog. **Never put a `CLAUDE.md` under `/data`**: workspaces live there, and the harness
 collects `CLAUDE.md` from every parent of cwd — the same trap as `packages/server/data/`, one
-level up.
+level up. Because `HOME` is still `/home/node`, an agent reaching for `~/.claude/skills` — which
+is the reflex — gets `No such file or directory` and burns a turn finding the real path, so
+`systemNote` names the config dir whenever it is not `~/.claude`; it stays silent on a laptop,
+where the default is already right.
 
 **Shared MCP servers on a box come from a catalog the operator picks from, never from boot.**
 `mcpCatalog`/`applyMcpCatalog` in `machineMcp.ts` offer Playwright (when the image has the wrapper)
@@ -337,6 +346,9 @@ carry the `.ts` extension.
 - **Single instance assumed.** Two containers on one DB double-fire every cron job.
 - **No UI auth by design** — private network only. Webhooks carry their own per-agent secret
   because they're reachable by anything that can route to the box.
+- **Transcript exports use the server's clock**, since that is the one an agent's shell and
+  everything it writes were on. The dashboard renders timestamps in the *browser's* zone, so a
+  run page and its exported transcript can still disagree when you read them from elsewhere.
 
 ## Testing
 

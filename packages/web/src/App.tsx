@@ -72,6 +72,9 @@ function McpHealthBadge({ h, compact = false }: { h?: { status: string; at: numb
   return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} title={title} />;
 }
 
+/** Extensions the artifact route will serve inline; everything else only downloads. */
+const VIEWABLE = /\.(png|jpe?g|gif|webp|svg|pdf|txt|md|json|csv|html)$/i;
+
 /** Files the agent left in .bullpen/out — fetched once the run has ended, since that is when they are collected. */
 function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
   const [files, setFiles] = useState<Artifact[] | null>(null);
@@ -84,6 +87,9 @@ function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
   if (!files || files.length === 0) return null;
   const fmt = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
   const href = (name: string) => `/api/runs/${runId}/artifacts/${name.split("/").map(encodeURIComponent).join("/")}`;
+  // A report is usually the thing that was sent somewhere; reading it should not
+  // mean downloading it first. The server serves these sandboxed.
+  const viewable = (name: string) => VIEWABLE.test(name);
   // Top-level files are the deliverables; a subfolder (Playwright's snapshots, say) is one line until opened.
   const top = files.filter((f) => !f.name.includes("/"));
   const dirs = new Map<string, Artifact[]>();
@@ -100,6 +106,16 @@ function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
         {short ? f.name.slice(f.name.indexOf("/") + 1) : f.name}
       </a>
       <span className="text-xs text-neutral-600">{fmt(f.size)}</span>
+      {viewable(f.name) && (
+        <a
+          href={`${href(f.name)}?inline=1`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-neutral-500 hover:text-neutral-300"
+        >
+          view
+        </a>
+      )}
     </span>
   );
   return (
@@ -314,7 +330,7 @@ export function App() {
   // Webhook URLs are built from this: the funneled public base if the server has one, else this tab's origin.
   const [hookBase, setHookBase] = useState<string>(location.origin);
   const [build, setBuild] = useState<{ version: string; release: string | null; repoUrl: string | null } | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string } | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string; config: string | null } | null>(null);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [showClaudeMd, setShowClaudeMd] = useState(false);
   const [setupGeneration, setSetupGeneration] = useState(0);
@@ -1626,6 +1642,12 @@ export function App() {
                     <div className="space-y-2 pl-4">
                       <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Every run</span>
                       <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.files}</pre>
+                      {systemPrompt.config && (
+                        <>
+                          <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Every run, because this box&rsquo;s config dir is not ~/.claude</span>
+                          <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.config}</pre>
+                        </>
+                      )}
                       <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Webhook and poll runs, additionally</span>
                       <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.delivery}</pre>
                     </div>

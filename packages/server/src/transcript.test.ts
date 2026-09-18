@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { exportFilename, renderTranscript } from "./transcript.ts";
 
 const run = {
@@ -54,5 +54,43 @@ describe("renderTranscript", () => {
 
   it("names the file by agent, time and run", () => {
     expect(exportFilename("Code Review!", run, "txt")).toMatch(/^code-review-2026-\d\d-\d\dT\d{4}-1a2b3c4d\.txt$/);
+  });
+});
+
+/**
+ * The stamps have to match the clock the agent's own shell was on, or a
+ * transcript reads a day off from the report the run emailed. The formatter is
+ * built at module load, so each case needs a fresh import under its own TZ.
+ */
+describe("transcript timestamps", () => {
+  // 2026-09-18 03:42:58 UTC — late the previous evening in Chicago, the case
+  // where a UTC transcript and the email the run sent disagree about the date.
+  const lateRun = { ...run, startedAt: 1789702978, endedAt: 1789703107 };
+  const original = process.env.TZ;
+  afterEach(() => {
+    if (original === undefined) delete process.env.TZ;
+    else process.env.TZ = original;
+  });
+
+  async function render(tz: string) {
+    process.env.TZ = tz;
+    vi.resetModules();
+    const mod = await import("./transcript.ts");
+    return { txt: mod.renderTranscript(lateRun, "x", []), name: mod.exportFilename("x", lateRun, "txt") };
+  }
+
+  it("stamps a run on the server's zone, not UTC", async () => {
+    const { txt } = await render("America/Chicago");
+    expect(txt).toContain("Started: 2026-09-17 22:42:58 CDT");
+  });
+
+  it("still says UTC on a box left on UTC", async () => {
+    const { txt } = await render("UTC");
+    expect(txt).toContain("Started: 2026-09-18 03:42:58 UTC");
+  });
+
+  it("names the export on the same clock as the stamps inside it", async () => {
+    const { name } = await render("America/Chicago");
+    expect(name).toBe("x-2026-09-17T2242-1a2b3c4d.txt");
   });
 });
