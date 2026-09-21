@@ -214,16 +214,14 @@ function SpaceSwitcher({
   className = "",
 }: {
   spaces: string[];
-  current: SpaceFilter;
+  current: string;
   subtitle: string;
-  onPick: (next: SpaceFilter) => void;
+  onPick: (next: string) => void;
   onSettings: (name: string) => void;
   onNew: () => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const currentName = current.kind === "all" ? null : current.name;
-  const options: (string | null)[] = [null, ...spaces];
   const item = "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-neutral-800";
   return (
     <div className={`relative shrink-0 ${className}`}>
@@ -233,7 +231,7 @@ function SpaceSwitcher({
         className="flex w-full items-center gap-2 rounded border border-neutral-800 bg-neutral-900/60 p-2 text-left hover:border-neutral-700"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{currentName ?? "All spaces"}</span>
+          <span className="block truncate text-sm font-medium">{current}</span>
           <span className="block truncate text-xs text-neutral-500">{subtitle}</span>
         </span>
         <ChevronIcon />
@@ -247,28 +245,19 @@ function SpaceSwitcher({
             className="fixed inset-0 z-10 cursor-default"
           />
           <div className="absolute inset-x-0 z-20 mt-1 overflow-hidden rounded border border-neutral-700 bg-neutral-900 py-1 shadow-xl">
-            {options.map((name) => (
-              <button
-                key={name ?? "\u0000all"}
-                onClick={() => {
-                  setOpen(false);
-                  onPick(name === null ? { kind: "all" } : { kind: "space", name });
-                }}
-                className={item}
-              >
-                <span className={`w-3 shrink-0 text-xs ${name === currentName ? "text-neutral-100" : "text-transparent"}`}>
+            {spaces.map((name) => (
+              <button key={name} onClick={() => { setOpen(false); onPick(name); }} className={item}>
+                <span className={`w-3 shrink-0 text-xs ${name === current ? "text-neutral-100" : "text-transparent"}`}>
                   &bull;
                 </span>
-                <span className="truncate">{name ?? "All spaces"}</span>
+                <span className="truncate">{name}</span>
               </button>
             ))}
             <div className="my-1 border-t border-neutral-800" />
-            {currentName !== null && (
-              <button onClick={() => { setOpen(false); onSettings(currentName); }} className={`${item} text-neutral-400`}>
-                <span className="w-3 shrink-0" />
-                Space settings&hellip;
-              </button>
-            )}
+            <button onClick={() => { setOpen(false); onSettings(current); }} className={`${item} text-neutral-400`}>
+              <span className="w-3 shrink-0" />
+              Space settings&hellip;
+            </button>
             <button onClick={() => { setOpen(false); onNew(); }} className={`${item} text-neutral-400`}>
               <span className="w-3 shrink-0" />
               New space&hellip;
@@ -280,28 +269,21 @@ function SpaceSwitcher({
   );
 }
 
-/**
- * A tagged union rather than `string | null` so that "no space" is a bucket you
- * can select, not the absence of a selection — an agent with a null space is
- * otherwise reachable from nowhere once the roster remembers a space.
- */
-type SpaceFilter = { kind: "all" } | { kind: "space"; name: string };
-
 const SPACE_KEY = "bullpen.space";
 
-function loadSpaceFilter(): SpaceFilter {
+/** The tagged union this replaced also had an "all" arm, so old values parse. */
+function loadSpace(): string {
   try {
     const raw = localStorage.getItem(SPACE_KEY);
-    if (!raw) return { kind: "all" };
-    const parsed = JSON.parse(raw) as SpaceFilter;
-    if (parsed?.kind === "all") return { kind: "all" };
-    if (parsed?.kind === "space" && typeof parsed.name === "string") {
-      return { kind: "space", name: parsed.name };
-    }
+    if (!raw) return DEFAULT_SPACE;
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed === "string") return parsed;
+    const name = (parsed as { name?: unknown } | null)?.name;
+    if (typeof name === "string") return name;
   } catch {
     // Private windows and blocked site data throw rather than returning null.
   }
-  return { kind: "all" };
+  return DEFAULT_SPACE;
 }
 
 
@@ -408,9 +390,7 @@ export function App() {
   const [forceSetup, setForceSetup] = useState(() => new URLSearchParams(location.search).has("setup"));
   const [skillIndex, setSkillIndex] = useState(0);
   const [liveMode, setLiveMode] = useState("auto");
-  const [space, setSpace] = useState<SpaceFilter>(() =>
-    route.space ? { kind: "space", name: route.space } : loadSpaceFilter(),
-  );
+  const [space, setSpace] = useState<string>(() => route.space ?? loadSpace());
   const [spaceDraft, setSpaceDraft] = useState("");
   const [spaceSecret, setSpaceSecret] = useState<{
     configured: boolean;
@@ -479,7 +459,7 @@ export function App() {
         return;
       }
       setEditDirty(false);
-      if (next.space) setSpace({ kind: "space", name: next.space });
+      if (next.space) setSpace(next.space);
       setViewState(next.view);
       setPendingEdit(next.editId ?? null);
     };
@@ -573,7 +553,7 @@ export function App() {
     try {
       localStorage.setItem(SPACE_KEY, JSON.stringify(space));
     } catch {
-      // Not worth surfacing: the filter just won't survive a reload.
+      // Not worth surfacing: the space just won't survive a reload.
     }
   }, [space]);
 
@@ -695,26 +675,25 @@ export function App() {
   const spaces = [...new Set(agents.map((a) => a.space))].sort();
   // A remembered space that no longer exists (renamed, or its last agent
   // deleted) shows everything rather than an empty roster.
-  const active: SpaceFilter =
-    space.kind === "space" && !spaces.includes(space.name) ? { kind: "all" } : space;
-  const visibleAgents = active.kind === "all" ? agents : agents.filter((a) => a.space === active.name);
+  const active = spaces.includes(space) ? space : (spaces[0] ?? DEFAULT_SPACE);
+  const visibleAgents = agents.filter((a) => a.space === active);
 
 
   /** The space's landing: the home view filtered to it. Bypasses the guard — callers have settled that. */
   const goToSpace = (name: string) => {
-    setSpace({ kind: "space", name });
+    setSpace(name);
     setViewState({ kind: "home" });
     const path = `/spaces/${encodeURIComponent(name)}`;
     if (path !== location.pathname) history.pushState(null, "", path);
   };
 
   /** The switcher's own navigation: the scope changes and the view goes back to its home. */
-  const pickSpace = (next: SpaceFilter) => {
+  const pickSpace = (next: string) => {
     if (!confirmLeave({ kind: "home" })) return;
     setEditDirty(false);
     setSpace(next);
     setViewState({ kind: "home" });
-    const path = next.kind === "all" ? "/" : `/spaces/${encodeURIComponent(next.name)}`;
+    const path = `/spaces/${encodeURIComponent(next)}`;
     if (path !== location.pathname) history.pushState(null, "", path);
   };
 
@@ -740,11 +719,11 @@ export function App() {
   // The space whose deliveries are on screen: the settings page's, or the
   // one the home view is filtered to. Refetched with everything else.
   const deliveriesSpace =
-    view.kind === "space" ? view.name : view.kind === "home" && active.kind === "space" ? active.name : null;
+    view.kind === "space" ? view.name : view.kind === "home" ? active : null;
   // Stats follow the space filter: the landing's numbers are that space's.
   useEffect(() => {
-    void api.stats(active.kind === "space" ? active.name : null).then(setStats).catch(() => setStats(null));
-  }, [active.kind === "space" ? active.name : "", refreshTick]);
+    void api.stats(active).then(setStats).catch(() => setStats(null));
+  }, [active, refreshTick]);
 
   const deliveriesSpaceHasWebhooks =
     deliveriesSpace !== null && agents.some((a) => a.space === deliveriesSpace && a.trigger === "webhook");
@@ -867,12 +846,6 @@ export function App() {
                 <div className="min-w-0">
                   <div className="truncate font-medium">{a.name}</div>
                   <div className="mt-0.5 text-xs text-neutral-500">
-                    {/* Only worth the room when the roster isn't already one space. */}
-                    {active.kind === "all" && a.space && (
-                      <span className="mr-1.5 rounded bg-neutral-800 px-1 py-px text-[10px] text-neutral-400">
-                        {a.space}
-                      </span>
-                    )}
                     {workspaceKindLabel(a.workspaceKind)} · {modeLabel(a.permissionMode)}
                   </div>
                   <div className="mt-0.5 text-xs">
@@ -959,7 +932,7 @@ export function App() {
               agent={view.agent}
               seed={view.seed ?? null}
               spaces={spaces}
-              defaultSpace={pendingSpace ?? (active.kind === "space" ? active.name : null)}
+              defaultSpace={pendingSpace ?? active}
               hookBase={hookBase}
               onSaved={() => {
                 // Saved, so there is nothing to discard — and the guard reads the ref
@@ -1860,18 +1833,14 @@ export function App() {
         {view.kind === "home" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-lg font-semibold">
-                {active.kind === "space" ? active.name : "All agents"}
-              </h2>
-              {active.kind === "space" && (
-                <button
-                  onClick={() => setView({ kind: "space", name: active.name })}
-                  title="Name, environment, shared webhook"
-                  className="flex shrink-0 items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
-                >
-                  <PencilIcon /> Edit
-                </button>
-              )}
+              <h2 className="text-lg font-semibold">{active}</h2>
+              <button
+                onClick={() => setView({ kind: "space", name: active })}
+                title="Name, environment, shared webhook"
+                className="flex shrink-0 items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+              >
+                <PencilIcon /> Edit
+              </button>
             </div>
             <p className="mt-1 text-xs text-neutral-500">
               {visibleAgents.length} agent{visibleAgents.length === 1 ? "" : "s"}
@@ -1939,7 +1908,7 @@ export function App() {
                 {scopedRuns.length === 0 ? (
                   <p className="text-sm text-neutral-600">Nothing has run yet.</p>
                 ) : (
-                  scopedRuns.slice(0, active.kind === "space" && deliveriesSpaceHasWebhooks ? 8 : 15).map((r) => (
+                  scopedRuns.slice(0, deliveriesSpaceHasWebhooks ? 8 : 15).map((r) => (
                     <button
                       key={r.id}
                       onClick={() => setView({ kind: "run", id: r.id })}
@@ -1965,7 +1934,7 @@ export function App() {
                 )}
               </HomeSection>
 
-              {active.kind === "space" && deliveriesSpaceHasWebhooks && (
+              {deliveriesSpaceHasWebhooks && (
                 <HomeSection
                   title="Recent webhook deliveries"
                   hint="What arrived at this space's shared webhook URL, and which agents it reached."
