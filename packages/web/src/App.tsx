@@ -145,6 +145,29 @@ function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
   );
 }
 
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`-mb-px border-b-2 px-3 py-2 text-sm transition ${
+        active
+          ? "border-neutral-100 text-neutral-100"
+          : "border-transparent text-neutral-500 hover:text-neutral-300"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
@@ -304,10 +327,10 @@ const STATUS_COLOR: Record<string, string> = {
 
 type View =
   | { kind: "run"; id: string }
-  /** The agent's own page: what it is, and everything it has run. */
-  | { kind: "detail"; id: string }
-  /** `seed` prefills a brand-new agent from an existing one. */
-  | { kind: "edit"; agent: Agent | null; seed?: Agent }
+  /** The agent's own page: its history, and its settings behind a tab. */
+  | { kind: "detail"; id: string; tab?: "settings" }
+  /** Only ever a brand-new agent; `seed` prefills it from an existing one. */
+  | { kind: "edit"; seed?: Agent }
   /** Everything a space owns: its name, and the webhook the whole space answers. */
   | { kind: "space"; name: string }
   /** Global env and the box's own state — what `.env` used to be for. */
@@ -315,27 +338,32 @@ type View =
   /** The roster at a glance, outside any one agent. */
   | { kind: "home" };
 
+/** What a view is editing, so moving within the same form isn't "leaving" it. */
+function editingKey(v: View): string | null {
+  if (v.kind === "space") return `space:${v.name}`;
+  if (v.kind === "edit") return "agent:new";
+  if (v.kind === "detail" && v.tab === "settings") return `agent:${v.id}`;
+  return null;
+}
+
 function viewToPath(v: View): string {
-  if (v.kind === "detail") return `/agents/${v.id}`;
+  if (v.kind === "detail") return `/agents/${v.id}${v.tab === "settings" ? "/settings" : ""}`;
   if (v.kind === "run") return `/runs/${v.id}`;
-  if (v.kind === "edit") return v.agent ? `/agents/${v.agent.id}/edit` : "/agents/new";
+  if (v.kind === "edit") return "/agents/new";
   if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/edit`;
   if (v.kind === "settings") return "/settings";
   return "/";
 }
 
-/**
- * The edit view holds a whole agent, which a cold load doesn't have yet, so an
- * edit URL lands on the agent page and `editId` upgrades it once agents arrive.
- */
-function pathToView(path: string): { view: View; editId?: string; space?: string } {
+function pathToView(path: string): { view: View; space?: string } {
   const p = path.replace(/\/+$/, "") || "/";
-  if (p === "/agents/new") return { view: { kind: "edit", agent: null } };
+  if (p === "/agents/new") return { view: { kind: "edit" } };
   if (p === "/settings") return { view: { kind: "settings" } };
   let m = /^\/runs\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "run", id: m[1]! } };
-  m = /^\/agents\/([\w-]+)\/edit$/.exec(p);
-  if (m) return { view: { kind: "detail", id: m[1]! }, editId: m[1]! };
+  // `/edit` is where the settings tab used to live as a page of its own.
+  m = /^\/agents\/([\w-]+)\/(?:settings|edit)$/.exec(p);
+  if (m) return { view: { kind: "detail", id: m[1]!, tab: "settings" } };
   m = /^\/agents\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]! } };
   m = /^\/spaces\/([^/]+)\/edit$/.exec(p);
@@ -351,7 +379,6 @@ export function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [route] = useState(() => pathToView(location.pathname));
   const [view, setViewState] = useState<View>(route.view);
-  const [pendingEdit, setPendingEdit] = useState<string | null>(route.editId ?? null);
 
   const [editDirty, setEditDirty] = useState(false);
   const viewRef = useRef(view);
@@ -360,16 +387,19 @@ export function App() {
 
   /** Leaving an editor with unsaved edits asks first; everything else is free. */
   const confirmLeave = (next: View): boolean => {
-    const cur = viewRef.current;
-    if ((cur.kind !== "edit" && cur.kind !== "space") || next.kind === cur.kind || !dirtyRef.current) return true;
-    return confirm(cur.kind === "edit" ? "Discard unsaved changes to this agent?" : "Discard unsaved changes to this space?");
+    const key = editingKey(viewRef.current);
+    if (key === null || key === editingKey(next) || !dirtyRef.current) return true;
+    return confirm(
+      key.startsWith("space:")
+        ? "Discard unsaved changes to this space?"
+        : "Discard unsaved changes to this agent?",
+    );
   };
 
   const setView = (next: View) => {
     if (!confirmLeave(next)) return;
     setEditDirty(false);
     setViewState(next);
-    setPendingEdit(null);
     const path = viewToPath(next);
     if (path !== location.pathname) history.pushState(null, "", path);
   };
@@ -400,9 +430,6 @@ export function App() {
   const [spaceError, setSpaceError] = useState<string | null>(null);
   /** A space named in the switcher exists only once an agent lands in it. */
   const [pendingSpace, setPendingSpace] = useState<string | null>(null);
-  const [promptOpen, setPromptOpen] = useState(false);
-  const promptRef = useRef<HTMLParagraphElement>(null);
-  const [promptOverflows, setPromptOverflows] = useState(false);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   // On an agent's own page the full delivery history is the point; the home panel is the curated one.
   const [showFiltered, setShowFiltered] = useState(true);
@@ -461,20 +488,10 @@ export function App() {
       setEditDirty(false);
       if (next.space) setSpace(next.space);
       setViewState(next.view);
-      setPendingEdit(next.editId ?? null);
     };
     addEventListener("popstate", onPop);
     return () => removeEventListener("popstate", onPop);
   }, []);
-
-  useEffect(() => {
-    if (!pendingEdit) return;
-    const match = agents.find((a) => a.id === pendingEdit);
-    if (match) {
-      setViewState({ kind: "edit", agent: match });
-      setPendingEdit(null);
-    }
-  }, [pendingEdit, agents]);
 
   const spaceName = view.kind === "space" ? view.name : null;
   // Keyed by the stable id once one exists, so a rename can't move the URL.
@@ -526,14 +543,6 @@ export function App() {
   }, [view.kind]);
 
   const detailId = view.kind === "detail" ? view.id : null;
-  useEffect(() => setPromptOpen(false), [detailId]);
-  // Only meaningful while clamped: an open paragraph never overflows.
-  useEffect(() => {
-    if (promptOpen) return;
-    const el = promptRef.current;
-    setPromptOverflows(el !== null && el.scrollHeight > el.clientHeight + 1);
-  }, [detailId, promptOpen, agents.find((a) => a.id === detailId)?.prompt]);
-
   useEffect(() => {
     setAgentRuns(null);
     if (detailId === null) return;
@@ -765,15 +774,13 @@ export function App() {
       ? view.id
       : view.kind === "run"
         ? (run?.agentId ?? null)
-        : view.kind === "edit"
-          ? (view.agent?.id ?? null)
-          : null;
+        : null;
   const detailAgent = view.kind === "detail" ? agents.find((a) => a.id === view.id) : undefined;
 
-  /** Both ways out of the editor: back to the agent it edits, or to the roster. */
+  /** Every way out of the new-agent page: back to what it was copied from, or the roster. */
   const leaveEditor = () => {
-    const from = view.kind === "edit" ? (view.agent ?? view.seed) : null;
-    setView(from ? { kind: "detail", id: from.id } : { kind: "home" });
+    const seed = view.kind === "edit" ? view.seed : undefined;
+    setView(seed ? { kind: "detail", id: seed.id } : { kind: "home" });
   };
 
   // Nothing can run without a credential, so there is no dashboard to show
@@ -815,7 +822,7 @@ export function App() {
               const name = window.prompt("Name the new space")?.trim();
               if (!name) return;
               setPendingSpace(name);
-              setView({ kind: "edit", agent: null });
+              setView({ kind: "edit" });
             }}
             className="mt-4"
           />
@@ -827,7 +834,7 @@ export function App() {
           <button
             onClick={() => {
               setPendingSpace(null);
-              setView({ kind: "edit", agent: null });
+              setView({ kind: "edit" });
             }}
             className="text-xs text-neutral-400 hover:text-neutral-100"
           >
@@ -875,7 +882,7 @@ export function App() {
                 <span
                   onClick={(e) => {
                     e.stopPropagation();
-                    setView({ kind: "edit", agent: a });
+                    setView({ kind: "detail", id: a.id, tab: "settings" });
                   }}
                   title="Edit"
                   className="shrink-0 rounded p-0.5 text-neutral-500 hover:text-neutral-100"
@@ -934,14 +941,13 @@ export function App() {
         {view.kind === "edit" && (
           <div className="flex-1 overflow-y-auto">
             <AgentEditor
-              key={view.agent ? `edit-${view.agent.id}` : `new-${view.seed?.id ?? ""}-${pendingSpace ?? ""}`}
-              agent={view.agent}
+              key={`new-${view.seed?.id ?? ""}-${pendingSpace ?? ""}`}
+              agent={null}
               seed={view.seed ?? null}
               spaces={spaces}
               defaultSpace={pendingSpace ?? active}
               hookBase={hookBase}
-              backLabel={view.agent?.name ?? view.seed?.name ?? active}
-              onBack={leaveEditor}
+              back={{ label: view.seed?.name ?? active, to: leaveEditor }}
               onSaved={(saved) => {
                 // Saved, so there is nothing to discard — and the guard reads the ref
                 // synchronously, before the state update below has rendered.
@@ -982,13 +988,7 @@ export function App() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <button
-                  onClick={() => setView({ kind: "edit", agent: detailAgent })}
-                  className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => setView({ kind: "edit", agent: null, seed: detailAgent })}
+                  onClick={() => setView({ kind: "edit", seed: detailAgent })}
                   title="Start a new agent prefilled with this one's settings"
                   className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
                 >
@@ -1021,7 +1021,49 @@ export function App() {
               </div>
             </div>
 
-            <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
+            <div className="mt-5 flex gap-1 border-b border-neutral-800">
+              <TabButton
+                active={view.tab !== "settings"}
+                onClick={() => setView({ kind: "detail", id: detailAgent.id })}
+              >
+                Overview
+              </TabButton>
+              <TabButton
+                active={view.tab === "settings"}
+                onClick={() => setView({ kind: "detail", id: detailAgent.id, tab: "settings" })}
+              >
+                Settings
+              </TabButton>
+            </div>
+
+            {view.tab === "settings" ? (
+              <div className="mt-5">
+                <AgentEditor
+                  key={`settings-${detailAgent.id}`}
+                  agent={detailAgent}
+                  spaces={spaces}
+                  hookBase={hookBase}
+                  onSaved={() => {
+                    dirtyRef.current = false;
+                    setEditDirty(false);
+                    refresh();
+                    setView({ kind: "detail", id: detailAgent.id });
+                  }}
+                  onDeleted={() => {
+                    dirtyRef.current = false;
+                    setEditDirty(false);
+                    refresh();
+                    setView({ kind: "home" });
+                  }}
+                  onCancel={() => setView({ kind: "detail", id: detailAgent.id })}
+                  onDirtyChange={(d) => {
+                    dirtyRef.current = d;
+                    setEditDirty(d);
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
               <section className="min-w-0">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Runs
@@ -1059,42 +1101,16 @@ export function App() {
                 )}
               </section>
 
-              <aside className="space-y-5 lg:border-l lg:border-neutral-800 lg:pl-6">
-                {detailAgent.prompt && (
-                  <RailSection title="Prompt">
-                    <p
-                      ref={promptRef}
-                      className={`whitespace-pre-wrap text-xs leading-relaxed text-neutral-400 ${
-                        promptOpen ? "" : "line-clamp-3"
-                      }`}
-                    >
-                      {detailAgent.prompt}
-                    </p>
-                    {(promptOpen || promptOverflows) && (
-                      <button
-                        onClick={() => setPromptOpen(!promptOpen)}
-                        className="text-xs text-neutral-500 hover:text-neutral-300"
-                      >
-                        {promptOpen ? "Show less" : "Show more"}
-                      </button>
-                    )}
-                  </RailSection>
-                )}
-
-                <RailSection title="Triggers">
-                  {triggersOf(detailAgent).map((tr) => (
-                    <div key={tr} className="truncate text-xs text-neutral-300" title={tr}>
-                      {tr}
-                    </div>
-                  ))}
-                </RailSection>
-
-                {detailAgent.trigger === "webhook" && (
-                  <RailSection title="Recent webhook deliveries">
+              {detailAgent.trigger === "webhook" && (
+                <aside className="lg:border-l lg:border-neutral-800 lg:pl-6">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Recent webhook deliveries
+                  </h3>
+                  <div className="mt-2 space-y-2">
                     {deliveries.length > 0 ? (
                       <DeliveryList deliveries={deliveries} limit={10} />
                     ) : (
-                      <p className="text-xs text-neutral-600">Nothing yet.</p>
+                      <p className="text-sm text-neutral-600">Nothing yet.</p>
                     )}
                     <button
                       onClick={() => setShowFiltered((v) => !v)}
@@ -1107,27 +1123,11 @@ export function App() {
                         ? "Including deliveries this agent's own filters refused."
                         : "Filter and allowlist misses are hidden — on a shared space URL they arrive constantly."}
                     </p>
-                  </RailSection>
-                )}
-
-                <RailSection title="Runs with">
-                  <RailRow label="Workspace" value={workspaceSummary(detailAgent)} />
-                  <RailRow label="Model" value={detailAgent.model ?? "default"} />
-                  {Object.keys(detailAgent.mcpServers).length > 0 && (
-                    <RailRow label="MCP" value={Object.keys(detailAgent.mcpServers).join(", ")} />
-                  )}
-                </RailSection>
-
-                <RailSection title="Details">
-                  <RailRow label="Permissions" value={modeLabel(detailAgent.permissionMode)} />
-                  <RailRow label="Space" value={detailAgent.space} />
-                  <RailRow label="Concurrency" value={detailAgent.concurrency} />
-                  {detailAgent.maxTurns != null && (
-                    <RailRow label="Max turns" value={detailAgent.maxTurns} />
-                  )}
-                </RailSection>
-              </aside>
-            </div>
+                  </div>
+                </aside>
+              )}
+              </div>
+            )}
           </div>
         )}
 
@@ -2209,7 +2209,8 @@ export function App() {
           </>
         )}
 
-        {((view.kind === "detail" && selectedAgentId) || (view.kind === "run" && canReply)) && (
+        {((view.kind === "detail" && view.tab !== "settings" && selectedAgentId) ||
+          (view.kind === "run" && canReply)) && (
           <div className="border-t border-neutral-800 p-4">
             {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
             {skillMatches.length > 0 && (
