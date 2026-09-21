@@ -331,11 +331,11 @@ type View =
   | { kind: "detail"; id: string; tab?: "settings" }
   /** Only ever a brand-new agent; `seed` prefills it from an existing one. */
   | { kind: "edit"; seed?: Agent }
-  /** Everything a space owns: its name, and the webhook the whole space answers. */
+  /** The space's settings tab: its name, env, and the webhook the whole space answers. */
   | { kind: "space"; name: string }
   /** Global env and the box's own state — what `.env` used to be for. */
   | { kind: "settings" }
-  /** The roster at a glance, outside any one agent. */
+  /** The space's overview tab: what needs you, and what has been happening. */
   | { kind: "home" };
 
 /** What a view is editing, so moving within the same form isn't "leaving" it. */
@@ -350,7 +350,7 @@ function viewToPath(v: View): string {
   if (v.kind === "detail") return `/agents/${v.id}${v.tab === "settings" ? "/settings" : ""}`;
   if (v.kind === "run") return `/runs/${v.id}`;
   if (v.kind === "edit") return "/agents/new";
-  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/edit`;
+  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/settings`;
   if (v.kind === "settings") return "/settings";
   return "/";
 }
@@ -366,8 +366,12 @@ function pathToView(path: string): { view: View; space?: string } {
   if (m) return { view: { kind: "detail", id: m[1]!, tab: "settings" } };
   m = /^\/agents\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]! } };
-  m = /^\/spaces\/([^/]+)\/edit$/.exec(p);
-  if (m) return { view: { kind: "space", name: decodeURIComponent(m[1]!) } };
+  // `/edit` is the spelling that predates the tab.
+  m = /^\/spaces\/([^/]+)\/(?:settings|edit)$/.exec(p);
+  if (m) {
+    const name = decodeURIComponent(m[1]!);
+    return { view: { kind: "space", name }, space: name };
+  }
   // A space's landing is the home view filtered to it.
   m = /^\/spaces\/([^/]+)$/.exec(p);
   if (m) return { view: { kind: "home" }, space: decodeURIComponent(m[1]!) };
@@ -777,6 +781,39 @@ export function App() {
         : null;
   const detailAgent = view.kind === "detail" ? agents.find((a) => a.id === view.id) : undefined;
 
+  const spaceHeading = (
+    <>
+      <h2 className="text-lg font-semibold">{active}</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        {visibleAgents.length} agent{visibleAgents.length === 1 ? "" : "s"}
+        {stats && (
+          <>
+            {" · "}
+            {stats.last24h} run{stats.last24h === 1 ? "" : "s"} in the last 24h
+            {stats.prev24h > 0 && (
+              <span className="text-neutral-600">
+                {" "}
+                ({stats.last24h > stats.prev24h ? "\u2191" : "\u2193"}{" "}
+                {Math.abs(stats.last24h - stats.prev24h)} vs the day before)
+              </span>
+            )}
+          </>
+        )}
+      </p>
+    </>
+  );
+
+  const spaceTabs = (settings: boolean) => (
+    <div className="mt-5 flex gap-1 border-b border-neutral-800">
+      <TabButton active={!settings} onClick={() => setView({ kind: "home" })}>
+        Overview
+      </TabButton>
+      <TabButton active={settings} onClick={() => setView({ kind: "space", name: active })}>
+        Settings
+      </TabButton>
+    </div>
+  );
+
   /** Every way out of the new-agent page: back to what it was copied from, or the roster. */
   const leaveEditor = () => {
     const seed = view.kind === "edit" ? view.seed : undefined;
@@ -1154,19 +1191,10 @@ export function App() {
 
         {view.kind === "space" && spaceKnown && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <button
-              onClick={() => { if (confirmLeave({ kind: "home" })) goToSpace(view.name); }}
-              className="text-xs text-neutral-500 hover:text-neutral-300"
-            >
-              &larr; {view.name}
-            </button>
-            <h2 className="mt-2 text-lg font-semibold">Space settings</h2>
-            <p className="mt-1 text-xs text-neutral-500">
-              {agents.filter((a) => a.space === view.name).length} agent
-              {agents.filter((a) => a.space === view.name).length === 1 ? "" : "s"} in this space
-            </p>
+            {spaceHeading}
+            {spaceTabs(true)}
 
-            <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="mt-5 grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="min-w-0 space-y-8">
                 <RailSection title="Name">
                   {view.name === DEFAULT_SPACE ? (
@@ -1222,7 +1250,7 @@ export function App() {
                     Save
                   </button>
                   <button
-                    onClick={() => { if (confirmLeave({ kind: "home" })) goToSpace(view.name); }}
+                    onClick={() => setView({ kind: "home" })}
                     className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
                   >
                     Cancel
@@ -1840,34 +1868,8 @@ export function App() {
 
         {view.kind === "home" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <h2 className="text-lg font-semibold">{active}</h2>
-              <button
-                onClick={() => setView({ kind: "space", name: active })}
-                title="Name, environment, shared webhook"
-                className="flex shrink-0 items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
-              >
-                <PencilIcon /> Edit
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500">
-              {visibleAgents.length} agent{visibleAgents.length === 1 ? "" : "s"}
-              {stats && (
-                <>
-                  {" · "}
-                  {stats.last24h} run{stats.last24h === 1 ? "" : "s"} in the last 24h
-                  {stats.prev24h > 0 && (
-                    <span
-                      className="text-neutral-600"
-                    >
-                      {" "}
-                      ({stats.last24h > stats.prev24h ? "\u2191" : "\u2193"}{" "}
-                      {Math.abs(stats.last24h - stats.prev24h)} vs the day before)
-                    </span>
-                  )}
-                </>
-              )}
-            </p>
+            {spaceHeading}
+            {spaceTabs(false)}
 
             {awaiting.length + running.length + failing.length + paused.length === 0 ? (
               <p className="mt-4 text-sm text-neutral-500">
