@@ -211,6 +211,7 @@ function SpaceSwitcher({
   onPick,
   onSettings,
   onNew,
+  className = "",
 }: {
   spaces: string[];
   current: SpaceFilter;
@@ -218,23 +219,21 @@ function SpaceSwitcher({
   onPick: (next: SpaceFilter) => void;
   onSettings: (name: string) => void;
   onNew: () => void;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const currentName = current.kind === "all" ? null : current.name;
   const options: (string | null)[] = [null, ...spaces];
   const item = "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-neutral-800";
   return (
-    <div className="relative shrink-0">
+    <div className={`relative shrink-0 ${className}`}>
       <button
         onClick={() => setOpen((o) => !o)}
         title="Switch space"
         className="flex w-full items-center gap-2 rounded border border-neutral-800 bg-neutral-900/60 p-2 text-left hover:border-neutral-700"
       >
-        <img src="/favicon.svg" alt="" className="h-8 w-8 shrink-0" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold tracking-tight">
-            {currentName ?? "All spaces"}
-          </span>
+          <span className="block truncate text-sm font-medium">{currentName ?? "All spaces"}</span>
           <span className="block truncate text-xs text-neutral-500">{subtitle}</span>
         </span>
         <ChevronIcon />
@@ -812,6 +811,15 @@ export function App() {
       <aside className="flex w-72 shrink-0 flex-col border-r border-neutral-800">
         {/* Outside the scroller: an absolute menu inside one is clipped by it. */}
         <div className="shrink-0 px-4 pt-4">
+          <button
+            onClick={() => setView({ kind: "home" })}
+            className="flex items-center gap-2 text-left"
+            title="Home"
+          >
+            <img src="/favicon.svg" alt="" className="h-9 w-9" />
+            <h1 className="text-lg font-semibold tracking-tight hover:text-white">Bullpen</h1>
+          </button>
+
           <SpaceSwitcher
             spaces={spaces}
             current={active}
@@ -824,6 +832,7 @@ export function App() {
               setPendingSpace(name);
               setView({ kind: "edit", agent: null });
             }}
+            className="mt-4"
           />
         </div>
 
