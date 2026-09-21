@@ -2101,14 +2101,15 @@ export function App() {
         {view.kind === "run" && run && (
           <>
             <header className="flex items-center gap-3 border-b border-neutral-800 px-6 py-3">
-              <span className={`text-sm font-medium ${STATUS_COLOR[run.status] ?? ""}`}>{run.status}</span>
               <button
                 onClick={() => setView({ kind: "detail", id: run.agentId })}
-                className="text-sm text-neutral-300 hover:text-neutral-100"
-                title="Back to this agent"
+                className="text-sm text-neutral-400 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-100 hover:decoration-neutral-400"
+                title="This run's agent"
               >
-                &larr; {agentName(run.agentId)}
+                {agentName(run.agentId)}
               </button>
+              <span className="text-sm text-neutral-700">/</span>
+              <span className={`text-sm font-medium ${STATUS_COLOR[run.status] ?? ""}`}>{run.status}</span>
               {run.label && <span className="truncate font-mono text-xs text-neutral-400">{run.label}</span>}
               {run.branch && <span className="font-mono text-xs text-neutral-500">{run.branch}</span>}
               {run.numTurns != null && <span className="text-xs text-neutral-500">{run.numTurns} turns</span>}
