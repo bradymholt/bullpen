@@ -770,6 +770,12 @@ export function App() {
           : null;
   const detailAgent = view.kind === "detail" ? agents.find((a) => a.id === view.id) : undefined;
 
+  /** Both ways out of the editor: back to the agent it edits, or to the roster. */
+  const leaveEditor = () => {
+    const from = view.kind === "edit" ? (view.agent ?? view.seed) : null;
+    setView(from ? { kind: "detail", id: from.id } : { kind: "home" });
+  };
+
   // Nothing can run without a credential, so there is no dashboard to show
   // behind a dialog — setup replaces it until health says otherwise.
   if (credentialSource === null) return <div className="h-screen bg-neutral-950" />;
@@ -935,17 +941,14 @@ export function App() {
               defaultSpace={pendingSpace ?? active}
               hookBase={hookBase}
               backLabel={view.agent?.name ?? view.seed?.name ?? active}
-              onBack={() => {
-                const from = view.agent ?? view.seed;
-                setView(from ? { kind: "detail", id: from.id } : { kind: "home" });
-              }}
-              onSaved={() => {
+              onBack={leaveEditor}
+              onSaved={(saved) => {
                 // Saved, so there is nothing to discard — and the guard reads the ref
                 // synchronously, before the state update below has rendered.
                 dirtyRef.current = false;
                 setEditDirty(false);
                 refresh();
-                setView({ kind: "home" });
+                setView({ kind: "detail", id: saved.id });
               }}
               onDeleted={() => {
                 dirtyRef.current = false;
@@ -953,7 +956,7 @@ export function App() {
                 refresh();
                 setView({ kind: "home" });
               }}
-              onCancel={() => setView({ kind: "home" })}
+              onCancel={leaveEditor}
               onDirtyChange={(d) => {
                 dirtyRef.current = d;
                 setEditDirty(d);
