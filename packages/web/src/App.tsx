@@ -934,6 +934,11 @@ export function App() {
               spaces={spaces}
               defaultSpace={pendingSpace ?? active}
               hookBase={hookBase}
+              backLabel={view.agent?.name ?? view.seed?.name ?? active}
+              onBack={() => {
+                const from = view.agent ?? view.seed;
+                setView(from ? { kind: "detail", id: from.id } : { kind: "home" });
+              }}
               onSaved={() => {
                 // Saved, so there is nothing to discard — and the guard reads the ref
                 // synchronously, before the state update below has rendered.

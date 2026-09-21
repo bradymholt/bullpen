@@ -65,6 +65,8 @@ export function AgentEditor({
   onSaved,
   onDeleted,
   onCancel,
+  onBack,
+  backLabel,
   onDirtyChange,
 }: {
   agent: Agent | null;
@@ -79,6 +81,9 @@ export function AgentEditor({
   onSaved: (a: Agent) => void;
   onDeleted: () => void;
   onCancel: () => void;
+  /** Where the breadcrumb goes: the agent's own page, or the space it lives in. */
+  onBack: () => void;
+  backLabel: string;
   /** Fires as the draft diverges from what was loaded, so the shell can guard navigation. */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -209,9 +214,14 @@ export function AgentEditor({
 
   return (
     <div className="space-y-4 px-6 py-5">
-      <h2 className="text-lg font-semibold">
-        {agent ? `Edit ${agent.name}` : seed ? `Copy of ${seed.name}` : "New agent"}
-      </h2>
+      <div>
+        <button onClick={onBack} className="text-xs text-neutral-500 hover:text-neutral-300">
+          &larr; {backLabel}
+        </button>
+        <h2 className="mt-2 text-lg font-semibold">
+          {agent ? "Agent settings" : seed ? `Copy of ${seed.name}` : "New agent"}
+        </h2>
+      </div>
       {droppedEnv.length > 0 && (
         <p className="text-xs text-amber-500/80">
           {droppedEnv.join(", ")} {droppedEnv.length === 1 ? "was" : "were"} not copied &mdash;

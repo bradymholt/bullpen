@@ -832,8 +832,8 @@ export function TriggerSettings({
             <p className="text-xs leading-relaxed text-neutral-600">
               This agent also answers the shared webhook for the{" "}
               <strong>{draft.space}</strong> space, alongside every other agent in it. That URL and
-              its secret are configured in the space&rsquo;s settings — the pencil beside{" "}
-              <strong>{draft.space}</strong> in the sidebar.
+              its secret are configured in the space&rsquo;s settings &mdash; &ldquo;Space
+              settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
             </p>
           )}
 
