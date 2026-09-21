@@ -190,24 +190,94 @@ function workspaceSummary(a: Agent): string {
   return "scratch directory";
 }
 
-const chipClass = (selected: boolean) =>
-  `rounded px-2 py-0.5 text-xs transition ${
-    selected ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300"
-  }`;
-
-function SpaceChip({
-  label,
-  selected,
-  onClick,
-}: {
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
+function ChevronIcon() {
   return (
-    <button onClick={onClick} className={chipClass(selected)}>
-      {label}
-    </button>
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0 text-neutral-500" aria-hidden="true">
+      <path d="M5 6.5 8 3.5l3 3M5 9.5l3 3 3-3" />
+    </svg>
+  );
+}
+
+/**
+ * The space is a scope, not a filter: everything below it is already inside the
+ * one on the button, so nothing further down the sidebar has to say which space
+ * it means. Its own settings live in here for the same reason — the space is
+ * never a mode the landing page drops into.
+ */
+function SpaceSwitcher({
+  spaces,
+  current,
+  subtitle,
+  onPick,
+  onSettings,
+  onNew,
+}: {
+  spaces: string[];
+  current: SpaceFilter;
+  subtitle: string;
+  onPick: (next: SpaceFilter) => void;
+  onSettings: (name: string) => void;
+  onNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const currentName = current.kind === "all" ? null : current.name;
+  const options: (string | null)[] = [null, ...spaces];
+  const item = "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-neutral-800";
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Switch space"
+        className="flex w-full items-center gap-2 rounded border border-neutral-800 bg-neutral-900/60 p-2 text-left hover:border-neutral-700"
+      >
+        <img src="/favicon.svg" alt="" className="h-8 w-8 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold tracking-tight">
+            {currentName ?? "All spaces"}
+          </span>
+          <span className="block truncate text-xs text-neutral-500">{subtitle}</span>
+        </span>
+        <ChevronIcon />
+      </button>
+      {open && (
+        <>
+          <button
+            tabIndex={-1}
+            aria-label="Close"
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-10 cursor-default"
+          />
+          <div className="absolute inset-x-0 z-20 mt-1 overflow-hidden rounded border border-neutral-700 bg-neutral-900 py-1 shadow-xl">
+            {options.map((name) => (
+              <button
+                key={name ?? "\u0000all"}
+                onClick={() => {
+                  setOpen(false);
+                  onPick(name === null ? { kind: "all" } : { kind: "space", name });
+                }}
+                className={item}
+              >
+                <span className={`w-3 shrink-0 text-xs ${name === currentName ? "text-neutral-100" : "text-transparent"}`}>
+                  &bull;
+                </span>
+                <span className="truncate">{name ?? "All spaces"}</span>
+              </button>
+            ))}
+            <div className="my-1 border-t border-neutral-800" />
+            {currentName !== null && (
+              <button onClick={() => { setOpen(false); onSettings(currentName); }} className={`${item} text-neutral-400`}>
+                <span className="w-3 shrink-0" />
+                Space settings&hellip;
+              </button>
+            )}
+            <button onClick={() => { setOpen(false); onNew(); }} className={`${item} text-neutral-400`}>
+              <span className="w-3 shrink-0" />
+              New space&hellip;
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -349,6 +419,8 @@ export function App() {
     value?: string;
   } | null>(null);
   const [spaceError, setSpaceError] = useState<string | null>(null);
+  /** A space named in the switcher exists only once an agent lands in it. */
+  const [pendingSpace, setPendingSpace] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const promptRef = useRef<HTMLParagraphElement>(null);
   const [promptOverflows, setPromptOverflows] = useState(false);
@@ -408,6 +480,7 @@ export function App() {
         return;
       }
       setEditDirty(false);
+      if (next.space) setSpace({ kind: "space", name: next.space });
       setViewState(next.view);
       setPendingEdit(next.editId ?? null);
     };
@@ -636,6 +709,16 @@ export function App() {
     if (path !== location.pathname) history.pushState(null, "", path);
   };
 
+  /** The switcher's own navigation: the scope changes and the view goes back to its home. */
+  const pickSpace = (next: SpaceFilter) => {
+    if (!confirmLeave({ kind: "home" })) return;
+    setEditDirty(false);
+    setSpace(next);
+    setViewState({ kind: "home" });
+    const path = next.kind === "all" ? "/" : `/spaces/${encodeURIComponent(next.name)}`;
+    if (path !== location.pathname) history.pushState(null, "", path);
+  };
+
   /** Env first under the old name, then the rename carries the row along. */
   async function saveSpace(from: string) {
     const to = spaceDraft.trim();
@@ -727,58 +810,31 @@ export function App() {
   return (
     <div className="flex h-screen bg-neutral-950 font-sans text-neutral-100">
       <aside className="flex w-72 shrink-0 flex-col border-r border-neutral-800">
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-        <button
-          onClick={() => setView({ kind: "home" })}
-          className="flex shrink-0 items-center gap-2 text-left"
-          title="Home"
-        >
-          <img src="/favicon.svg" alt="" className="h-9 w-9" />
-          <h1 className="text-lg font-semibold tracking-tight hover:text-white">Bullpen</h1>
-        </button>
+        {/* Outside the scroller: an absolute menu inside one is clipped by it. */}
+        <div className="shrink-0 px-4 pt-4">
+          <SpaceSwitcher
+            spaces={spaces}
+            current={active}
+            subtitle={`${visibleAgents.length} agent${visibleAgents.length === 1 ? "" : "s"}`}
+            onPick={pickSpace}
+            onSettings={(name) => setView({ kind: "space", name })}
+            onNew={() => {
+              const name = window.prompt("Name the new space")?.trim();
+              if (!name) return;
+              setPendingSpace(name);
+              setView({ kind: "edit", agent: null });
+            }}
+          />
+        </div>
 
-        {spaces.length > 0 && (
-          <div className="mt-4 flex shrink-0 flex-wrap gap-1">
-            <SpaceChip
-              label="All"
-              selected={active.kind === "all"}
-              onClick={() => {
-                setSpace({ kind: "all" });
-                if (view.kind !== "home") setView({ kind: "home" });
-              }}
-            />
-            {spaces.map((sp) =>
-              active.kind === "space" && active.name === sp ? (
-                <span key={sp} className={`group inline-flex items-center ${chipClass(true)}`}>
-                  {sp}
-                  <button
-                    onClick={() => setView({ kind: "space", name: sp })}
-                    title={`Edit "${sp}"`}
-                    className="flex max-w-0 items-center overflow-hidden text-neutral-500 opacity-0 transition-all duration-150 hover:text-neutral-100 focus:ml-1 focus:max-w-5 focus:opacity-100 group-hover:ml-1 group-hover:max-w-5 group-hover:opacity-100"
-                  >
-                    <PencilIcon className="h-3 w-3 shrink-0" />
-                  </button>
-                </span>
-              ) : (
-                <SpaceChip
-                  key={sp}
-                  label={sp}
-                  selected={false}
-                  onClick={() => {
-                    setSpace({ kind: "space", name: sp });
-                    if (view.kind !== "home") setView({ kind: "home" });
-                  }}
-                />
-              ),
-            )}
-          </div>
-        )}
-
-
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4">
         <div className="mt-6 flex shrink-0 items-center justify-between">
           <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Agents</h2>
           <button
-            onClick={() => setView({ kind: "edit", agent: null })}
+            onClick={() => {
+              setPendingSpace(null);
+              setView({ kind: "edit", agent: null });
+            }}
             className="text-xs text-neutral-400 hover:text-neutral-100"
           >
             + New
@@ -858,12 +914,12 @@ export function App() {
         <div className="flex shrink-0 items-center gap-1 border-t border-neutral-800 px-3 py-2">
           <button
             onClick={() => setView({ kind: "settings" })}
-            title="Settings"
-            className={`rounded p-1.5 ${
+            className={`flex items-center gap-2 rounded px-1.5 py-1.5 text-xs ${
               view.kind === "settings" ? "text-neutral-100" : "text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200"
             }`}
           >
             <GearIcon />
+            Settings
           </button>
           {build && (
             <a
@@ -890,11 +946,11 @@ export function App() {
         {view.kind === "edit" && (
           <div className="flex-1 overflow-y-auto">
             <AgentEditor
-              key={view.agent ? `edit-${view.agent.id}` : `new-${view.seed?.id ?? ""}`}
+              key={view.agent ? `edit-${view.agent.id}` : `new-${view.seed?.id ?? ""}-${pendingSpace ?? ""}`}
               agent={view.agent}
               seed={view.seed ?? null}
               spaces={spaces}
-              defaultSpace={active.kind === "space" ? active.name : null}
+              defaultSpace={pendingSpace ?? (active.kind === "space" ? active.name : null)}
               hookBase={hookBase}
               onSaved={() => {
                 // Saved, so there is nothing to discard — and the guard reads the ref
@@ -1114,7 +1170,7 @@ export function App() {
             >
               &larr; {view.name}
             </button>
-            <h2 className="mt-2 text-lg font-semibold">Edit space</h2>
+            <h2 className="mt-2 text-lg font-semibold">Space settings</h2>
             <p className="mt-1 text-xs text-neutral-500">
               {agents.filter((a) => a.space === view.name).length} agent
               {agents.filter((a) => a.space === view.name).length === 1 ? "" : "s"} in this space
