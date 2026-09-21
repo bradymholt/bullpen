@@ -145,48 +145,27 @@ function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
   );
 }
 
-/**
- * Settings over the page it belongs to, rather than a place you navigate to.
- * The page stays behind it, so editing never costs you what you were looking at.
- */
-function SlideOver({
-  title,
-  onClose,
-  children,
+/** The run header's trail, reused wherever a page sits under another one. */
+function CrumbBar({
+  parent,
+  onParent,
+  current,
 }: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
+  parent: string;
+  onParent: () => void;
+  current: string;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  });
   return (
-    <div className="fixed inset-0 z-30 flex justify-end">
+    <header className="flex shrink-0 items-center gap-3 border-b border-neutral-800 px-6 py-3">
       <button
-        tabIndex={-1}
-        aria-label="Close settings"
-        onClick={onClose}
-        className="flex-1 cursor-default bg-neutral-950/70"
-      />
-      <div className="flex w-[min(46rem,100vw-3rem)] flex-col border-l border-neutral-800 bg-neutral-950 shadow-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-6 py-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <button
-            onClick={onClose}
-            title="Close"
-            className="rounded px-1.5 text-lg leading-none text-neutral-500 hover:text-neutral-100"
-          >
-            &times;
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-      </div>
-    </div>
+        onClick={onParent}
+        className="text-sm text-neutral-400 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-100 hover:decoration-neutral-400"
+      >
+        {parent}
+      </button>
+      <span className="text-sm text-neutral-700">/</span>
+      <span className="text-sm font-medium">{current}</span>
+    </header>
   );
 }
 
@@ -369,10 +348,10 @@ function editingKey(v: View): string | null {
 }
 
 function viewToPath(v: View): string {
-  if (v.kind === "detail") return `/agents/${v.id}${v.tab === "settings" ? "/settings" : ""}`;
+  if (v.kind === "detail") return `/agents/${v.id}${v.tab === "settings" ? "/edit" : ""}`;
   if (v.kind === "run") return `/runs/${v.id}`;
   if (v.kind === "edit") return "/agents/new";
-  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/settings`;
+  if (v.kind === "space") return `/spaces/${encodeURIComponent(v.name)}/edit`;
   if (v.kind === "settings") return "/settings";
   return "/";
 }
@@ -383,13 +362,11 @@ function pathToView(path: string): { view: View; space?: string } {
   if (p === "/settings") return { view: { kind: "settings" } };
   let m = /^\/runs\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "run", id: m[1]! } };
-  // `/edit` is where the settings tab used to live as a page of its own.
-  m = /^\/agents\/([\w-]+)\/(?:settings|edit)$/.exec(p);
+  m = /^\/agents\/([\w-]+)\/(?:edit|settings)$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]!, tab: "settings" } };
   m = /^\/agents\/([\w-]+)$/.exec(p);
   if (m) return { view: { kind: "detail", id: m[1]! } };
-  // `/edit` is the spelling that predates the tab.
-  m = /^\/spaces\/([^/]+)\/(?:settings|edit)$/.exec(p);
+  m = /^\/spaces\/([^/]+)\/(?:edit|settings)$/.exec(p);
   if (m) {
     const name = decodeURIComponent(m[1]!);
     return { view: { kind: "space", name }, space: name };
@@ -831,9 +808,9 @@ export function App() {
       <button
         onClick={() => setView({ kind: "space", name: active })}
         title="Name, environment, shared webhook"
-        className="shrink-0 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+        className="flex shrink-0 items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
       >
-        Settings
+        <PencilIcon /> Edit
       </button>
     </div>
   );
@@ -1000,7 +977,13 @@ export function App() {
       <main className="flex min-w-0 flex-1 flex-col">
 
         {view.kind === "edit" && (
-          <div className="flex-1 overflow-y-auto">
+          <>
+            <CrumbBar
+              parent={view.seed?.name ?? active}
+              onParent={leaveEditor}
+              current={view.seed ? `Copy of ${view.seed.name}` : "New agent"}
+            />
+            <div className="flex-1 overflow-y-auto">
             <AgentEditor
               key={`new-${view.seed?.id ?? ""}-${pendingSpace ?? ""}`}
               agent={null}
@@ -1008,7 +991,6 @@ export function App() {
               spaces={spaces}
               defaultSpace={pendingSpace ?? active}
               hookBase={hookBase}
-              back={{ label: view.seed?.name ?? active, to: leaveEditor }}
               onSaved={(saved) => {
                 // Saved, so there is nothing to discard — and the guard reads the ref
                 // synchronously, before the state update below has rendered.
@@ -1029,10 +1011,46 @@ export function App() {
                 setEditDirty(d);
               }}
             />
-          </div>
+            </div>
+          </>
         )}
 
-        {view.kind === "detail" && detailAgent && (
+        {view.kind === "detail" && detailAgent && view.tab === "settings" && (
+          <>
+            <CrumbBar
+              parent={detailAgent.name}
+              onParent={() => setView({ kind: "detail", id: detailAgent.id })}
+              current="Edit"
+            />
+            <div className="flex-1 overflow-y-auto">
+              <AgentEditor
+                key={`edit-${detailAgent.id}`}
+                agent={detailAgent}
+                spaces={spaces}
+                hookBase={hookBase}
+                onSaved={() => {
+                  dirtyRef.current = false;
+                  setEditDirty(false);
+                  refresh();
+                  setView({ kind: "detail", id: detailAgent.id });
+                }}
+                onDeleted={() => {
+                  dirtyRef.current = false;
+                  setEditDirty(false);
+                  refresh();
+                  setView({ kind: "home" });
+                }}
+                onCancel={() => setView({ kind: "detail", id: detailAgent.id })}
+                onDirtyChange={(d) => {
+                  dirtyRef.current = d;
+                  setEditDirty(d);
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {view.kind === "detail" && detailAgent && view.tab !== "settings" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1051,9 +1069,9 @@ export function App() {
                 <button
                   onClick={() => setView({ kind: "detail", id: detailAgent.id, tab: "settings" })}
                   title="Prompt, trigger, workspace, permissions"
-                  className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                  className="flex items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
                 >
-                  Settings
+                  <PencilIcon /> Edit
                 </button>
                 <button
                   onClick={() => setView({ kind: "edit", seed: detailAgent })}
@@ -1088,37 +1106,6 @@ export function App() {
                 )}
               </div>
             </div>
-
-            {view.tab === "settings" && (
-              <SlideOver
-                title={`${detailAgent.name} settings`}
-                onClose={() => setView({ kind: "detail", id: detailAgent.id })}
-              >
-                <AgentEditor
-                  key={`settings-${detailAgent.id}`}
-                  agent={detailAgent}
-                  spaces={spaces}
-                  hookBase={hookBase}
-                  onSaved={() => {
-                    dirtyRef.current = false;
-                    setEditDirty(false);
-                    refresh();
-                    setView({ kind: "detail", id: detailAgent.id });
-                  }}
-                  onDeleted={() => {
-                    dirtyRef.current = false;
-                    setEditDirty(false);
-                    refresh();
-                    setView({ kind: "home" });
-                  }}
-                  onCancel={() => setView({ kind: "detail", id: detailAgent.id })}
-                  onDirtyChange={(d) => {
-                    dirtyRef.current = d;
-                    setEditDirty(d);
-                  }}
-                />
-              </SlideOver>
-            )}
 
             <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
               <section className="min-w-0">
@@ -1209,8 +1196,14 @@ export function App() {
         )}
 
         {view.kind === "space" && spaceKnown && (
-          <SlideOver title={`${view.name} settings`} onClose={() => setView({ kind: "home" })}>
-            <div className="grid gap-8 px-6 py-5">
+          <>
+            <CrumbBar
+              parent={view.name}
+              onParent={() => setView({ kind: "home" })}
+              current="Edit"
+            />
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="min-w-0 space-y-8">
                 <RailSection title="Name">
                   {view.name === DEFAULT_SPACE ? (
@@ -1358,7 +1351,8 @@ export function App() {
                 )}
               </div>
             </div>
-          </SlideOver>
+            </div>
+          </>
         )}
 
         {view.kind === "settings" && (
@@ -1882,7 +1876,7 @@ export function App() {
           </div>
         )}
 
-        {(view.kind === "home" || (view.kind === "space" && spaceKnown)) && (
+        {view.kind === "home" && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {spaceHeader}
 
