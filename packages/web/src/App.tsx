@@ -145,26 +145,48 @@ function ArtifactsPanel({ runId, status }: { runId: string; status: string }) {
   );
 }
 
-function TabButton({
-  active,
-  onClick,
+/**
+ * Settings over the page it belongs to, rather than a place you navigate to.
+ * The page stays behind it, so editing never costs you what you were looking at.
+ */
+function SlideOver({
+  title,
+  onClose,
   children,
 }: {
-  active: boolean;
-  onClick: () => void;
+  title: string;
+  onClose: () => void;
   children: React.ReactNode;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  });
   return (
-    <button
-      onClick={onClick}
-      className={`-mb-px border-b-2 px-3 py-2 text-sm transition ${
-        active
-          ? "border-neutral-100 text-neutral-100"
-          : "border-transparent text-neutral-500 hover:text-neutral-300"
-      }`}
-    >
-      {children}
-    </button>
+    <div className="fixed inset-0 z-30 flex justify-end">
+      <button
+        tabIndex={-1}
+        aria-label="Close settings"
+        onClick={onClose}
+        className="flex-1 cursor-default bg-neutral-950/70"
+      />
+      <div className="flex w-[min(46rem,100vw-3rem)] flex-col border-l border-neutral-800 bg-neutral-950 shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-6 py-3">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <button
+            onClick={onClose}
+            title="Close"
+            className="rounded px-1.5 text-lg leading-none text-neutral-500 hover:text-neutral-100"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -803,14 +825,16 @@ export function App() {
     </>
   );
 
-  const spaceTabs = (settings: boolean) => (
-    <div className="mt-5 flex gap-1 border-b border-neutral-800">
-      <TabButton active={!settings} onClick={() => setView({ kind: "home" })}>
-        Overview
-      </TabButton>
-      <TabButton active={settings} onClick={() => setView({ kind: "space", name: active })}>
+  const spaceHeader = (
+    <div className="flex items-start justify-between gap-4">
+      <div>{spaceHeading}</div>
+      <button
+        onClick={() => setView({ kind: "space", name: active })}
+        title="Name, environment, shared webhook"
+        className="shrink-0 rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+      >
         Settings
-      </TabButton>
+      </button>
     </div>
   );
 
@@ -951,7 +975,7 @@ export function App() {
             }`}
           >
             <GearIcon />
-            Settings
+            Bullpen settings
           </button>
           {build && (
             <a
@@ -1025,6 +1049,13 @@ export function App() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <button
+                  onClick={() => setView({ kind: "detail", id: detailAgent.id, tab: "settings" })}
+                  title="Prompt, trigger, workspace, permissions"
+                  className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                >
+                  Settings
+                </button>
+                <button
                   onClick={() => setView({ kind: "edit", seed: detailAgent })}
                   title="Start a new agent prefilled with this one's settings"
                   className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
@@ -1058,23 +1089,11 @@ export function App() {
               </div>
             </div>
 
-            <div className="mt-5 flex gap-1 border-b border-neutral-800">
-              <TabButton
-                active={view.tab !== "settings"}
-                onClick={() => setView({ kind: "detail", id: detailAgent.id })}
+            {view.tab === "settings" && (
+              <SlideOver
+                title={`${detailAgent.name} settings`}
+                onClose={() => setView({ kind: "detail", id: detailAgent.id })}
               >
-                Overview
-              </TabButton>
-              <TabButton
-                active={view.tab === "settings"}
-                onClick={() => setView({ kind: "detail", id: detailAgent.id, tab: "settings" })}
-              >
-                Settings
-              </TabButton>
-            </div>
-
-            {view.tab === "settings" ? (
-              <div className="mt-5">
                 <AgentEditor
                   key={`settings-${detailAgent.id}`}
                   agent={detailAgent}
@@ -1098,9 +1117,10 @@ export function App() {
                     setEditDirty(d);
                   }}
                 />
-              </div>
-            ) : (
-              <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
+              </SlideOver>
+            )}
+
+            <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
               <section className="min-w-0">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Runs
@@ -1163,8 +1183,7 @@ export function App() {
                   </div>
                 </aside>
               )}
-              </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -1190,11 +1209,8 @@ export function App() {
         )}
 
         {view.kind === "space" && spaceKnown && (
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            {spaceHeading}
-            {spaceTabs(true)}
-
-            <div className="mt-5 grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <SlideOver title={`${view.name} settings`} onClose={() => setView({ kind: "home" })}>
+            <div className="grid gap-8 px-6 py-5">
               <div className="min-w-0 space-y-8">
                 <RailSection title="Name">
                   {view.name === DEFAULT_SPACE ? (
@@ -1342,7 +1358,7 @@ export function App() {
                 )}
               </div>
             </div>
-          </div>
+          </SlideOver>
         )}
 
         {view.kind === "settings" && (
@@ -1866,10 +1882,9 @@ export function App() {
           </div>
         )}
 
-        {view.kind === "home" && (
+        {(view.kind === "home" || (view.kind === "space" && spaceKnown)) && (
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {spaceHeading}
-            {spaceTabs(false)}
+            {spaceHeader}
 
             {awaiting.length + running.length + failing.length + paused.length === 0 ? (
               <p className="mt-4 text-sm text-neutral-500">

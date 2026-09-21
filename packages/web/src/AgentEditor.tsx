@@ -80,7 +80,7 @@ export function AgentEditor({
   onSaved: (a: Agent) => void;
   onDeleted: () => void;
   onCancel: () => void;
-  /** Its own page when set, with a breadcrumb; embedded in the agent's page when not. */
+  /** Its own page when set, with a breadcrumb and room for two columns; in a panel when not. */
   back?: { label: string; to: () => void };
   /** Fires as the draft diverges from what was loaded, so the shell can guard navigation. */
   onDirtyChange?: (dirty: boolean) => void;
@@ -211,7 +211,7 @@ export function AgentEditor({
   };
 
   return (
-    <div className={`space-y-4 ${back ? "px-6 py-5" : ""}`}>
+    <div className="space-y-4 px-6 py-5">
       {back && (
         <div>
           <button onClick={back.to} className="text-xs text-neutral-500 hover:text-neutral-300">
@@ -229,7 +229,7 @@ export function AgentEditor({
         </p>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className={`grid gap-6 ${back ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : ""}`}>
         <div className="min-w-0 space-y-4">
       <div className="grid grid-cols-[1fr_12rem] gap-3">
         <Row title="Name">
