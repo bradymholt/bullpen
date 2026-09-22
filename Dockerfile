@@ -1,7 +1,7 @@
 # ---- build: compile native deps and the SPA -----------------------------
 # better-sqlite3 ships no prebuilt binaries, so node-gyp needs a toolchain.
 # It lives here rather than in the runtime image.
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ \
@@ -23,7 +23,7 @@ RUN npm prune --omit=dev
 RUN rm -rf node_modules/@anthropic-ai/claude-agent-sdk-*-musl
 
 # ---- runtime ------------------------------------------------------------
-FROM node:22-slim
+FROM node:26-slim
 # CLAUDE_CONFIG_DIR: the harness reads skills, settings.json and a global
 # CLAUDE.md from here instead of ~/.claude, so agent config is a directory in
 # the data volume rather than state on the box. GOG_HOME does the same for gog.
