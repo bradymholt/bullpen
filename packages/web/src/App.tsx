@@ -405,6 +405,9 @@ export function App() {
   // Webhook URLs are built from this: the funneled public base if the server has one, else this tab's origin.
   const [hookBase, setHookBase] = useState<string>(location.origin);
   const [build, setBuild] = useState<{ version: string; release: string | null; repoUrl: string | null } | null>(null);
+  const [configuredDefault, setConfiguredDefault] = useState<string | null>(null);
+  /** The setting only steers the first load; after that the URL and the switcher do. */
+  const defaultApplied = useRef(false);
   const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string; config: string | null } | null>(null);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [showClaudeMd, setShowClaudeMd] = useState(false);
@@ -569,6 +572,11 @@ export function App() {
         setCredentialSource(h.claudeCredential.source);
         if (h.publicUrl) setHookBase(h.publicUrl);
         setBuild(h.version ? { version: h.version, release: h.release, repoUrl: h.repoUrl } : null);
+        setConfiguredDefault(h.defaultSpace);
+        if (!defaultApplied.current) {
+          defaultApplied.current = true;
+          if (h.defaultSpace && !route.space) setSpace(h.defaultSpace);
+        }
       })
       .catch(() => {
         setMetered(false);
@@ -1318,6 +1326,48 @@ export function App() {
                     one hook. This secret is the space&rsquo;s own — the per-agent secrets are not
                     used here. It is shown once, when generated, and takes effect immediately.
                   </p>
+                </RailSection>
+
+                <RailSection title="Opens on load">
+                  {configuredDefault === view.name ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          void api
+                            .clearDefaultSpace(view.name)
+                            .then((r) => setConfiguredDefault(r.defaultSpace))
+                            .catch(() => {});
+                        }}
+                        className="self-start rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                      >
+                        Stop opening here
+                      </button>
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Bullpen opens this space. Clearing it goes back to reopening whichever space
+                        each browser used last.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          void api
+                            .setDefaultSpace(view.name)
+                            .then((r) => setConfiguredDefault(r.defaultSpace))
+                            .catch(() => {});
+                        }}
+                        className="self-start rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+                      >
+                        Open this space by default
+                      </button>
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        {configuredDefault
+                          ? `Bullpen currently opens ${configuredDefault}.`
+                          : "Bullpen reopens whichever space each browser used last."}{" "}
+                        The setting is the box&rsquo;s, so every device follows it.
+                      </p>
+                    </>
+                  )}
                 </RailSection>
 
                 {view.name !== DEFAULT_SPACE && (

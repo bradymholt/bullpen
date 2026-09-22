@@ -16,7 +16,7 @@ import {
 } from "../triggers/webhook.ts";
 import { config } from "../config.ts";
 import { git } from "../workspaces.ts";
-import { claudeCredential, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setGlobalEnv, setSkillsRefreshHours, spaceEnv } from "../env.ts";
+import { claudeCredential, defaultSpace, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setDefaultSpace, setGlobalEnv, setSkillsRefreshHours, spaceEnv } from "../env.ts";
 import { claudeRunner } from "../runs/ClaudeRunner.ts";
 import { open, seal, type SealedBundle, type SecretsBundle } from "../secretsBundle.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
@@ -164,6 +164,7 @@ api.get("/health", (c) => {
     release: config.release,
     repoUrl: config.repoUrl,
     claudeCredential: credential,
+    defaultSpace: defaultSpace(),
   });
 });
 
@@ -903,7 +904,7 @@ api.patch("/spaces/:name", async (c) => {
   const to = typeof body.name === "string" ? body.name.trim() : "";
   if (to.length === 0 || to.length > 60) return c.json({ error: "name must be 1-60 characters" }, 400);
   if (isDefaultSpace(from)) return c.json({ error: `the ${DEFAULT_SPACE} space cannot be renamed` }, 400);
-  if (isDefaultSpace(to)) return c.json({ error: `"${DEFAULT_SPACE}" is the default space` }, 409);
+  if (isDefaultSpace(to)) return c.json({ error: `"${DEFAULT_SPACE}" is reserved` }, 409);
 
   const all = listAgents();
   const members = all.filter((a) => a.space === from);
@@ -924,6 +925,7 @@ api.patch("/spaces/:name", async (c) => {
       .onConflictDoUpdate({ target: spaceSecrets.space, set: rest })
       .run();
   }
+  if (defaultSpace() === from) setDefaultSpace(to);
   return c.json({ moved: members.length, name: to });
 });
 
@@ -936,7 +938,23 @@ api.delete("/spaces/:name", (c) => {
   if (members.length === 0 && !hadRow) return c.json({ error: "not found" }, 404);
   db.update(agents).set({ space: DEFAULT_SPACE }).where(eq(agents.space, name)).run();
   db.delete(spaceSecrets).where(eq(spaceSecrets.space, name)).run();
+  if (defaultSpace() === name) setDefaultSpace(null);
   return c.json({ moved: members.length, name: DEFAULT_SPACE });
+});
+
+/** Which space a cold load opens. Unset, each browser reopens whichever it used last. */
+api.put("/spaces/:name/default", (c) => {
+  const name = c.req.param("name");
+  if (!isDefaultSpace(name) && !listAgents().some((a) => a.space === name)) {
+    return c.json({ error: "not found" }, 404);
+  }
+  setDefaultSpace(name);
+  return c.json({ defaultSpace: name });
+});
+
+api.delete("/spaces/:name/default", (c) => {
+  if (defaultSpace() === c.req.param("name")) setDefaultSpace(null);
+  return c.json({ defaultSpace: defaultSpace() });
 });
 
 api.post("/agents/:id/webhook-secret", (c) => {

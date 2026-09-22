@@ -50,6 +50,18 @@ export function setSkillsRefreshHours(hours: number): void {
     .run();
 }
 
+/** The space a cold load opens; null means "whichever this browser used last". */
+export function defaultSpace(): string | null {
+  return db.select().from(globalConfig).where(eq(globalConfig.id, 1)).get()?.defaultSpace ?? null;
+}
+
+export function setDefaultSpace(space: string | null): void {
+  db.insert(globalConfig)
+    .values({ id: 1, defaultSpace: space })
+    .onConflictDoUpdate({ target: globalConfig.id, set: { defaultSpace: space } })
+    .run();
+}
+
 export function spaceEnv(space: string | null | undefined): Env {
   if (!space) return {};
   return (db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get()?.env as Env) ?? {};

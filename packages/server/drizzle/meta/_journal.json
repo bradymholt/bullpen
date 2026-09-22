@@ -141,6 +141,13 @@
       "when": 1789670439582,
       "tag": "0019_medical_brood",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790036769884,
+      "tag": "0020_closed_purifiers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `global_config` ADD `default_space` text;

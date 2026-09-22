@@ -82,6 +82,8 @@ export const globalConfig = sqliteTable("global_config", {
   env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
   /** Hours between background skills pulls; 0 turns the timer off. */
   skillsRefreshHours: integer("skills_refresh_hours").notNull().default(24),
+  /** The space a cold load opens. Null falls back to whichever was used last. */
+  defaultSpace: text("default_space"),
 });
 
 export const runs = sqliteTable(

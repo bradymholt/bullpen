@@ -39,6 +39,14 @@ async function json<T>(res: Response): Promise<T> {
 export const api = {
   agents: () => fetch("/api/agents").then(json<Agent[]>),
   health: () => fetch("/api/health").then(json<Health>),
+  setDefaultSpace: (space: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/default`, { method: "PUT" }).then(
+      json<{ defaultSpace: string | null }>,
+    ),
+  clearDefaultSpace: (space: string) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/default`, { method: "DELETE" }).then(
+      json<{ defaultSpace: string | null }>,
+    ),
   machineMcp: () => fetch("/api/machine-mcp").then(json<MachineMcp>),
   skills: () => fetch("/api/skills").then(json<Skill[]>),
   repos: (refresh = false) =>

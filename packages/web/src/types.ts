@@ -158,6 +158,8 @@ export type Health = {
   release: string | null;
   repoUrl: string | null;
   claudeCredential: { source: string; detail: string };
+  /** The space a cold load opens; null means each browser reopens its last. */
+  defaultSpace: string | null;
 };
 
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
