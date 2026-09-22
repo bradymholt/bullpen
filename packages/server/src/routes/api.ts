@@ -851,6 +851,34 @@ api.put("/spaces/:name/env", async (c) => {
   return c.json({ env: maskEnv(env) });
 });
 
+/** The palette the editor offers; anything else is refused so a typo can't render as nothing. */
+const SPACE_ICONS = [
+  "slate", "blue", "emerald", "amber", "rose", "violet", "dusk", "ocean", "moss",
+];
+
+api.get("/spaces/icons", (c) => {
+  const rows = db.select({ space: spaceSecrets.space, icon: spaceSecrets.icon }).from(spaceSecrets).all();
+  const icons: Record<string, string> = {};
+  for (const r of rows) if (r.icon) icons[r.space] = r.icon;
+  return c.json(icons);
+});
+
+/** Same row-minting trade as space env: setting an icon can create the secret early. */
+api.put("/spaces/:name/icon", async (c) => {
+  const space = c.req.param("name");
+  const body = await c.req.json<{ icon?: unknown }>().catch(() => null);
+  if (body === null) return c.json({ error: "expected a JSON body" }, 400);
+  const icon = body.icon === null ? null : typeof body.icon === "string" ? body.icon : undefined;
+  if (icon === undefined || (icon !== null && !SPACE_ICONS.includes(icon))) {
+    return c.json({ error: `icon must be null or one of: ${SPACE_ICONS.join(", ")}` }, 400);
+  }
+  db.insert(spaceSecrets)
+    .values({ space, icon, secret: randomBytes(32).toString("base64url"), hookId: randomUUID() })
+    .onConflictDoUpdate({ target: spaceSecrets.space, set: { icon } })
+    .run();
+  return c.json({ icon });
+});
+
 /** The fan-out URL's own secret. Never returned — the UI can set or rotate, not read. */
 api.get("/spaces/:name/secret", (c) => {
   const space = c.req.param("name");

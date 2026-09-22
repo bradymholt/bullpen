@@ -234,6 +234,23 @@ function ChevronUpDownIcon() {
   );
 }
 
+/** Tile styles a space can pick. The key is what the server stores; the classes stay here. */
+const SPACE_ICON_STYLES: Record<string, string> = {
+  slate: "bg-neutral-800 text-neutral-300",
+  blue: "bg-blue-600 text-white",
+  emerald: "bg-emerald-600 text-white",
+  amber: "bg-amber-500 text-neutral-900",
+  rose: "bg-rose-600 text-white",
+  violet: "bg-violet-600 text-white",
+  dusk: "bg-gradient-to-br from-violet-500 to-rose-500 text-white",
+  ocean: "bg-gradient-to-br from-sky-400 to-indigo-600 text-white",
+  moss: "bg-gradient-to-br from-emerald-400 to-teal-600 text-white",
+};
+const DEFAULT_SPACE_ICON = "slate";
+
+const spaceTile = (icon: string | null | undefined) =>
+  SPACE_ICON_STYLES[icon ?? DEFAULT_SPACE_ICON] ?? SPACE_ICON_STYLES[DEFAULT_SPACE_ICON]!;
+
 function SpaceSwitcher({
   spaces,
   current,
@@ -241,11 +258,13 @@ function SpaceSwitcher({
   onPick,
   onNew,
   onOpen,
+  icon,
   className = "",
 }: {
   spaces: string[];
   current: string;
   subtitle: string;
+  icon?: string | null;
   onPick: (next: string) => void;
   onNew: () => void;
   onOpen: () => void;
@@ -261,7 +280,9 @@ function SpaceSwitcher({
           title={`Open ${current}`}
           className="flex min-w-0 flex-1 items-center gap-2.5 p-2.5 text-left hover:bg-neutral-800/60"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-sm font-semibold text-neutral-300">
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${spaceTile(icon)}`}
+          >
             {current.slice(0, 1).toUpperCase()}
           </span>
           <span className="min-w-0 flex-1">
@@ -454,6 +475,7 @@ export function App() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   // On an agent's own page the full delivery history is the point; the home panel is the curated one.
   const [showFiltered, setShowFiltered] = useState(true);
+  const [spaceIcons, setSpaceIcons] = useState<Record<string, string>>({});
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   // null until fetched: an empty list would flash "nothing has run" before the answer arrives.
@@ -589,6 +611,7 @@ export function App() {
 
   useEffect(() => {
     void api.skills().then(setSkills).catch(() => setSkills([]));
+    void api.spaceIcons().then(setSpaceIcons).catch(() => {});
     void api
       .health()
       .then((h) => {
@@ -879,6 +902,7 @@ export function App() {
             subtitle={`${visibleAgents.length} agent${visibleAgents.length === 1 ? "" : "s"}`}
             onPick={pickSpace}
             onOpen={() => setView({ kind: "home" })}
+            icon={spaceIcons[active]}
             onNew={() => {
               const name = window.prompt("Name the new space")?.trim();
               if (!name) return;
@@ -1282,6 +1306,36 @@ export function App() {
                       </p>
                     </>
                   )}
+                </RailSection>
+
+                <RailSection title="Icon">
+                  <div className="flex flex-wrap gap-2">
+                    {Object.keys(SPACE_ICON_STYLES).map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          const next = key === DEFAULT_SPACE_ICON ? null : key;
+                          setSpaceIcons((m) => {
+                            const { [view.name]: _drop, ...rest } = m;
+                            return next ? { ...rest, [view.name]: next } : rest;
+                          });
+                          void api.setSpaceIcon(view.name, next).catch(() => {});
+                        }}
+                        title={key}
+                        className={`flex h-9 w-9 items-center justify-center rounded-md text-sm font-semibold ring-offset-2 ring-offset-neutral-950 ${spaceTile(key)} ${
+                          (spaceIcons[view.name] ?? DEFAULT_SPACE_ICON) === key
+                            ? "ring-2 ring-neutral-300"
+                            : ""
+                        }`}
+                      >
+                        {view.name.slice(0, 1).toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs leading-relaxed text-neutral-600">
+                    The tile beside the space name in the sidebar. The letter is always the
+                    space&rsquo;s first character.
+                  </p>
                 </RailSection>
 
                 <RailSection title="Environment">

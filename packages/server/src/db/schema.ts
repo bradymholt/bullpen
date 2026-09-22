@@ -70,6 +70,8 @@ export const spaceSecrets = sqliteTable("space_secrets", {
   secret: text("secret").notNull(),
   /** Env every agent in the space inherits; the agent's own wins on a clash. */
   env: text("env", { mode: "json" }).notNull().default(sql`'{}'`),
+  /** A key from the UI's icon palette. Null renders the default tile. */
+  icon: text("icon"),
   createdAt: integer("created_at").notNull().default(now),
 });
 

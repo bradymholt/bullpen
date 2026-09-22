@@ -201,6 +201,14 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(force ? { env, force: true } : { env }),
     }).then(json<{ env: Record<string, string> }>),
+  spaceIcons: () => fetch("/api/spaces/icons").then(json<Record<string, string>>),
+  /** `icon: null` puts the space back on the default tile. */
+  setSpaceIcon: (space: string, icon: string | null) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/icon`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ icon }),
+    }).then(json<{ icon: string | null }>),
   spaceSecretState: (space: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean; hookId: string | null }>),
   /** Omit `secret` to have the server mint one. Returns it once, then never again. */
