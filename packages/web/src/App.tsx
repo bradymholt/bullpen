@@ -276,11 +276,11 @@ function SpaceSwitcher({
   const item = "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-neutral-800";
   return (
     <div className={`relative ${className}`}>
-      <div className="flex w-full items-stretch overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 focus-within:border-neutral-600 hover:border-neutral-600">
+      <div className="flex w-full items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 p-1.5 focus-within:border-neutral-600 hover:border-neutral-600">
         <button
           onClick={onOpen}
           title={`Open ${current}`}
-          className="flex min-w-0 flex-1 items-center gap-2.5 p-2.5 text-left hover:bg-neutral-800/60"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md p-1 text-left hover:bg-neutral-800/60"
         >
           <span
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${spaceTile(icon)}`}
@@ -297,7 +297,7 @@ function SpaceSwitcher({
           title="Switch space"
           aria-label="Switch space"
           aria-expanded={open}
-          className="flex shrink-0 items-center border-l border-neutral-700 px-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
+          className="flex h-8 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-neutral-500 hover:border-neutral-600 hover:bg-neutral-800 hover:text-neutral-200"
         >
           <ChevronUpDownIcon />
         </button>
