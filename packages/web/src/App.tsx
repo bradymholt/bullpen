@@ -341,6 +341,111 @@ function SpaceSwitcher({
   );
 }
 
+/** A space exists only once an agent lands in it, so this collects the name and
+ *  tile and then hands off to the new-agent page. */
+function NewSpaceDialog({
+  existing,
+  onCancel,
+  onCreate,
+}: {
+  existing: string[];
+  onCancel: () => void;
+  onCreate: (name: string, icon: string | null) => void;
+}) {
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState<string | null>(null);
+  const trimmed = name.trim();
+  const error =
+    trimmed.length > 60
+      ? "60 characters at most"
+      : existing.some((s) => s.toLowerCase() === trimmed.toLowerCase())
+        ? `There is already a space called \u201c${trimmed}\u201d`
+        : null;
+  const ready = trimmed.length > 0 && error === null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/70 p-4">
+      <button
+        tabIndex={-1}
+        aria-label="Cancel"
+        onClick={onCancel}
+        className="absolute inset-0 cursor-default"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+          if (e.key === "Enter" && ready) onCreate(trimmed, icon);
+        }}
+        className="relative z-10 w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5 shadow-xl"
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-base font-semibold ${spaceTile(icon)}`}
+          >
+            {(trimmed.slice(0, 1) || "\u00b7").toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">New space</h2>
+            <p className="truncate text-xs text-neutral-500">
+              Its own environment and shared webhook.
+            </p>
+          </div>
+        </div>
+
+        <label className="mt-4 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+          Name
+        </label>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="linear"
+          className="mt-1 w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
+        />
+        {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+
+        <p className="mt-4 text-xs font-medium uppercase tracking-wide text-neutral-500">Icon</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {Object.keys(SPACE_ICON_STYLES).map((key) => (
+            <button
+              key={key}
+              title={key}
+              onClick={() => setIcon(key === DEFAULT_SPACE_ICON ? null : key)}
+              className={`flex h-8 w-8 items-center justify-center rounded-md text-xs font-semibold ring-offset-2 ring-offset-neutral-900 ${spaceTile(key)} ${
+                (icon ?? DEFAULT_SPACE_ICON) === key ? "ring-2 ring-neutral-300" : ""
+              }`}
+            >
+              {(trimmed.slice(0, 1) || "\u00b7").toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs leading-relaxed text-neutral-600">
+          The space appears in the rail once its first agent is saved. Continuing opens the new-agent
+          page with this space already chosen.
+        </p>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={!ready}
+            onClick={() => onCreate(trimmed, icon)}
+            className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SPACE_KEY = "bullpen.space";
 
 /** The tagged union this replaced also had an "all" arm, so old values parse. */
@@ -489,6 +594,7 @@ export function App() {
   // On an agent's own page the full delivery history is the point; the home panel is the curated one.
   const [showFiltered, setShowFiltered] = useState(true);
   const [spaceIcons, setSpaceIcons] = useState<Record<string, string>>({});
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   // null until fetched: an empty list would flash "nothing has run" before the answer arrives.
@@ -940,12 +1046,7 @@ export function App() {
             onPick={pickSpace}
             onOpen={() => setView({ kind: "home" })}
             icon={spaceIcons[active]}
-            onNew={() => {
-              const name = window.prompt("Name the new space")?.trim();
-              if (!name) return;
-              setPendingSpace(name);
-              setView({ kind: "edit" });
-            }}
+            onNew={() => setNewSpaceOpen(true)}
             className="mt-4"
           />
         </div>
@@ -2470,6 +2571,22 @@ export function App() {
           </div>
         )}
       </main>
+
+      {newSpaceOpen && (
+        <NewSpaceDialog
+          existing={spaces}
+          onCancel={() => setNewSpaceOpen(false)}
+          onCreate={(name, icon) => {
+            setNewSpaceOpen(false);
+            if (icon) {
+              setSpaceIcons((m) => ({ ...m, [name]: icon }));
+              void api.setSpaceIcon(name, icon).catch(() => {});
+            }
+            setPendingSpace(name);
+            setView({ kind: "edit" });
+          }}
+        />
+      )}
     </div>
   );
 }
