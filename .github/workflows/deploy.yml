@@ -30,7 +30,7 @@ jobs:
       # app can link to it.
       RELEASE_TAG: v0.${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.VERSION }}
 
