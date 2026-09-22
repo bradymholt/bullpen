@@ -454,7 +454,6 @@ export function App() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   // On an agent's own page the full delivery history is the point; the home panel is the curated one.
   const [showFiltered, setShowFiltered] = useState(true);
-  const [showPrompt, setShowPrompt] = useState(false);
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   // null until fetched: an empty list would flash "nothing has run" before the answer arrives.
@@ -1150,23 +1149,9 @@ export function App() {
                   Prompt
                 </h3>
                 {detailAgent.prompt ? (
-                  <>
-                    <p
-                      className={`mt-2 whitespace-pre-wrap text-sm leading-relaxed text-neutral-400 ${
-                        showPrompt ? "" : "line-clamp-[14]"
-                      }`}
-                    >
-                      {detailAgent.prompt}
-                    </p>
-                    {detailAgent.prompt.length > 700 && (
-                      <button
-                        onClick={() => setShowPrompt((v) => !v)}
-                        className="mt-1.5 text-xs text-neutral-500 hover:text-neutral-300"
-                      >
-                        {showPrompt ? "Show less" : "Show more"}
-                      </button>
-                    )}
-                  </>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-neutral-400">
+                    {detailAgent.prompt}
+                  </p>
                 ) : (
                   <p className="mt-2 text-sm text-neutral-600">No prompt.</p>
                 )}
