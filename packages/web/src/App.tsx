@@ -790,19 +790,22 @@ export function App() {
           </button>
         </div>
 
-        {spaces.map((sp) => (
-          <button
-            key={sp}
-            onClick={() => pickSpace(sp)}
-            className={`mt-1 w-full shrink-0 truncate rounded px-2 py-1.5 text-left text-sm transition ${
-              sp === active
-                ? "bg-neutral-900 font-medium text-neutral-100"
-                : "text-neutral-400 hover:bg-neutral-900/50 hover:text-neutral-200"
-            }`}
-          >
-            {sp}
-          </button>
-        ))}
+        {/* Scrolls past five or so rather than pushing the roster off screen. */}
+        <div className="max-h-48 shrink-0 overflow-y-auto">
+          {spaces.map((sp) => (
+            <button
+              key={sp}
+              onClick={() => pickSpace(sp)}
+              className={`mt-1 w-full truncate rounded px-2 py-1 text-left text-sm transition ${
+                sp === active
+                  ? "bg-neutral-900 font-medium text-neutral-100"
+                  : "text-neutral-400 hover:bg-neutral-900/50 hover:text-neutral-200"
+              }`}
+            >
+              {sp}
+            </button>
+          ))}
+        </div>
 
         <div className="mt-6 flex shrink-0 items-center justify-between">
           <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Agents</h2>
