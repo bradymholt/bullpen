@@ -3,7 +3,7 @@ import { AgentEditor } from "./AgentEditor.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { GitPanel } from "./GitPanel.tsx";
 import { api } from "./api.ts";
-import { MODES, modeLabel } from "./modes.ts";
+import { MODES } from "./modes.ts";
 import { ago, took } from "./time.ts";
 import { DeliveryList, GroupedDeliveryList } from "./DeliveryList.tsx";
 import { EnvEditor } from "./EnvEditor.tsx";
@@ -197,6 +197,20 @@ function triggersOf(a: Agent): string[] {
   return ["manual only"];
 }
 
+/** The one-glance form for the sidebar: the icon carries the kind, so this is
+ *  only the detail that distinguishes two agents with the same kind. */
+function triggerLabel(a: Agent): string {
+  if (a.trigger === "schedule") return a.cron ?? "schedule";
+  if (a.trigger === "poll") return "poll";
+  // Only GitHub names its event in a header, so only there does the allowlist
+  // distinguish one webhook agent from another. "hmac" is its old spelling.
+  if (a.trigger === "webhook")
+    return (a.webhookMode === "github" || a.webhookMode === "hmac") && a.webhookEvents.length > 0
+      ? a.webhookEvents.join(", ")
+      : a.webhookMode;
+  return "manual";
+}
+
 /** The trigger spelled out: what fires the agent, then what it refuses. */
 function triggerLines(a: Agent): string[] {
   const lines = triggersOf(a);
@@ -207,15 +221,6 @@ function triggerLines(a: Agent): string[] {
     lines.push(`${c.path} ${c.op === "in" ? "is one of" : "is not one of"} ${c.values.join(", ")}`);
   }
   return lines;
-}
-
-/** Stored records still carry the pre-rename spellings; only the display changes. */
-function workspaceKindLabel(kind: string): string {
-  // Each maps to the first word of the option in the editor's Workspace menu.
-  if (kind === "persistent") return "scratch";
-  if (kind === "git") return "clone";
-  if (kind === "ephemeral") return "fresh";
-  return kind;
 }
 
 function workspaceSummary(a: Agent): string {
@@ -230,6 +235,22 @@ function ChevronUpDownIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden="true">
       <path d="M5 6.5 8 3.5l3 3M5 9.5l3 3 3-3" />
+    </svg>
+  );
+}
+
+function TriggerIcon({ trigger }: { trigger: string }) {
+  const path =
+    trigger === "schedule"
+      ? "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v3.2l2.1 1.3"
+      : trigger === "webhook"
+        ? "M9.3 2 4.5 9h3l-.8 5 4.8-7h-3l.8-5z"
+        : trigger === "poll"
+          ? "M13 8a5 5 0 1 1-1.6-3.7M13.4 2v2.7h-2.7"
+          : "M4.5 2.5l7.5 4-3 1.1-1.1 3-3.4-8.1z";
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+      <path d={path} />
     </svg>
   );
 }
@@ -1078,25 +1099,31 @@ export function App() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{a.name}</div>
-                  <div className="mt-0.5 text-xs text-neutral-500">
-                    {workspaceKindLabel(a.workspaceKind)} · {modeLabel(a.permissionMode)}
-                  </div>
-                  <div className="mt-0.5 text-xs">
+                  <div className="truncate font-medium" title={a.name}>{a.name}</div>
+                  {/* Status wins the row: the trigger truncates around it. */}
+                  <div className="mt-1 flex items-center gap-1.5 text-xs">
+                    <span
+                      title={triggerLines(a).join(" · ")}
+                      className="flex min-w-0 items-center gap-1 text-neutral-500"
+                    >
+                      <TriggerIcon trigger={a.trigger} />
+                      <span className="truncate">{triggerLabel(a)}</span>
+                    </span>
+                    <span className="shrink-0 text-neutral-700">·</span>
                     {!a.enabled && live === 0 ? (
-                      <span className="text-amber-500">paused</span>
+                      <span className="shrink-0 text-amber-500">paused</span>
                     ) : live > 0 ? (
-                      <span className="text-sky-400">
+                      <span className="shrink-0 text-sky-400">
                         {live} running
                         {(stats?.queued[a.id] ?? 0) > 0 ? ` · ${stats!.queued[a.id]} queued` : ""}
                       </span>
                     ) : last ? (
-                      <span className="text-neutral-500">
+                      <span className="shrink-0 text-neutral-500">
                         <span className={STATUS_COLOR[last.status] ?? "text-neutral-400"}>●</span>{" "}
                         ran {ago(last.startedAt)}
                       </span>
                     ) : (
-                      <span className="text-neutral-600">never run</span>
+                      <span className="shrink-0 text-neutral-600">never run</span>
                     )}
                   </div>
                 </div>
