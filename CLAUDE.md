@@ -10,9 +10,15 @@ merge it. Merging `main` is what deploys — `build` pushes the image, `deploy` 
 `workflow_run` after it and cuts a release — so an unmerged PR is an undeployed change.
 `.claude/settings.json` carries the `gh pr merge` allow rule that makes this possible.
 
-Run `npm run typecheck` and `npm test` before merging; there are no PR checks, so those are
-the gate. Keep unrelated work out of the commit — the tree often holds more than one change in
-progress. Don't use `--admin`, and stop rather than merge when something looks wrong.
+Run `npm run typecheck` and `npm test` before merging. The `test` workflow runs both on every
+PR, but a squash-merge does not wait for it unless auto-merge is used, so locally is still
+where you find out. Keep unrelated work out of the commit — the tree often holds more than one
+change in progress. Don't use `--admin`, and stop rather than merge when something looks wrong.
+
+Dependabot opens weekly npm, Actions and Docker PRs. The routine npm bumps come grouped;
+`@anthropic-ai/claude-agent-sdk` is deliberately excluded from that group and arrives on its
+own, because it carries the harness binary — an SDK bump is a Claude Code upgrade, and it is
+the one dependency that can break the invariants below without failing a test.
 
 ## Commands
 

@@ -1,0 +1,27 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # One PR for the routine bumps; the SDK is excluded below so it stays its own.
+      npm:
+        patterns: ["*"]
+        exclude-patterns: ["@anthropic-ai/claude-agent-sdk"]
+    ignore:
+      # Pinned to the Docker base image's major; a bump here is a Dockerfile change.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
