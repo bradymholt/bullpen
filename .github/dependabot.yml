@@ -6,11 +6,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
-    groups:
-      # One PR for the routine bumps; the SDK is excluded below so it stays its own.
-      npm:
-        patterns: ["*"]
-        exclude-patterns: ["@anthropic-ai/claude-agent-sdk"]
     ignore:
       # These types must match the Node we run. Take a new major only when the
       # Dockerfile moves off node:22.
