@@ -186,14 +186,15 @@ export function decideDelivery(opts: {
   }
 
   for (const cond of filterConditions(agent)) {
-    const found = valueAtPath(payload, cond.path);
-    const present = found !== undefined && cond.values.includes(found);
+    const found = valuesAtPath(payload, cond.path);
+    const present = found.some((v) => cond.values.includes(v));
     if (cond.op === "in" ? !present : present) {
       const verb = cond.op === "in" ? "is not in" : "is excluded by";
+      const shown = found.length > 0 ? found.join(", ").slice(0, 120) : "(missing)";
       return {
         ok: false,
         status: 202,
-        reason: `${cond.path}=${found ?? "(missing)"} ${verb} the filter`,
+        reason: `${cond.path}=${shown} ${verb} the filter`,
       };
     }
   }
@@ -222,13 +223,40 @@ export function filterConditions(agent: {
  * same field works for Slack's event.channel, GitHub's action, or anything else
  * that identifies which thing a delivery is about.
  */
-export function valueAtPath(payload: Record<string, unknown>, path: string): string | undefined {
-  let value: unknown = payload;
-  for (const key of path.split(".")) {
-    value = value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
-  }
-  if (value === undefined || value === null) return undefined;
+function readKey(node: unknown, key: string): unknown {
+  return node && typeof node === "object" ? (node as Record<string, unknown>)[key] : undefined;
+}
+
+function asString(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+/**
+ * An array in the path fans out rather than stringifying, so
+ * `pull_request.requested_reviewers.login` yields one entry per reviewer. A
+ * terminal array still also yields its JSON form, which is what older filters
+ * written against the stringified value matched on.
+ */
+export function valuesAtPath(payload: Record<string, unknown>, path: string): string[] {
+  let nodes: unknown[] = [payload];
+  for (const key of path.split(".")) {
+    const next: unknown[] = [];
+    for (const node of nodes) {
+      const index = Number(key);
+      if (Array.isArray(node) && Number.isInteger(index)) next.push(node[index]);
+      else if (Array.isArray(node)) for (const el of node) next.push(readKey(el, key));
+      else next.push(readKey(node, key));
+    }
+    nodes = next.filter((v) => v !== undefined && v !== null);
+  }
+  const found: string[] = [];
+  for (const node of nodes) {
+    if (Array.isArray(node)) {
+      for (const el of node) if (el !== undefined && el !== null) found.push(asString(el));
+    }
+    found.push(asString(node));
+  }
+  return found;
 }
 
 /** Only GitHub names its event in a header, and only GitHub has an allowlist. */

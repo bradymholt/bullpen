@@ -329,4 +329,61 @@ describe("filter conditions", () => {
     const partial = { filters: [{ path: "action", op: "in", values: [] }] };
     expect(fire(partial, { action: "anything" })).toMatchObject({ ok: true });
   });
+
+  const reviewer = {
+    filters: [{ path: "pull_request.requested_reviewers.login", op: "in", values: ["octocat"] }],
+  };
+
+  it("matches a member of an array on the path", () => {
+    const payload = {
+      action: "synchronize",
+      pull_request: { requested_reviewers: [{ login: "someone" }, { login: "octocat" }] },
+    };
+    expect(fire(reviewer, payload)).toMatchObject({ ok: true });
+  });
+
+  it("drops when no member of the array matches", () => {
+    const payload = {
+      action: "synchronize",
+      pull_request: { requested_reviewers: [{ login: "someone" }] },
+    };
+    expect(fire(reviewer, payload)).toMatchObject({ ok: false, status: 202 });
+  });
+
+  it("drops when the array is empty", () => {
+    expect(fire(reviewer, { pull_request: { requested_reviewers: [] } })).toMatchObject({
+      ok: false,
+      status: 202,
+    });
+  });
+
+  it("excludes with `not_in` when any member matches", () => {
+    const blocked = {
+      filters: [
+        { path: "pull_request.labels.name", op: "not_in", values: ["do-not-review"] },
+      ],
+    };
+    expect(
+      fire(blocked, { pull_request: { labels: [{ name: "bug" }, { name: "do-not-review" }] } }),
+    ).toMatchObject({ ok: false, status: 202 });
+    expect(fire(blocked, { pull_request: { labels: [{ name: "bug" }] } })).toMatchObject({
+      ok: true,
+    });
+  });
+
+  it("still matches a terminal array by its JSON form", () => {
+    const legacy = {
+      filters: [{ path: "tags", op: "in", values: ['["a","b"]'] }],
+    };
+    expect(fire(legacy, { tags: ["a", "b"] })).toMatchObject({ ok: true });
+  });
+
+  it("still indexes an array by number", () => {
+    const indexed = {
+      filters: [{ path: "commits.0.id", op: "in", values: ["abc123"] }],
+    };
+    expect(fire(indexed, { commits: [{ id: "abc123" }, { id: "def456" }] })).toMatchObject({
+      ok: true,
+    });
+  });
 });
