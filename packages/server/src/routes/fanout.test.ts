@@ -100,3 +100,41 @@ describe("POST /hooks/space/:space", () => {
     expect(rows.every((r) => r.accepted === false)).toBe(true);
   });
 });
+
+/** A space carries more than one sender, so members refuse each other's traffic. */
+describe("a sender the agent isn't configured for", () => {
+  const deliveries = async (id: string, all = false) =>
+    (await (await api.request(`/agents/${id}/deliveries${all ? "?all=1" : ""}`)).json()) as {
+      reason: string | null;
+    }[];
+
+  beforeEach(() => {
+    db.insert(agents).values({
+      id: "a4", name: "Datadog", space: "work", enabled: true,
+      trigger: "webhook", webhookMode: "custom", webhookSecret: SECRET,
+    }).run();
+  });
+
+  it("drops a GitHub delivery for the token-mode agent in the same space", async () => {
+    await post("work", "pull_request", { action: "closed" });
+    const rows = await deliveries("a4", true);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.reason).toBe("bad signature");
+  });
+
+  it("keeps that drop out of the default list, where it would read as a fault", async () => {
+    await post("work", "pull_request", { action: "closed" });
+    expect(await deliveries("a4")).toEqual([]);
+  });
+
+  it("still surfaces a bad signature on the agent's own URL", async () => {
+    const res = await api.request("/hooks/a4", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-bullpen-token": "not-the-secret" },
+      body: JSON.stringify({ hello: "world" }),
+    });
+    expect(res.status).toBe(401);
+    const rows = await deliveries("a4");
+    expect(rows.map((r) => r.reason)).toEqual(["bad signature"]);
+  });
+});

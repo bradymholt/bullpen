@@ -297,7 +297,15 @@ api.get("/agents/:id/schedule", (c) => {
  * they are noise in any list meant to show problems.
  */
 const BY_DESIGN = /filter|allowlist|ping acknowledged|url_verification|handshake|duplicate/i;
-const isByDesign = (reason: string | null) => BY_DESIGN.test(reason ?? "");
+/**
+ * A space URL checks every member against the space's secret, so an agent whose
+ * sender preset doesn't match the delivery refuses it — a `github` agent and a
+ * `token` agent in one space each drop the other's traffic, by design. On the
+ * agent's own URL the same refusal means something is actually wrong.
+ */
+const FAN_OUT_MISMATCH = /bad signature|no webhook secret/i;
+const isByDesign = (r: { reason: string | null; viaSpace: string | null }) =>
+  BY_DESIGN.test(r.reason ?? "") || (r.viaSpace !== null && FAN_OUT_MISMATCH.test(r.reason ?? ""));
 
 /**
  * `?all=1` includes deliveries refused by this agent's own filters, which is
@@ -313,7 +321,7 @@ api.get("/agents/:id/deliveries", (c) => {
     .limit(200)
     .all();
   const all = c.req.query("all") === "1";
-  return c.json((all ? rows : rows.filter((r) => r.accepted || !isByDesign(r.reason))).slice(0, 20));
+  return c.json((all ? rows : rows.filter((r) => r.accepted || !isByDesign(r))).slice(0, 20));
 });
 
 /**
@@ -1181,7 +1189,7 @@ api.get("/deliveries", (c) => {
     .orderBy(desc(webhookDeliveries.ts))
     .limit(200)
     .all();
-  return c.json(rows.filter((r) => !isByDesign(r.reason)).slice(0, 20));
+  return c.json(rows.filter((r) => !isByDesign(r)).slice(0, 20));
 });
 
 api.get("/runs", (c) => {

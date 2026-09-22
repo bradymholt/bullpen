@@ -1376,8 +1376,8 @@ export function App() {
                     </button>
                     <p className="text-xs leading-relaxed text-neutral-600">
                       {showFiltered
-                        ? "Including deliveries this agent's own filters refused."
-                        : "Filter and allowlist misses are hidden — on a shared space URL they arrive constantly."}
+                        ? "Including deliveries this agent refused — its filters, and senders it isn\u2019t configured for."
+                        : "Filter misses are hidden, as is other senders\u2019 traffic on the shared space URL \u2014 both arrive constantly."}
                     </p>
                   </div>
                 </aside>
