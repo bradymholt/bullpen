@@ -248,6 +248,8 @@ const SPACE_ICON_STYLES: Record<string, string> = {
 };
 const DEFAULT_SPACE_ICON = "slate";
 
+type SpaceOption = { name: string; icon: string | null; agents: number; running: number; paused: number };
+
 const spaceTile = (icon: string | null | undefined) =>
   SPACE_ICON_STYLES[icon ?? DEFAULT_SPACE_ICON] ?? SPACE_ICON_STYLES[DEFAULT_SPACE_ICON]!;
 
@@ -261,7 +263,7 @@ function SpaceSwitcher({
   icon,
   className = "",
 }: {
-  spaces: string[];
+  spaces: SpaceOption[];
   current: string;
   subtitle: string;
   icon?: string | null;
@@ -309,17 +311,27 @@ function SpaceSwitcher({
             className="fixed inset-0 z-10 cursor-default"
           />
           <div className="absolute inset-x-0 z-20 mt-1 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 py-1 shadow-xl">
-            {spaces.map((name) => (
-              <button key={name} onClick={() => { setOpen(false); onPick(name); }} className={item}>
-                <span className={`w-3 shrink-0 text-xs ${name === current ? "text-neutral-100" : "text-transparent"}`}>
-                  &bull;
+            {spaces.map((s) => (
+              <button key={s.name} onClick={() => { setOpen(false); onPick(s.name); }} className={item}>
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded text-xs font-semibold ${spaceTile(s.icon)}`}
+                >
+                  {s.name.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="truncate">{name}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{s.name}</span>
+                  <span className="block truncate text-xs text-neutral-500">
+                    {s.agents} agent{s.agents === 1 ? "" : "s"}
+                    {s.running > 0 && ` \u00b7 ${s.running} running`}
+                    {s.paused > 0 && ` \u00b7 ${s.paused} paused`}
+                  </span>
+                </span>
+                {s.name === current && <span className="shrink-0 text-xs text-neutral-300">&bull;</span>}
               </button>
             ))}
             <div className="my-1 border-t border-neutral-800" />
             <button onClick={() => { setOpen(false); onNew(); }} className={`${item} text-neutral-400`}>
-              <span className="w-3 shrink-0" />
+              <span className="w-7 shrink-0" />
               New space&hellip;
             </button>
           </div>
@@ -464,6 +476,7 @@ export function App() {
   const [liveMode, setLiveMode] = useState("auto");
   const [space, setSpace] = useState<string>(() => route.space ?? loadSpace());
   const [spaceDraft, setSpaceDraft] = useState("");
+  const [iconDraft, setIconDraft] = useState<string | null>(null);
   const [spaceSecret, setSpaceSecret] = useState<{
     configured: boolean;
     hookId: string | null;
@@ -494,6 +507,7 @@ export function App() {
   const spaceDirty =
     view.kind === "space" &&
     (spaceDraft.trim() !== view.name ||
+      iconDraft !== (spaceIcons[view.name] ?? null) ||
       (spaceEnvMap !== null && JSON.stringify(spaceEnvMap) !== spaceEnvLoaded));
   dirtyRef.current = editDirty || spaceDirty;
   const [globalEnvMap, setGlobalEnvMap] = useState<Record<string, string> | null>(null);
@@ -541,6 +555,11 @@ export function App() {
   const spaceHookUrl = spaceName
     ? `${hookBase}/api/hooks/space/${encodeURIComponent(spaceSecret?.hookId ?? spaceName)}`
     : "";
+  // Icons load on their own schedule, so seed the draft whenever either changes.
+  useEffect(() => {
+    if (spaceName !== null) setIconDraft(spaceIcons[spaceName] ?? null);
+  }, [spaceName, spaceIcons]);
+
   useEffect(() => {
     setSpaceError(null);
     if (spaceName === null) return setSpaceSecret(null);
@@ -734,6 +753,17 @@ export function App() {
   // A remembered space that no longer exists (renamed, or its last agent
   // deleted) shows everything rather than an empty roster.
   const active = spaces.includes(space) ? space : (spaces[0] ?? DEFAULT_SPACE);
+  const spaceOptions: SpaceOption[] = spaces.map((name) => {
+    const members = agents.filter((a) => a.space === name);
+    const ids = new Set(members.map((a) => a.id));
+    return {
+      name,
+      icon: spaceIcons[name] ?? null,
+      agents: members.length,
+      running: runs.filter((r) => ids.has(r.agentId) && ACTIVE.has(r.status)).length,
+      paused: members.filter((a) => !a.enabled).length,
+    };
+  });
   const visibleAgents = agents.filter((a) => a.space === active);
 
 
@@ -765,6 +795,13 @@ export function App() {
         const r = await api.setSpaceEnv(from, spaceEnvMap, Object.keys(spaceEnvMap).length === 0);
         setSpaceEnvMap(r.env);
         setSpaceEnvLoaded(JSON.stringify(r.env));
+      }
+      if (iconDraft !== (spaceIcons[from] ?? null)) {
+        await api.setSpaceIcon(from, iconDraft);
+        setSpaceIcons((m) => {
+          const { [from]: _drop, ...rest } = m;
+          return iconDraft ? { ...rest, [from]: iconDraft } : rest;
+        });
       }
       if (to !== from) await api.renameSpace(from, to);
       refresh();
@@ -897,7 +934,7 @@ export function App() {
 
           {/* Outside the scroller: an absolute menu inside one is clipped by it. */}
           <SpaceSwitcher
-            spaces={spaces}
+            spaces={spaceOptions}
             current={active}
             subtitle={`${visibleAgents.length} agent${visibleAgents.length === 1 ? "" : "s"}`}
             onPick={pickSpace}
@@ -1313,19 +1350,10 @@ export function App() {
                     {Object.keys(SPACE_ICON_STYLES).map((key) => (
                       <button
                         key={key}
-                        onClick={() => {
-                          const next = key === DEFAULT_SPACE_ICON ? null : key;
-                          setSpaceIcons((m) => {
-                            const { [view.name]: _drop, ...rest } = m;
-                            return next ? { ...rest, [view.name]: next } : rest;
-                          });
-                          void api.setSpaceIcon(view.name, next).catch(() => {});
-                        }}
+                        onClick={() => setIconDraft(key === DEFAULT_SPACE_ICON ? null : key)}
                         title={key}
                         className={`flex h-9 w-9 items-center justify-center rounded-md text-sm font-semibold ring-offset-2 ring-offset-neutral-950 ${spaceTile(key)} ${
-                          (spaceIcons[view.name] ?? DEFAULT_SPACE_ICON) === key
-                            ? "ring-2 ring-neutral-300"
-                            : ""
+                          (iconDraft ?? DEFAULT_SPACE_ICON) === key ? "ring-2 ring-neutral-300" : ""
                         }`}
                       >
                         {view.name.slice(0, 1).toUpperCase()}
