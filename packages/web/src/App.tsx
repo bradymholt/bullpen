@@ -197,6 +197,18 @@ function triggersOf(a: Agent): string[] {
   return ["manual only"];
 }
 
+/** The trigger spelled out: what fires the agent, then what it refuses. */
+function triggerLines(a: Agent): string[] {
+  const lines = triggersOf(a);
+  if (a.trigger !== "webhook") return lines;
+  if (a.webhookEvents.length > 0) lines.push(`on ${a.webhookEvents.join(", ")}`);
+  for (const c of a.filters) {
+    if (!c.path.trim() || c.values.length === 0) continue;
+    lines.push(`${c.path} ${c.op === "in" ? "is one of" : "is not one of"} ${c.values.join(", ")}`);
+  }
+  return lines;
+}
+
 /** Stored records still carry the pre-rename spellings; only the display changes. */
 function workspaceKindLabel(kind: string): string {
   // Each maps to the first word of the option in the editor's Workspace menu.
@@ -1118,21 +1130,35 @@ export function App() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,44rem)_20rem] xl:grid-cols-[minmax(0,44rem)_26rem]">
-              <section className="min-w-0">
-                {detailAgent.prompt && (
-                  <div className="mb-6">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                      Prompt
-                    </h3>
+            <div className="mt-5 grid gap-8 lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[26rem_minmax(0,1fr)]">
+              <section className="min-w-0 lg:border-r lg:border-neutral-800 lg:pr-6">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  Trigger
+                </h3>
+                <ul className="mb-6 mt-2 space-y-0.5">
+                  {triggerLines(detailAgent).map((line, i) => (
+                    <li
+                      key={i}
+                      className={`truncate text-xs ${i === 0 ? "text-neutral-300" : "font-mono text-neutral-500"}`}
+                      title={line}
+                    >
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+                <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  Prompt
+                </h3>
+                {detailAgent.prompt ? (
+                  <>
                     <p
                       className={`mt-2 whitespace-pre-wrap text-sm leading-relaxed text-neutral-400 ${
-                        showPrompt ? "" : "line-clamp-6"
+                        showPrompt ? "" : "line-clamp-[14]"
                       }`}
                     >
                       {detailAgent.prompt}
                     </p>
-                    {detailAgent.prompt.length > 400 && (
+                    {detailAgent.prompt.length > 700 && (
                       <button
                         onClick={() => setShowPrompt((v) => !v)}
                         className="mt-1.5 text-xs text-neutral-500 hover:text-neutral-300"
@@ -1140,8 +1166,14 @@ export function App() {
                         {showPrompt ? "Show less" : "Show more"}
                       </button>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-neutral-600">No prompt.</p>
                 )}
+              </section>
+
+              <div className="grid min-w-0 gap-8">
+              <section className="min-w-0">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Runs
                 </h3>
@@ -1179,7 +1211,7 @@ export function App() {
               </section>
 
               {detailAgent.trigger === "webhook" && (
-                <aside className="lg:border-l lg:border-neutral-800 lg:pl-6">
+                <aside className="min-w-0 border-t border-neutral-800 pt-6">
                   <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                     Recent webhook deliveries
                   </h3>
@@ -1203,6 +1235,7 @@ export function App() {
                   </div>
                 </aside>
               )}
+              </div>
             </div>
           </div>
         )}
