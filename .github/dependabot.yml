@@ -12,7 +12,8 @@ updates:
         patterns: ["*"]
         exclude-patterns: ["@anthropic-ai/claude-agent-sdk"]
     ignore:
-      # Pinned to the Docker base image's major; a bump here is a Dockerfile change.
+      # These types must match the Node we run. Take a new major only when the
+      # Dockerfile moves off node:22.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
