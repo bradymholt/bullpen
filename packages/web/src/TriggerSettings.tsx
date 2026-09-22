@@ -458,9 +458,11 @@ export function TriggerSettings({
   const setCondition = (i: number, cond: FilterCondition) =>
     setConditions(conditions.map((c, j) => (j === i ? cond : c)));
   const suggest = FILTER_SUGGESTIONS[senderOption(draft.webhookMode)];
-  // Pills for one condition at a time — the one whose path is being edited —
-  // rather than a full block under every row.
   const [activeCond, setActiveCond] = useState<number | null>(null);
+  // Pills fill one condition at a time, but they sit under the whole list so a
+  // focus change can't reflow the rows around them.
+  const pillTarget =
+    activeCond !== null && activeCond < conditions.length ? activeCond : conditions.length - 1;
 
   return (
     <div className="space-y-3 border-y border-neutral-800 py-4">
@@ -1011,18 +1013,16 @@ export function TriggerSettings({
               >
                 &times;
               </button>
-              {suggest && activeCond === i && (
-                <div className="col-span-4">
-                  <Pills
-                    mono
-                    options={suggest.paths.map((pth) => [pth, pth] as const)}
-                    isOn={(v) => cond.path === v}
-                    onPick={(v) => setCondition(i, { ...cond, path: v })}
-                  />
-                </div>
-              )}
             </div>
           ))}
+          {suggest && conditions[pillTarget] && (
+            <Pills
+              mono
+              options={suggest.paths.map((pth) => [pth, pth] as const)}
+              isOn={(v) => conditions[pillTarget]!.path === v}
+              onPick={(v) => setCondition(pillTarget, { ...conditions[pillTarget]!, path: v })}
+            />
+          )}
 
           <button
             onClick={() => {
