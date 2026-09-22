@@ -119,7 +119,7 @@ describe("a sender the agent isn't configured for", () => {
     await post("work", "pull_request", { action: "closed" });
     const rows = await deliveries("a4", true);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.reason).toBe("bad signature");
+    expect(rows[0]!.reason).toBe("another sender's delivery");
   });
 
   it("keeps that drop out of the default list, where it would read as a fault", async () => {

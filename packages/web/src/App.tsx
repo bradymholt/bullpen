@@ -592,7 +592,7 @@ export function App() {
   const [pendingSpace, setPendingSpace] = useState<string | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   // On an agent's own page the full delivery history is the point; the home panel is the curated one.
-  const [showFiltered, setShowFiltered] = useState(true);
+  const [showFiltered, setShowFiltered] = useState(false);
   const [spaceIcons, setSpaceIcons] = useState<Record<string, string>>({});
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);

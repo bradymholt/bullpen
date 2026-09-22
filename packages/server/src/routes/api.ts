@@ -296,16 +296,20 @@ api.get("/agents/:id/schedule", (c) => {
  * with one URL fanning out to a space, most deliveries are refused that way. So
  * they are noise in any list meant to show problems.
  */
-const BY_DESIGN = /filter|allowlist|ping acknowledged|url_verification|handshake|duplicate/i;
+const BY_DESIGN =
+  /filter|allowlist|ping acknowledged|url_verification|handshake|duplicate|another sender/i;
+const isByDesign = (r: { reason: string | null }) => BY_DESIGN.test(r.reason ?? "");
+
 /**
  * A space URL checks every member against the space's secret, so an agent whose
- * sender preset doesn't match the delivery refuses it — a `github` agent and a
- * `token` agent in one space each drop the other's traffic, by design. On the
- * agent's own URL the same refusal means something is actually wrong.
+ * preset doesn't match the delivery refuses it — a `github` agent and a `token`
+ * agent in one space each drop the other's traffic. Recording that as "bad
+ * signature" reads like a wrong secret or someone probing the URL, which is what
+ * the same refusal means on the agent's own URL. So it is named for what it is.
  */
 const FAN_OUT_MISMATCH = /bad signature|no webhook secret/i;
-const isByDesign = (r: { reason: string | null; viaSpace: string | null }) =>
-  BY_DESIGN.test(r.reason ?? "") || (r.viaSpace !== null && FAN_OUT_MISMATCH.test(r.reason ?? ""));
+const reasonFor = (reason: string, viaSpace: string | undefined) =>
+  viaSpace && FAN_OUT_MISMATCH.test(reason) ? "another sender's delivery" : reason;
 
 /**
  * `?all=1` includes deliveries refused by this agent's own filters, which is
@@ -367,7 +371,7 @@ function deliverToAgent(opts: {
   const decision = decideDelivery({ agent, rawBody, headers });
 
   if (!decision.ok) {
-    recordDelivery({ agentId, sourceIp, deliveryKey, event: shownEvent, label, viaSpace, accepted: false, reason: decision.reason });
+    recordDelivery({ agentId, sourceIp, deliveryKey, event: shownEvent, label, viaSpace, accepted: false, reason: reasonFor(decision.reason, viaSpace) });
     return { ok: false, agentId, status: decision.status, reason: decision.reason };
   }
 
