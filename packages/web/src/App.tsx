@@ -228,6 +228,7 @@ function SpaceSwitcher({
   subtitle,
   onPick,
   onNew,
+  onOpen,
   className = "",
 }: {
   spaces: string[];
@@ -235,26 +236,37 @@ function SpaceSwitcher({
   subtitle: string;
   onPick: (next: string) => void;
   onNew: () => void;
+  onOpen: () => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const item = "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-neutral-800";
   return (
     <div className={`relative ${className}`}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        title="Switch space"
-        className="flex w-full items-center gap-2.5 rounded-lg border border-neutral-700 bg-neutral-900 p-2.5 text-left hover:border-neutral-600"
-      >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-sm font-semibold text-neutral-300">
-          {current.slice(0, 1).toUpperCase()}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{current}</span>
-          <span className="block truncate text-xs text-neutral-500">{subtitle}</span>
-        </span>
-        <ChevronUpDownIcon />
-      </button>
+      <div className="flex w-full items-stretch overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 focus-within:border-neutral-600 hover:border-neutral-600">
+        <button
+          onClick={onOpen}
+          title={`Open ${current}`}
+          className="flex min-w-0 flex-1 items-center gap-2.5 p-2.5 text-left hover:bg-neutral-800/60"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-sm font-semibold text-neutral-300">
+            {current.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">{current}</span>
+            <span className="block truncate text-xs text-neutral-500">{subtitle}</span>
+          </span>
+        </button>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          title="Switch space"
+          aria-label="Switch space"
+          aria-expanded={open}
+          className="flex shrink-0 items-center border-l border-neutral-700 px-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
+        >
+          <ChevronUpDownIcon />
+        </button>
+      </div>
       {open && (
         <>
           <button
@@ -855,6 +867,7 @@ export function App() {
             current={active}
             subtitle={`${visibleAgents.length} agent${visibleAgents.length === 1 ? "" : "s"}`}
             onPick={pickSpace}
+            onOpen={() => setView({ kind: "home" })}
             onNew={() => {
               const name = window.prompt("Name the new space")?.trim();
               if (!name) return;
