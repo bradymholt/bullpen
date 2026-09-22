@@ -591,8 +591,6 @@ export function App() {
   /** A space named in the switcher exists only once an agent lands in it. */
   const [pendingSpace, setPendingSpace] = useState<string | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  // On an agent's own page the full delivery history is the point; the home panel is the curated one.
-  const [showFiltered, setShowFiltered] = useState(false);
   const [spaceIcons, setSpaceIcons] = useState<Record<string, string>>({});
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ agentId: string; at: string }[]>([]);
@@ -721,10 +719,10 @@ export function App() {
   useEffect(() => {
     if (detailId === null) return setDeliveries([]);
     void api
-      .deliveries(detailId, showFiltered)
+      .deliveries(detailId)
       .then(setDeliveries)
       .catch(() => setDeliveries([]));
-  }, [detailId, runs, showFiltered]);
+  }, [detailId, runs]);
 
   useEffect(() => {
     try {
@@ -1362,23 +1360,12 @@ export function App() {
                   <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                     Recent webhook deliveries
                   </h3>
-                  <div className="mt-2 space-y-2">
+                  <div className="mt-2">
                     {deliveries.length > 0 ? (
                       <DeliveryList deliveries={deliveries} limit={10} />
                     ) : (
                       <p className="text-sm text-neutral-600">Nothing yet.</p>
                     )}
-                    <button
-                      onClick={() => setShowFiltered((v) => !v)}
-                      className="text-xs text-neutral-500 hover:text-neutral-300"
-                    >
-                      {showFiltered ? "Hide filtered" : "Show filtered"}
-                    </button>
-                    <p className="text-xs leading-relaxed text-neutral-600">
-                      {showFiltered
-                        ? "Including deliveries this agent refused — its filters, and senders it isn\u2019t configured for."
-                        : "Filter misses are hidden, as is other senders\u2019 traffic on the shared space URL \u2014 both arrive constantly."}
-                    </p>
                   </div>
                 </aside>
               )}

@@ -68,9 +68,7 @@ export const api = {
   poll: (id: string) => fetch(`/api/agents/${id}/poll`, { method: "POST" }).then(json<PollOutcome>),
   clearPollState: (id: string) =>
     fetch(`/api/agents/${id}/poll-state`, { method: "DELETE" }).then(json<{ ok: true }>),
-  /** `all` includes deliveries this agent's own filters refused, which are usually noise. */
-  deliveries: (id: string, all = false) =>
-    fetch(`/api/agents/${id}/deliveries${all ? "?all=1" : ""}`).then(json<Delivery[]>),
+  deliveries: (id: string) => fetch(`/api/agents/${id}/deliveries`).then(json<Delivery[]>),
   setSecret: (id: string, webhookSecret: string) =>
     fetch(`/api/agents/${id}/webhook-secret`, {
       method: "PUT",

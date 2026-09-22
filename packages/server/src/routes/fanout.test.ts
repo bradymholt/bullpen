@@ -103,8 +103,8 @@ describe("POST /hooks/space/:space", () => {
 
 /** A space carries more than one sender, so members refuse each other's traffic. */
 describe("a sender the agent isn't configured for", () => {
-  const deliveries = async (id: string, all = false) =>
-    (await (await api.request(`/agents/${id}/deliveries${all ? "?all=1" : ""}`)).json()) as {
+  const deliveries = async (id: string) =>
+    (await (await api.request(`/agents/${id}/deliveries`)).json()) as {
       reason: string | null;
     }[];
 
@@ -117,14 +117,28 @@ describe("a sender the agent isn't configured for", () => {
 
   it("drops a GitHub delivery for the token-mode agent in the same space", async () => {
     await post("work", "pull_request", { action: "closed" });
-    const rows = await deliveries("a4", true);
+    const rows = db.select().from(webhookDeliveries).all().filter((r) => r.agentId === "a4");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.reason).toBe("another sender's delivery");
   });
 
-  it("keeps that drop out of the default list, where it would read as a fault", async () => {
+  it("keeps that drop out of the agent's list, where it would read as a fault", async () => {
     await post("work", "pull_request", { action: "closed" });
     expect(await deliveries("a4")).toEqual([]);
+  });
+
+  it("hides the same drop recorded before it had a name", async () => {
+    db.insert(webhookDeliveries).values({
+      id: "old", agentId: "a4", ts: Math.floor(Date.now() / 1000),
+      viaSpace: "work", accepted: false, reason: "bad signature",
+    }).run();
+    expect(await deliveries("a4")).toEqual([]);
+  });
+
+  it("keeps a filter miss, which is why this agent did not run", async () => {
+    await post("work", "pull_request", { action: "closed" });
+    const rows = await deliveries("a1");
+    expect(rows.map((r) => r.reason)).toEqual(["action=closed is not in the filter"]);
   });
 
   it("still surfaces a bad signature on the agent's own URL", async () => {

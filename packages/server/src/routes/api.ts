@@ -312,10 +312,16 @@ const reasonFor = (reason: string, viaSpace: string | undefined) =>
   viaSpace && FAN_OUT_MISMATCH.test(reason) ? "another sender's delivery" : reason;
 
 /**
- * `?all=1` includes deliveries refused by this agent's own filters, which is
- * what you want when working out why it didn't run. By default they are left
- * out: they arrive constantly on a shared space URL and would bury everything.
+ * The one drop an agent's own list is better off without: it says nothing about
+ * this agent, and on a shared space URL it arrives with every delivery meant for
+ * anyone else. Rows written before the drop had a name still say "bad signature",
+ * so `viaSpace` decides those.
  */
+const isCrossSender = (r: { accepted: boolean; reason: string | null; viaSpace: string | null }) =>
+  !r.accepted &&
+  (/another sender/i.test(r.reason ?? "") || (r.viaSpace !== null && FAN_OUT_MISMATCH.test(r.reason ?? "")));
+
+/** Everything that reached this agent, minus the traffic that was never its own. */
 api.get("/agents/:id/deliveries", (c) => {
   const rows = db
     .select()
@@ -324,8 +330,7 @@ api.get("/agents/:id/deliveries", (c) => {
     .orderBy(desc(webhookDeliveries.ts))
     .limit(200)
     .all();
-  const all = c.req.query("all") === "1";
-  return c.json((all ? rows : rows.filter((r) => r.accepted || !isByDesign(r))).slice(0, 20));
+  return c.json(rows.filter((r) => !isCrossSender(r)).slice(0, 20));
 });
 
 /**
