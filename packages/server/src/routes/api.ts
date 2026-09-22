@@ -72,7 +72,7 @@ import {
 export const api = new Hono();
 
 /** The config plus each server's last-known connection state, taken from recent runs' init messages. */
-api.get("/machine-mcp", (c) => {
+function machineMcpState() {
   const recent = db
     .select({ ts: runEvents.ts, payload: runEvents.payload })
     .from(runEvents)
@@ -80,8 +80,10 @@ api.get("/machine-mcp", (c) => {
     .orderBy(desc(runEvents.id))
     .limit(200)
     .all();
-  return c.json({ ...readMachineMcp(), health: foldMcpHealth(recent) });
-});
+  return { ...readMachineMcp(), health: foldMcpHealth(recent) };
+}
+
+api.get("/machine-mcp", (c) => c.json(machineMcpState()));
 
 /** OAuth for a remote server or claude.ai connector, through the harness's own `claude mcp login`. */
 api.post("/machine-mcp/:name/login", (c) => c.json(startMcpLogin(c.req.param("name")), 202));
@@ -120,7 +122,7 @@ api.post("/machine-mcp", async (c) => {
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
   }
-  return c.json(readMachineMcp());
+  return c.json(machineMcpState());
 });
 
 api.delete("/machine-mcp/:name", (c) => {
@@ -129,7 +131,7 @@ api.delete("/machine-mcp/:name", (c) => {
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
   }
-  return c.json(readMachineMcp());
+  return c.json(machineMcpState());
 });
 
 api.get("/skills", (c) => c.json(listSkills()));

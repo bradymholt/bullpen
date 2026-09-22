@@ -1873,7 +1873,7 @@ export function App() {
                           <ul className="space-y-1">
                             {machineMcp.global.map((s) => (
                               <li key={s.name} className="flex flex-wrap items-baseline gap-2 text-xs">
-                                <McpHealthBadge h={machineMcp.health[s.name]} />
+                                <McpHealthBadge h={machineMcp.health?.[s.name]} />
                                 <span className="shrink-0 font-mono text-neutral-200">{s.name}</span>
                                 <span className="shrink-0 text-neutral-600">{s.transport}</span>
                                 {/* flex-1 gives it a zero hypothetical width, so the row never wraps for it — it truncates. */}
@@ -1947,9 +1947,9 @@ export function App() {
                             <div className="mt-1 flex flex-wrap gap-1">
                               {machineMcp.connectors.map((n) => (
                                 <span key={n} className="inline-flex items-center gap-1.5 rounded bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-400">
-                                  <McpHealthBadge h={machineMcp.health[n]} compact />
+                                  <McpHealthBadge h={machineMcp.health?.[n]} compact />
                                   {n}
-                                  {machineMcp.health[n]?.status === "needs-auth" && (
+                                  {machineMcp.health?.[n]?.status === "needs-auth" && (
                                     <McpAuth name={n} onDone={() => void api.machineMcp().then(setMachineMcp)} />
                                   )}
                                 </span>
