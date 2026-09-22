@@ -95,7 +95,7 @@ export function GitPanel({ runId }: { runId: string }) {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Commit message"
-              className="min-w-48 flex-1 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
+              className="min-w-48 flex-1 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-hidden focus:border-neutral-600"
             />
             <button
               disabled={busy || !message.trim()}

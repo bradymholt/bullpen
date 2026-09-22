@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 const field =
-  "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600";
+  "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden placeholder:text-neutral-700 focus:border-neutral-600";
 const label = "block text-[11px] font-medium uppercase tracking-wide text-neutral-500";
 
 type Transport = "http" | "sse" | "stdio";

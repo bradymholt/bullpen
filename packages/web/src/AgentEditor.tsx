@@ -16,7 +16,7 @@ const MODELS = [
 ] as const;
 
 const field =
-  "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none placeholder:text-neutral-700 focus:border-neutral-600";
+  "w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-hidden placeholder:text-neutral-700 focus:border-neutral-600";
 const label = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
 
 /** Kept in step with the server's ASK_TOOL; a question holds the run until answered. */

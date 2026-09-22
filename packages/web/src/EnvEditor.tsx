@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const MASK = "••••";
 const field =
-  "rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600";
+  "rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden placeholder:text-neutral-700 focus:border-neutral-600";
 
 /**
  * Edits an env map the server has masked. A saved value arrives as the mask and

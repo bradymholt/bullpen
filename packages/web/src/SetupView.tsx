@@ -3,7 +3,7 @@ import { api } from "./api.ts";
 import type { McpCatalogEntry } from "./types.ts";
 
 const field =
-  "w-full rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none placeholder:text-neutral-700 focus:border-neutral-600";
+  "w-full rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-sm outline-hidden placeholder:text-neutral-700 focus:border-neutral-600";
 const primary =
   "rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40";
 const secondary = "rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900 disabled:opacity-40";

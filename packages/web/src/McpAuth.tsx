@@ -106,7 +106,7 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
           </p>
           <div className="flex gap-2">
             <input
-              className="w-full rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+              className="w-full rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-xs outline-hidden placeholder:text-neutral-700 focus:border-neutral-600"
               placeholder="http://localhost:…/callback?code=…&state=…"
               value={redirect}
               onChange={(e) => setRedirect(e.target.value)}

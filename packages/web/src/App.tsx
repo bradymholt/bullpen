@@ -401,7 +401,7 @@ function NewSpaceDialog({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="linear"
-          className="mt-1 w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
+          className="mt-1 w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-hidden focus:border-neutral-600"
         />
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
 
@@ -1411,7 +1411,7 @@ export function App() {
                       <input
                         readOnly
                         value={view.name}
-                        className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-500 outline-none"
+                        className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-500 outline-hidden"
                       />
                       <p className="text-xs leading-relaxed text-neutral-600">
                         Agents land here when no space is chosen, and when their space is removed, so
@@ -1421,7 +1421,7 @@ export function App() {
                   ) : (
                     <>
                       <input
-                        className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-600"
+                        className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-sm outline-hidden focus:border-neutral-600"
                         value={spaceDraft}
                         onChange={(e) => setSpaceDraft(e.target.value)}
                       />
@@ -1496,7 +1496,7 @@ export function App() {
                     <input
                       readOnly
                       value={spaceHookUrl}
-                      className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs text-neutral-400 outline-none"
+                      className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs text-neutral-400 outline-hidden"
                     />
                     <button
                       onClick={() => void navigator.clipboard.writeText(spaceHookUrl)}
@@ -1513,7 +1513,7 @@ export function App() {
                         spaceSecret?.value ??
                         (spaceSecret?.configured ? "\u2022".repeat(24) : "no shared secret yet")
                       }
-                      className={`w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none ${
+                      className={`w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden ${
                         spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
                       }`}
                     />
@@ -1818,13 +1818,13 @@ export function App() {
                             different repo:
                           </p>
                           <input
-                            className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                            className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden placeholder:text-neutral-700 focus:border-neutral-600"
                             placeholder="https://github.com/you/dotfiles"
                             value={skillsSource.url}
                             onChange={(e) => setSkillsSource({ ...skillsSource, url: e.target.value })}
                           />
                           <input
-                            className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                            className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden placeholder:text-neutral-700 focus:border-neutral-600"
                             placeholder="path inside the repo — blank to detect"
                             value={skillsSource.path}
                             onChange={(e) => setSkillsSource({ ...skillsSource, path: e.target.value })}
@@ -2019,7 +2019,7 @@ export function App() {
                         value={claudeMd.exists ? `${(claudeMd.size / 1024).toFixed(1)} KB` : "not present"}
                       />
                       <textarea
-                        className="h-40 w-full resize-y rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs leading-relaxed text-neutral-300 outline-none focus:border-neutral-600 read-only:text-neutral-500"
+                        className="h-40 w-full resize-y rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs leading-relaxed text-neutral-300 outline-hidden focus:border-neutral-600 read-only:text-neutral-500"
                         value={claudeMdDraft}
                         readOnly={!claudeMd.managed}
                         spellCheck={false}
@@ -2060,7 +2060,7 @@ export function App() {
 
                 <RailSection title="Export / import">
                   <input
-                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none placeholder:text-neutral-700 focus:border-neutral-600"
+                    className="w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden placeholder:text-neutral-700 focus:border-neutral-600"
                     type="password"
                     autoComplete="off"
                     placeholder="passphrase — leave blank to export without secrets"
@@ -2553,7 +2553,7 @@ export function App() {
                     ? "Reply to this run…"
                     : `One-off run of ${agentName(selectedAgentId ?? "")}…`
                 }
-                className="flex-1 rounded border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none placeholder:text-neutral-600 focus:border-neutral-600"
+                className="flex-1 rounded border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-hidden placeholder:text-neutral-600 focus:border-neutral-600"
               />
             </div>
           </div>
