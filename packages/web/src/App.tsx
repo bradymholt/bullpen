@@ -1319,7 +1319,7 @@ export function App() {
                 )}
               </section>
 
-              <div className="grid min-w-0 gap-8">
+              <div className="grid min-w-0 content-start gap-8">
               <section className="min-w-0">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Runs
