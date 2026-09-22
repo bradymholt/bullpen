@@ -1764,6 +1764,7 @@ export function App() {
                                 setSkillsNote(null);
                                 try {
                                   setSkillsInfo(await api.skillsPull());
+                                  setSkillList(await api.skills().catch(() => []));
                                   setSkillsNote("Pulled.");
                                 } catch (e) {
                                   setSkillsNote(String((e as Error).message));
