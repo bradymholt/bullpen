@@ -950,7 +950,6 @@ export function App() {
             }`}
           >
             <GearIcon />
-            Bullpen settings
           </button>
           {build && (
             <a
