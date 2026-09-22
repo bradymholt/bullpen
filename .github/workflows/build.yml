@@ -37,7 +37,7 @@ jobs:
             type=sha,format=long,prefix=
 
       # The server is x86_64; building here keeps better-sqlite3 off it.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
