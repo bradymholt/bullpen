@@ -41,7 +41,7 @@ jobs:
       - run: gem install kamal --no-document
 
       # A key authorized for the deploy user on the box; nothing else uses it.
-      - uses: webfactory/ssh-agent@v0.9.0
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.KAMAL_SSH_KEY }}
 
