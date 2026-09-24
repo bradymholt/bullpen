@@ -833,21 +833,10 @@ export function App() {
     if (run && !ACTIVE.has(run.status)) refreshRuns();
   }, [run?.status]);
 
-  /**
-   * `oneOff` is a prompt typed into the bar: its own directory, deleted after.
-   * Running an agent from its card uses the workspace it was configured with.
-   */
-  const start = async (agentId: string, oneOff = false) => {
+  const start = async (agentId: string) => {
     setError(null);
     try {
-      const { runId } = await api.startRun(
-        agentId,
-        oneOff ? prompt.trim() || undefined : undefined,
-        // No mode: the run uses whatever the agent is configured for.
-        undefined,
-        oneOff,
-      );
-      setPrompt("");
+      const { runId } = await api.startRun(agentId);
       setView({ kind: "run", id: runId });
       refreshRuns();
     } catch (e) {
@@ -1276,6 +1265,7 @@ export function App() {
                 {detailAgent.description && (
                   <p className="mt-1 text-xs text-neutral-500">{detailAgent.description}</p>
                 )}
+                {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
               </div>
               <div className="flex shrink-0 gap-2">
                 <button
@@ -2544,8 +2534,7 @@ export function App() {
           </>
         )}
 
-        {((view.kind === "detail" && view.tab !== "settings" && selectedAgentId) ||
-          (view.kind === "run" && canReply)) && (
+        {view.kind === "run" && canReply && (
           <div className="border-t border-neutral-800 p-4">
             {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
             {skillMatches.length > 0 && (
@@ -2600,18 +2589,12 @@ export function App() {
                     }
                   }
                   if (e.key !== "Enter" || !prompt.trim()) return;
-                  if (canReply && run) {
+                  if (run) {
                     api.send(run.id, prompt.trim());
                     setPrompt("");
-                  } else if (selectedAgentId) {
-                    void start(selectedAgentId, true);
                   }
                 }}
-                placeholder={
-                  canReply
-                    ? "Reply to this run…"
-                    : `One-off run of ${agentName(selectedAgentId ?? "")}…`
-                }
+                placeholder="Reply to this run…"
                 className="flex-1 rounded border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-hidden placeholder:text-neutral-600 focus:border-neutral-600"
               />
             </div>
