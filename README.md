@@ -97,16 +97,24 @@ dashboard has no login, so nothing is exposed publicly except signed webhooks: T
 alongside the app and serves the dashboard to your tailnet, and funnels only `/api/hooks` to the
 internet.
 
-**1. Point the config at your box.** Everything deployment-specific is in two files:
+**1. Point the config at your box.** Nothing deployment-specific is committed. `config/deploy.yml`
+reads it from the environment, and `.kamal/secrets` names the secrets it reads from your shell:
 
-- `config/deploy.yml` — the host IP, the image (`<your GitHub user>/bullpen`), and the
-  Tailscale node name (`TS_HOSTNAME`).
-- `.kamal/secrets` — names the secrets and reads them from your shell: `GITHUB_TOKEN` (needs
-  `read:packages`, to pull the image) and `TS_AUTHKEY` (a Tailscale auth key, used once).
+| Variable | What it is |
+|---|---|
+| `BULLPEN_HOST` | The server's IP or hostname. Required. |
+| `TS_HOSTNAME` | The Tailscale node name, so the dashboard is `https://<node>.<tailnet>.ts.net`. Defaults to `bullpen`. |
+| `BULLPEN_TZ` | The container's timezone. Defaults to `UTC`. |
+| `GITHUB_TOKEN` | Needs `read:packages`, to pull the image. |
+| `TS_AUTHKEY` | A Tailscale auth key, used once. |
+
+The image is `ghcr.io/<owner>/bullpen`, built by CI from this repo — change `image` and the
+registry `username` in `config/deploy.yml` if you deploy a fork.
 
 **2. First deploy**, from your machine, with `gem install kamal` done and SSH access to the box:
 
 ```bash
+export BULLPEN_HOST=203.0.113.10 TS_HOSTNAME=bullpen BULLPEN_TZ=America/New_York
 git push                      # CI builds the image and tags it with the commit sha
 npm run deploy:setup          # installs Docker on the box and starts the app
 kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs unprivileged
@@ -118,10 +126,18 @@ kamal accessory boot tailscale
 Then open `https://<node>.<tailnet>.ts.net` and walk through setup.
 
 **3. Every deploy after that is a push to `main`.** The `build` workflow pushes the image; the
-`deploy` workflow runs Kamal for that sha. For the deploy workflow to reach the box, add an Actions
-secret `KAMAL_SSH_KEY` (a private key authorized on the box, used for nothing else) and a variable
-`KAMAL_HOST_KEY` (the output of `ssh-keyscan -t ed25519 <host>`). To redeploy an older commit, run
-the workflow by hand with its sha; `npm run deploy` does the same from your machine.
+`deploy` workflow runs Kamal for that sha. For the deploy workflow to reach the box, add these
+Actions secrets:
+
+- `BULLPEN_HOST` — the same value as above.
+- `KAMAL_SSH_KEY` — a private key authorized on the box, used for nothing else.
+- `KAMAL_HOST_KEY` — the output of `ssh-keyscan -t ed25519 <host>`.
+- `TS_HOSTNAME` — optional, only if you changed it from `bullpen`.
+
+`BULLPEN_TZ` can be an Actions *variable*. The rest are secrets because an Actions log masks a
+secret's value wherever it appears, and a public repo's logs are public. To redeploy an
+older commit, run the workflow by hand with its sha; `npm run deploy` does the same from your
+machine, with the variables above exported.
 
 Nothing is ever built on your machine or the box — `better-sqlite3` compiles from source and a
 small box hasn't the memory. A deploy stops the old container (waiting for running agents) and

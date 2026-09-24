@@ -29,7 +29,7 @@ npm run typecheck  # both packages
 npm run build && npm start   # single port, the way the container runs
 npm run dev:managed          # sandbox: own data dir + CLAUDE_CONFIG_DIR, so Settings is editable
 npm run dev:managed:fresh    # same, after wiping ~/.bullpen-managed
-npm run deploy               # kamal deploy --skip-push --version <HEAD sha>; CI must have built it
+npm run deploy               # kamal deploy --skip-push --version <HEAD sha>; CI must have built it, BULLPEN_HOST exported
 ```
 
 Deployment is Kamal 2 (`config/deploy.yml`, `.kamal/secrets`), one host, `proxy: false`, container

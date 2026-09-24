@@ -1,5 +1,8 @@
 # Kamal 2 — one server, one container, no kamal-proxy.
 #
+# Nothing here names your server: BULLPEN_HOST (its IP or hostname) is read from
+# the environment — your shell for `npm run deploy`, an Actions secret in CI.
+#
 # The dashboard has no auth, so the container publishes no host port at all.
 # The tailscale accessory below serves it to the tailnet and funnels just
 # /api/hooks to the internet (README → "Deploying with Kamal"). With no proxy, Kamal
@@ -15,7 +18,7 @@ image: bradymholt/bullpen
 servers:
   web:
     hosts:
-      - 203.0.113.10
+      - <%= ENV.fetch("BULLPEN_HOST") %>
     proxy: false
     # Shutdown waits for agents' child processes to wind down (see CLAUDE.md).
     stop_timeout: 120
@@ -34,7 +37,7 @@ registry:
 
 env:
   clear:
-    TZ: UTC
+    TZ: <%= ENV.fetch("BULLPEN_TZ", "UTC") %>
   secret:
     # Not a secret — the release tag — but the only per-deploy value Kamal can carry.
     - BULLPEN_RELEASE
@@ -65,19 +68,19 @@ accessories:
   # traffic (a company tailnet, typically) make this the only way in.
   tunnel:
     image: alpine/socat:latest
-    host: 203.0.113.10
+    host: <%= ENV.fetch("BULLPEN_HOST") %>
     port: "127.0.0.1:4322:4322"
     cmd: tcp-listen:4322,fork,reuseaddr tcp:bullpen:4322
 
   tailscale:
     image: tailscale/tailscale:stable
-    host: 203.0.113.10
+    host: <%= ENV.fetch("BULLPEN_HOST") %>
     options:
       cap-add: NET_ADMIN
       device: /dev/net/tun:/dev/net/tun
     env:
       clear:
-        TS_HOSTNAME: bullpen
+        TS_HOSTNAME: <%= ENV.fetch("TS_HOSTNAME", "bullpen") %>
         TS_STATE_DIR: /var/lib/tailscale
         TS_SERVE_CONFIG: /config/serve.json
         TS_AUTH_ONCE: "true"
