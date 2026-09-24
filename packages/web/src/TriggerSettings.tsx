@@ -123,6 +123,7 @@ const PROVIDERS = [
   ["github", "GitHub — X-Hub-Signature-256"],
   ["slack", "Slack — v0= signature over timestamp + body"],
   ["asana", "Asana — X-Hook-Signature, with handshake"],
+  ["groupme", "GroupMe — bot callback, token in the URL"],
 ] as const;
 
 /** A real field from each sender's payload, so the path isn't a guessing game. */
@@ -180,12 +181,16 @@ const FILTER_SUGGESTIONS: Record<string, { paths: string[] }> = {
       "events.0.user.gid",
     ],
   },
+  groupme: {
+    paths: ["sender_type", "group_id", "text", "name", "user_id"],
+  },
 };
 
 const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: string; label: string }> = {
   slack: { path: "event.channel", values: "C0123ABC, C0456DEF", what: "a Slack channel id — Slack sends ids, never names", label: "{{payload.event.channel}}" },
   github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR", label: "{{payload.repository.full_name}} #{{payload.pull_request.number}}" },
   asana: { path: "events.0.action", values: "changed, added", what: "what Asana did to the resource", label: "{{payload.events.0.resource.gid}}" },
+  groupme: { path: "sender_type", values: "bot", what: "who posted — pick “is not one of” so the bot doesn’t answer itself", label: "{{payload.name}}: {{payload.text}}" },
   custom: { path: "type", values: "deploy.failed", what: "whatever field your sender uses to say what happened", label: "{{payload.type}}" },
 };
 
@@ -235,6 +240,22 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
       the event name comes from <code>event.type</code> in the body.
     </>
   ),
+  groupme: (
+    <>
+      A GroupMe bot POSTs every message in its group, as JSON, to one callback URL — no signature,
+      no headers you control. So the secret goes in the URL: create the bot at{" "}
+      <code>dev.groupme.com/bots</code> and set its <strong>Callback URL</strong> to the webhook URL
+      above with <code>?token=&lt;secret&gt;</code> appended, using the secret below. Anyone who
+      sees that URL can trigger the agent, so treat it as the password it is.
+      <br />
+      <br />
+      The bot is called back for <em>its own</em> posts too, so add a filter on{" "}
+      <code>sender_type</code> <em>is not one of</em> <code>bot</code>, or it will answer itself
+      forever. To reply, have the agent POST <code>{"{"}&quot;bot_id&quot;, &quot;text&quot;{"}"}</code>{" "}
+      to <code>https://api.groupme.com/v3/bots/post</code>, with the bot id in the agent&rsquo;s env.
+      GroupMe does not retry and sends no delivery id, so every message runs once.
+    </>
+  ),
 
   custom: (
     <>
@@ -245,6 +266,12 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
       form-encoded body is refused), and put a stable id in{" "}
       <code>X-Bullpen-Idempotency-Key</code> so a retry doesn&rsquo;t start a second run. Nothing is
       signed, so treat the secret as a password.
+      <br />
+      <br />
+      <strong>Sender only takes a URL?</strong> Append the secret as <code>?token=&lt;secret&gt;</code>{" "}
+      instead of the header. It stands in for <code>X-Bullpen-Token</code> exactly, but a URL ends up
+      in the sender&rsquo;s settings and in proxy logs where a header would not, so prefer the header
+      whenever the sender can set one.
       <br />
       <br />
       <strong>Name a signature header</strong> and bullpen instead computes HMAC-SHA256 over the raw
@@ -351,6 +378,11 @@ function exampleRequest(url: string, draft: AgentInput): string {
   return [
     `curl -X POST ${url} \\`,
     `  -H "${shape.header}: $BULLPEN_SECRET" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -d '{"word":"hello"}'`,
+    ``,
+    `# or, for a sender that only takes a URL:`,
+    `curl -X POST "${url}?token=$BULLPEN_SECRET" \\`,
     `  -H "Content-Type: application/json" \\`,
     `  -d '{"word":"hello"}'`,
   ].join("\n");

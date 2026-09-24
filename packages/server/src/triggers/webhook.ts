@@ -59,14 +59,18 @@ export type WebhookPreset = {
   handshakeHeader: string | null;
 };
 
+const TOKEN_PRESET: WebhookPreset = {
+  scheme: "token",
+  signatureHeader: "x-bullpen-token",
+  signaturePrefix: "",
+  eventHeader: null,
+  handshakeHeader: null,
+};
+
 const PRESETS: Record<string, WebhookPreset> = {
-  token: {
-    scheme: "token",
-    signatureHeader: "x-bullpen-token",
-    signaturePrefix: "",
-    eventHeader: null,
-    handshakeHeader: null,
-  },
+  token: TOKEN_PRESET,
+  // GroupMe signs nothing and sets no headers; the secret rides in `?token=`.
+  groupme: TOKEN_PRESET,
   github: {
     scheme: "hmac",
     signatureHeader: "x-hub-signature-256",

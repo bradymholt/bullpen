@@ -406,6 +406,19 @@ function deliverToAgent(opts: {
 }
 
 /**
+ * Every header, lowercased, since which ones matter is per-agent configuration.
+ * `?token=` stands in for `X-Bullpen-Token` for senders that can only be given a
+ * URL, such as a GroupMe bot callback.
+ */
+function hookHeaders(c: Context): Record<string, string | undefined> {
+  const headers = Object.fromEntries(
+    [...c.req.raw.headers].map(([k, v]) => [k.toLowerCase(), v]),
+  ) as Record<string, string | undefined>;
+  headers["x-bullpen-token"] ??= c.req.query("token");
+  return headers;
+}
+
+/**
  * One URL for a whole space: every enabled agent in it that verifies the
  * signature gets the delivery, and its own filters decide whether it runs. The
  * sender holds one secret, so each agent must be given that same secret — one
@@ -417,9 +430,7 @@ api.post("/hooks/space/:key", async (c) => {
   // URLs handed out before ids existed keep working.
   const byId = db.select().from(spaceSecrets).where(eq(spaceSecrets.hookId, key)).get();
   const space = byId?.space ?? key;
-  const headers = Object.fromEntries(
-    [...c.req.raw.headers].map(([k, v]) => [k.toLowerCase(), v]),
-  ) as Record<string, string | undefined>;
+  const headers = hookHeaders(c);
   const sourceIp = c.req.header("x-forwarded-for") ?? undefined;
   const rawBody = await c.req.text();
 
@@ -480,10 +491,7 @@ api.post("/hooks/space/:key", async (c) => {
 api.post("/hooks/:id", async (c) => {
   const agentId = c.req.param("id");
   const agent = getAgent(agentId);
-  // Every header, since which ones matter is now per-agent configuration.
-  const headers = Object.fromEntries(
-    [...c.req.raw.headers].map(([k, v]) => [k.toLowerCase(), v]),
-  ) as Record<string, string | undefined>;
+  const headers = hookHeaders(c);
   const sourceIp = c.req.header("x-forwarded-for") ?? undefined;
   const headerDeliveryKey = headers["x-bullpen-idempotency-key"] ?? headers["x-github-delivery"];
 

@@ -80,7 +80,7 @@ const fields = {
   cronTimezone: z.string().max(120).nullish(),
   // "hmac" is the pre-preset spelling of "github"; kept so old records round-trip.
   trigger: z.enum(["manual", "schedule", "poll", "webhook"]),
-  webhookMode: z.enum(["token", "github", "slack", "asana", "custom", "hmac"]),
+  webhookMode: z.enum(["token", "github", "slack", "asana", "groupme", "custom", "hmac"]),
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
   filters: z.array(filterConditionSchema).max(10),

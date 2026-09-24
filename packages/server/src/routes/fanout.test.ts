@@ -152,3 +152,39 @@ describe("a sender the agent isn't configured for", () => {
     expect(rows.map((r) => r.reason)).toEqual(["bad signature"]);
   });
 });
+
+describe("a shared secret in the query string", () => {
+  beforeEach(() => {
+    db.insert(agents).values({
+      id: "a5", name: "GroupMe", space: "chat", enabled: true,
+      trigger: "webhook", webhookMode: "custom", webhookSecret: SECRET,
+      filters: [{ path: "sender_type", op: "not_in", values: ["bot"] }],
+    }).run();
+  });
+
+  const send = (url: string, headers: Record<string, string> = {}) =>
+    api.request(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({ sender_type: "bot", text: "hi" }),
+    });
+
+  it("is accepted as the token on the agent's own URL", async () => {
+    const res = await send(`/hooks/a5?token=${SECRET}`);
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ error: "sender_type=bot is excluded by the filter" });
+  });
+
+  it("is accepted on a space's shared URL", async () => {
+    const res = await send(`/hooks/space/chat?token=${SECRET}`);
+    expect(res.status).toBe(202);
+  });
+
+  it("401s when wrong", async () => {
+    expect((await send("/hooks/a5?token=nope")).status).toBe(401);
+  });
+
+  it("does not override a header that was sent", async () => {
+    expect((await send(`/hooks/a5?token=${SECRET}`, { "x-bullpen-token": "nope" })).status).toBe(401);
+  });
+});

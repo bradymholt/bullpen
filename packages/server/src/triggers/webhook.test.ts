@@ -161,6 +161,7 @@ describe("provider presets", () => {
   it("reads the legacy hmac spelling as GitHub", () => {
     expect(presetFor({ webhookMode: "hmac" } as never).signatureHeader).toBe("x-hub-signature-256");
     expect(presetFor({ webhookMode: "hmac" } as never).signaturePrefix).toBe("sha256=");
+    expect(presetFor({ webhookMode: "groupme" } as never)).toMatchObject({ scheme: "token", signatureHeader: "x-bullpen-token" });
   });
 
   it("takes header names from the agent when custom", () => {
