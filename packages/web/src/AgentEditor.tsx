@@ -83,6 +83,7 @@ export function AgentEditor({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<AgentInput>({});
+  const [seedRev, setSeedRev] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [machineMcp, setMachineMcp] = useState<MachineMcp | null>(null);
@@ -132,6 +133,7 @@ export function AgentEditor({
             });
     loadedRef.current = JSON.stringify(seeded);
     setDraft(seeded);
+    setSeedRev((n) => n + 1);
   }, [agent?.id, seed?.id]);
 
   // Which keys wider scopes provide, so the editor can say what this agent inherits.
@@ -658,7 +660,7 @@ export function AgentEditor({
         hint="This agent's own variables. It also inherits global and space env; on a clash, these win."
       >
         <EnvEditor
-          key={`env-${agent?.id ?? "new"}-${Object.keys(draft.env ?? {}).length}`}
+          key={seedRev}
           value={draft.env ?? {}}
           onChange={(env) => set("env", env)}
           inherited={inheritedEnv}

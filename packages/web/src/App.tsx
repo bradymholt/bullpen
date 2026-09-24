@@ -636,6 +636,7 @@ export function App() {
       (spaceEnvMap !== null && JSON.stringify(spaceEnvMap) !== spaceEnvLoaded));
   dirtyRef.current = editDirty || spaceDirty;
   const [globalEnvMap, setGlobalEnvMap] = useState<Record<string, string> | null>(null);
+  const [globalEnvRev, setGlobalEnvRev] = useState(0);
   const [envSaved, setEnvSaved] = useState<string | null>(null);
   const [processEnvNames, setProcessEnvNames] = useState<string[] | null>(null);
   const [skillsInfo, setSkillsInfo] = useState<SkillsState | null>(null);
@@ -1485,7 +1486,7 @@ export function App() {
                   {spaceEnvMap === null ? null : (
                     <>
                       <EnvEditor
-                        key={`${view.name}-${Object.keys(spaceEnvMap).join("|")}`}
+                        key={`${view.name}-${spaceEnvLoaded}`}
                         value={spaceEnvMap}
                         onChange={setSpaceEnvMap}
                         inherited={[{ from: "global", keys: Object.keys(globalEnvMap ?? {}) }]}
@@ -1658,7 +1659,7 @@ export function App() {
                   {globalEnvMap === null ? null : (
                     <>
                       <EnvEditor
-                        key={Object.keys(globalEnvMap).join("|")}
+                        key={globalEnvRev}
                         value={globalEnvMap}
                         onChange={setGlobalEnvMap}
                       />
@@ -1667,6 +1668,7 @@ export function App() {
                           onClick={async () => {
                             const r = await api.setGlobalEnv(globalEnvMap, Object.keys(globalEnvMap).length === 0);
                             setGlobalEnvMap(r.env);
+                            setGlobalEnvRev((n) => n + 1);
                             setEnvSaved("Saved.");
                             setTimeout(() => setEnvSaved(null), 2000);
                           }}
