@@ -109,7 +109,7 @@ const KINDS: { kind: TriggerKind; title: string; hint: string; icon: React.React
   {
     kind: "webhook",
     title: "Webhook",
-    hint: "Trigger from GitHub or your own code with a POST",
+    hint: "Run when GitHub, Slack, a bot or your own code POSTs",
     icon: (
       <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M6 4 2.5 8 6 12M10 4l3.5 4-3.5 4" strokeLinecap="round" strokeLinejoin="round" />
@@ -119,15 +119,14 @@ const KINDS: { kind: TriggerKind; title: string; hint: string; icon: React.React
 ];
 
 const PROVIDERS = [
-  ["custom", "Custom — a shared token, or headers you name"],
-  ["github", "GitHub — X-Hub-Signature-256"],
-  ["slack", "Slack — v0= signature over timestamp + body"],
-  ["asana", "Asana — X-Hook-Signature, with handshake"],
-  ["groupme", "GroupMe — bot callback, token in the URL"],
-  ["telegram", "Telegram — bot webhook, X-Telegram-Bot-Api-Secret-Token"],
+  ["github", "GitHub", "Repo or org webhooks, signed with a secret bullpen generates"],
+  ["slack", "Slack", "Events API, signed with your Slack app's signing secret"],
+  ["telegram", "Telegram", "Bot updates, with a secret token Telegram sends back"],
+  ["asana", "Asana", "Task and project events; Asana sets the secret by handshake"],
+  ["groupme", "GroupMe", "Bot callback; the secret rides in the URL"],
+  ["custom", "Custom", "Your own code, Zapier, n8n or CI — a shared token, or an HMAC header you name"],
 ] as const;
 
-/** A real field from each sender's payload, so the path isn't a guessing game. */
 /**
  * Suggestions only — the path stays free text, since the filter is meant to work
  * for any sender. A wrong path reads as missing, which silently drops everything
@@ -208,101 +207,101 @@ type Shape = {
   pasted: boolean;
 };
 
-/** What each sender actually puts on the wire, so the setup isn't guesswork. */
-const SENDER_NOTES: Record<string, React.ReactNode> = {
-  github: (
-    <>
-      GitHub signs every delivery with HMAC-SHA256 over the raw body and sends it as{" "}
-      <code>X-Hub-Signature-256: sha256=&lt;hex&gt;</code>, keyed by the secret above — paste that
-      into GitHub&rsquo;s webhook form. It names the event in <code>X-GitHub-Event</code> and gives
-      each delivery an <code>X-GitHub-Delivery</code> id, which bullpen uses to ignore retries of
-      something it already ran. Saving the hook sends a <code>ping</code> first; that gets a 200 and
-      starts nothing. Set GitHub&rsquo;s content type to <code>application/json</code> — the
-      form-urlencoded default is rejected.
-    </>
-  ),
-  asana: (
-    <>
-      Asana picks the secret, not you. When you register the webhook it POSTs here with{" "}
-      <code>X-Hook-Secret</code>; bullpen echoes that header back and stores the value, which is what
-      completes the registration. Afterwards every delivery carries{" "}
-      <code>X-Hook-Signature: &lt;hex&gt;</code> — the same HMAC-SHA256 over the raw body, but with
-      no <code>sha256=</code> prefix. Asana batches changes into an <code>events</code> array in the
-      body and sends no event header, so the allowlist doesn&rsquo;t apply; filter in the prompt
-      instead.
-    </>
-  ),
-  slack: (
-    <>
-      Slack signs <code>v0:&lt;timestamp&gt;:&lt;body&gt;</code> — the timestamp and body together,
-      not the body alone — and sends the result as <code>X-Slack-Signature: v0=&lt;hex&gt;</code>
-      alongside <code>X-Slack-Request-Timestamp</code>. The key is your app&rsquo;s{" "}
-      <strong>signing secret</strong> from Slack&rsquo;s Basic Information page; paste it above,
-      then set the Request URL in Event Subscriptions. Slack checks that URL by POSTing{" "}
-      <code>url_verification</code> and expecting the <code>challenge</code> value echoed back —
-      bullpen does that once the signature checks out. Requests older than five minutes are refused
-      as replays, retries (<code>X-Slack-Retry-Num</code>) are dropped rather than run twice, and
-      the event name comes from <code>event.type</code> in the body.
-    </>
-  ),
-  groupme: (
-    <>
-      A GroupMe bot POSTs every message in its group, as JSON, to one callback URL — no signature,
-      no headers you control. So the secret goes in the URL: create the bot at{" "}
-      <code>dev.groupme.com/bots</code> and set its <strong>Callback URL</strong> to the webhook URL
-      above, which already carries the secret as <code>?token=</code>. Anyone who sees that URL can
-      trigger the agent, so treat it as the password it is; rotating the secret changes the URL.
-      <br />
-      <br />
-      The bot is called back for <em>its own</em> posts too, so add a filter on{" "}
-      <code>sender_type</code> <em>is not one of</em> <code>bot</code>, or it will answer itself
-      forever. To reply, have the agent POST <code>{"{"}&quot;bot_id&quot;, &quot;text&quot;{"}"}</code>{" "}
-      to <code>https://api.groupme.com/v3/bots/post</code>, with the bot id in the agent&rsquo;s env.
-      GroupMe does not retry and sends no delivery id, so every message runs once.
-    </>
-  ),
-  telegram: (
-    <>
-      Create the bot with BotFather, then register the URL above by calling the Bot API&rsquo;s{" "}
-      <code>setWebhook</code> with <code>url</code> set to it and <code>secret_token</code> set to the
-      secret above. Telegram sends that secret back verbatim on every update as{" "}
-      <code>X-Telegram-Bot-Api-Secret-Token</code> &mdash; nothing is signed, so treat it as a
-      password. Anyone who finds the bot can message it, so add a filter on{" "}
-      <code>message.from.id</code> <em>is one of</em> your own numeric id. Telegram retries until it
-      gets a 2xx, with the same <code>update_id</code>, which bullpen uses to run each message once.
-      <br />
-      <br />
-      With <code>TELEGRAM_BOT_TOKEN</code> in the agent&rsquo;s env, bullpen shows{" "}
-      <em>typing&hellip;</em> in the chat from the moment a message starts a run until the run
-      reaches its result. The reply is still the agent&rsquo;s to send, with{" "}
-      <code>sendMessage</code> to <code>message.chat.id</code>.
-    </>
-  ),
+type Setup = { steps: React.ReactNode[]; note?: React.ReactNode };
 
-  custom: (
-    <>
-      <strong>Leave the headers blank</strong> and this is a plain shared secret — the right choice
-      for anything that can set a header but doesn&rsquo;t sign: Zapier, Make, n8n, CI jobs, your own
-      scripts, or a relay in front of a service bullpen doesn&rsquo;t speak natively. Send the secret
-      verbatim as <code>X-Bullpen-Token</code>, set <code>Content-Type: application/json</code> (a
-      form-encoded body is refused), and put a stable id in{" "}
-      <code>X-Bullpen-Idempotency-Key</code> so a retry doesn&rsquo;t start a second run. Nothing is
-      signed, so treat the secret as a password.
-      <br />
-      <br />
-      <strong>Sender only takes a URL?</strong> Append the secret as <code>?token=&lt;secret&gt;</code>{" "}
-      instead of the header. It stands in for <code>X-Bullpen-Token</code> exactly, but a URL ends up
-      in the sender&rsquo;s settings and in proxy logs where a header would not, so prefer the header
-      whenever the sender can set one.
-      <br />
-      <br />
-      <strong>Name a signature header</strong> and bullpen instead computes HMAC-SHA256 over the raw
-      body as hex and compares it to <code>&lt;prefix&gt;&lt;hex&gt;</code> there. That covers
-      senders which hash the body alone — it will <em>not</em> match Stripe or anything else signing
-      a composed string with a timestamp.
-    </>
-  ),
-};
+/** What to do on the sender's side, in order, then what bullpen does for you. */
+function setupFor(mode: string, url: string): Setup {
+  switch (mode) {
+    case "github":
+      return {
+        steps: [
+          <>In the repo or org, open <strong>Settings → Webhooks → Add webhook</strong> and set the Payload URL to the URL above.</>,
+          <>Set Content type to <code>application/json</code> &mdash; the form-encoded default is refused.</>,
+          <>Paste the secret above into <strong>Secret</strong>.</>,
+          <>Pick the events to send. <em>Only these events</em> below narrows them further.</>,
+        ],
+        note: (
+          <>
+            GitHub&rsquo;s <code>ping</code> on save is acknowledged and starts nothing. A redelivery
+            reuses its <code>X-GitHub-Delivery</code> id, so it never runs twice.
+          </>
+        ),
+      };
+    case "slack":
+      return {
+        steps: [
+          <>From your Slack app&rsquo;s <strong>Basic Information</strong> page, copy the <strong>Signing Secret</strong> and paste it above, then save it.</>,
+          <>Under <strong>Event Subscriptions</strong>, turn events on and set the Request URL to the URL above. Slack verifies it at once; bullpen answers only once the secret is saved.</>,
+          <>Subscribe to the bot events you want, such as <code>app_mention</code> or <code>message.channels</code>.</>,
+        ],
+        note: (
+          <>
+            Slack&rsquo;s retries are dropped rather than run twice, and a request more than five
+            minutes old is refused. The event name is read from <code>event.type</code>.
+          </>
+        ),
+      };
+    case "telegram":
+      return {
+        steps: [
+          <>Create the bot with <strong>@BotFather</strong> and put its token in this agent&rsquo;s env as <code>TELEGRAM_BOT_TOKEN</code>.</>,
+          <>
+            Register the webhook, with the secret above as <code>secret_token</code>:
+            <pre className="mt-1 overflow-x-auto rounded border border-neutral-800 bg-neutral-950 p-2 font-mono leading-relaxed text-neutral-400">
+              {`curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \\\n  -d url=${url} \\\n  -d secret_token="$BULLPEN_SECRET"`}
+            </pre>
+          </>,
+          <>Anyone can message a bot, so add a condition below: <code>message.from.id</code> <em>is one of</em> your numeric user id.</>,
+        ],
+        note: (
+          <>
+            While a message is being worked on, bullpen shows <em>typing&hellip;</em> in the chat. The
+            reply is the agent&rsquo;s to send, with <code>sendMessage</code> to{" "}
+            <code>message.chat.id</code>. Retries share an <code>update_id</code> and run once.
+          </>
+        ),
+      };
+    case "asana":
+      return {
+        steps: [
+          <>Create this agent first &mdash; Asana checks the URL the moment you register it.</>,
+          <>Register a webhook through Asana&rsquo;s API (<code>POST /webhooks</code>) with <code>target</code> set to the URL above.</>,
+          <>Asana sends <code>X-Hook-Secret</code>; bullpen echoes it back and keeps it as this agent&rsquo;s secret. Nothing to paste.</>,
+        ],
+        note: (
+          <>
+            Asana batches changes into an <code>events</code> array and names no event in a header,
+            so filter on <code>events.0.*</code> below or in the prompt.
+          </>
+        ),
+      };
+    case "groupme":
+      return {
+        steps: [
+          <>At <code>dev.groupme.com/bots</code>, create a bot in the group and set its <strong>Callback URL</strong> to the URL above. It already carries the secret.</>,
+          <>The bot is called back for its own posts too, so add a condition below: <code>sender_type</code> <em>is not one of</em> <code>bot</code>.</>,
+          <>To reply, the agent POSTs <code>{'{"bot_id", "text"}'}</code> to <code>https://api.groupme.com/v3/bots/post</code>, with the bot id in its env.</>,
+        ],
+        note: <>GroupMe never retries and sends no delivery id, so every message runs once.</>,
+      };
+    default:
+      return {
+        steps: [
+          <>POST JSON (<code>Content-Type: application/json</code>) to the URL above, with the secret in <code>X-Bullpen-Token</code>.</>,
+          <>A sender that only takes a URL can append <code>?token=&lt;secret&gt;</code> instead. Prefer the header when you can &mdash; URLs end up in logs.</>,
+          <>Send a stable id as <code>X-Bullpen-Idempotency-Key</code> so a retry doesn&rsquo;t start a second run.</>,
+        ],
+        note: (
+          <>
+            Name a <strong>signature header</strong> above and bullpen instead checks an HMAC-SHA256
+            of the raw body, as <code>&lt;prefix&gt;&lt;hex&gt;</code>, keyed by the secret you
+            paste. That fits senders that hash the body alone &mdash; not Stripe, or anything that
+            signs a timestamp too.
+          </>
+        ),
+      };
+  }
+}
 
 /** Quick-fill pills over a field that stays free text. */
 function Pills({
@@ -336,11 +335,11 @@ function Pills({
   );
 }
 
-/** "hmac" and "token" predate the sender list; both still round-trip. */
 function CronPresets({ value, onPick }: { value: string; onPick: (expr: string) => void }) {
   return <Pills options={CRON_PRESETS} isOn={(expr) => value === expr} onPick={onPick} />;
 }
 
+/** "hmac" and "token" predate the sender list; both still round-trip. */
 function senderOption(mode: string | undefined): string {
   if (mode === "hmac") return "github";
   if (!mode || mode === "token") return "custom";
@@ -386,29 +385,39 @@ function shapeOf(draft: AgentInput): Shape {
 }
 
 function exampleRequest(url: string, draft: AgentInput): string {
+  const mode = senderOption(draft.webhookMode);
   const shape = shapeOf(draft);
-  const signed = !["x-bullpen-token", "x-telegram-bot-api-secret-token"].includes(shape.header.toLowerCase());
-  if (signed) {
+  const lines = [`# $BULLPEN_SECRET is this agent's secret`, `BODY='{"word":"hello"}'`];
+  const post = (target: string, headers: string[]) => [
+    `curl -X POST ${target} \\`,
+    ...headers.map((h) => `  -H "${h}" \\`),
+    `  -H "Content-Type: application/json" \\`,
+    `  -d "$BODY"`,
+  ];
+  if (mode === "groupme") return [...lines, "", ...post(`"${url}?token=$BULLPEN_SECRET"`, [])].join("\n");
+  if (mode === "telegram") return [...lines, "", ...post(url, [`${shape.header}: $BULLPEN_SECRET`])].join("\n");
+  if (mode === "slack") {
     return [
-      `BODY='{"word":"hello"}'`,
-      `SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$BULLPEN_SECRET" | awk '{print $2}')`,
-      ``,
-      `curl -X POST ${url} \\`,
-      `  -H "${shape.header}: ${shape.prefix}$SIG" \\`,
-      `  -H "Content-Type: application/json" \\`,
-      `  -d "$BODY"`,
+      ...lines,
+      `TS=$(date +%s)`,
+      `SIG=$(printf 'v0:%s:%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$BULLPEN_SECRET" | awk '{print $2}')`,
+      "",
+      ...post(url, [`X-Slack-Request-Timestamp: $TS`, `X-Slack-Signature: v0=$SIG`]),
     ].join("\n");
   }
+  if (shape.header === "X-Bullpen-Token") {
+    return [
+      ...lines,
+      "",
+      ...post(url, [`X-Bullpen-Token: $BULLPEN_SECRET`, `X-Bullpen-Idempotency-Key: $(uuidgen)`]),
+    ].join("\n");
+  }
+  const event = mode === "github" ? [`X-GitHub-Event: ${draft.webhookEvents?.[0] ?? "issues"}`] : [];
   return [
-    `curl -X POST ${url} \\`,
-    `  -H "${shape.header}: $BULLPEN_SECRET" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -d '{"word":"hello"}'`,
-    ``,
-    `# or, for a sender that only takes a URL:`,
-    `curl -X POST "${url}?token=$BULLPEN_SECRET" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -d '{"word":"hello"}'`,
+    ...lines,
+    `SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$BULLPEN_SECRET" | awk '{print $2}')`,
+    "",
+    ...post(url, [`${shape.header}: ${shape.prefix}$SIG`, ...event]),
   ].join("\n");
 }
 
@@ -437,6 +446,7 @@ export function TriggerSettings({
   const [showTest, setShowTest] = useState(false);
   const [showNotes, setShowNotes] = useState(!agent);
   const [showFilterHelp, setShowFilterHelp] = useState(false);
+  const [showLabel, setShowLabel] = useState(!!draft.labelTemplate);
   const [saved, setSaved] = useState<string | null>(null);
   const [pollNote, setPollNote] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -445,6 +455,7 @@ export function TriggerSettings({
   // filled in a tick later, so keying on agent alone would read the empty one.
   useEffect(() => {
     setKind(initialKind(agent, draft));
+    setShowLabel(!!draft.labelTemplate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent?.id, draft.id]);
 
@@ -495,11 +506,13 @@ export function TriggerSettings({
   const agentId = agent?.id ?? draft.id;
   const hookUrl = agentId ? `${hookBase}/api/hooks/${agentId}` : null;
   const shownSecret = agent ? secret : (draft.webhookSecret ?? null);
-  const secretInUrl = senderOption(draft.webhookMode) === "groupme";
+  const mode = senderOption(draft.webhookMode);
+  const secretInUrl = mode === "groupme";
   const shownUrl =
     hookUrl && secretInUrl && shownSecret ? `${hookUrl}?token=${encodeURIComponent(shownSecret)}` : hookUrl;
   const shape = shapeOf(draft);
-  const example = FILTER_EXAMPLES[senderOption(draft.webhookMode)] ?? FILTER_EXAMPLES.custom!;
+  const example = FILTER_EXAMPLES[mode] ?? FILTER_EXAMPLES.custom!;
+  const setup = setupFor(mode, shownUrl ?? "");
 
   // An agent saved before `filters` existed still edits as one condition.
   const conditions: FilterCondition[] =
@@ -516,7 +529,7 @@ export function TriggerSettings({
   };
   const setCondition = (i: number, cond: FilterCondition) =>
     setConditions(conditions.map((c, j) => (j === i ? cond : c)));
-  const suggest = FILTER_SUGGESTIONS[senderOption(draft.webhookMode)];
+  const suggest = FILTER_SUGGESTIONS[mode];
   const [activeCond, setActiveCond] = useState<number | null>(null);
   // Pills fill one condition at a time, but they sit under the whole list so a
   // focus change can't reflow the rows around them.
@@ -554,8 +567,7 @@ export function TriggerSettings({
 
       {kind === "manual" && (
         <p className="text-xs text-neutral-600">
-          Nothing starts this agent but you &mdash; the Run button, or a one-off prompt. Its webhook URL still exists and still needs its
-          secret &mdash; pick Webhook to see it.
+          Nothing starts this agent but the Run button on its page.
         </p>
       )}
 
@@ -751,23 +763,60 @@ export function TriggerSettings({
         <div className="space-y-4 rounded-lg border border-neutral-800 p-3">
           <div>
             <span className={label}>Sender</span>
-            <select
-              className={field}
-              value={senderOption(draft.webhookMode)}
-              onChange={(e) => {
-                const mode = e.target.value;
-                set("webhookMode", mode);
-                // Only mint a secret for senders that expect us to choose one.
-                if (!agent) set("webhookSecret", mode === "asana" ? null : randomSecret());
-              }}
-            >
-              {PROVIDERS.map(([v, desc]) => (
-                <option key={v} value={v}>
-                  {desc}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-wrap gap-1.5">
+              {PROVIDERS.map(([v, name]) => {
+                const on = mode === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      set("webhookMode", v);
+                      // Only mint a secret for senders that expect us to choose one.
+                      if (!agent) set("webhookSecret", v === "asana" ? null : randomSecret());
+                    }}
+                    className={`rounded border px-2.5 py-1 text-xs transition ${
+                      on
+                        ? "border-neutral-400 bg-neutral-900 text-neutral-100"
+                        : "border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-neutral-600">{PROVIDERS.find(([v]) => v === mode)?.[2]}</p>
           </div>
+
+          {mode === "custom" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className={label}>Signature header</span>
+                <input
+                  className={field}
+                  placeholder="blank — plain token"
+                  value={draft.webhookSignatureHeader ?? ""}
+                  onChange={(e) => {
+                    // A header only counts under `custom`; the older `token` spelling ignores it.
+                    set("webhookMode", "custom");
+                    set("webhookSignatureHeader", e.target.value || null);
+                  }}
+                />
+              </div>
+              <div>
+                <span className={label}>Prefix</span>
+                <input
+                  className={field}
+                  placeholder="sha256="
+                  disabled={!draft.webhookSignatureHeader?.trim()}
+                  value={draft.webhookSignaturePrefix ?? ""}
+                  onChange={(e) => set("webhookSignaturePrefix", e.target.value || null)}
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <span className={label}>Webhook URL</span>
@@ -784,11 +833,10 @@ export function TriggerSettings({
               {secretInUrl
                 ? "The secret is in the URL, so anyone who sees it can trigger this agent. Rotate the secret to revoke it."
                 : agent
-                ? "Reachable by anything that can route here. Its secret is what protects it."
-                : "This is the URL this agent will answer on — it starts working when you create it."}
+                  ? "Reachable by anything that can route here. Its secret is what protects it."
+                  : "This is the URL this agent will answer on — it starts working when you create it."}
             </p>
           </div>
-
 
           {shape.pasted ? (
             <div>
@@ -816,98 +864,219 @@ export function TriggerSettings({
               </div>
               <p className="mt-1 text-xs text-neutral-600">
                 {agent && secret
-                  ? "A secret is already stored. Pasting a new one replaces it immediately, before you save the agent."
+                  ? "A secret is already stored. Save replaces it right away, without saving the agent."
                   : "The sender issues this one — bullpen can't generate it."}
               </p>
               {saved && <p className="mt-1 text-xs text-emerald-500">{saved}</p>}
             </div>
           ) : shape.handshake ? (
-            <div className="rounded border border-neutral-800 bg-neutral-950 p-2.5 text-xs">
+            <div>
               <span className={label}>Secret</span>
               {!agent ? (
-                <p className="text-neutral-500">
-                  Set by Asana on registration. Create this agent first, then point Asana&rsquo;s
-                  webhook at the URL above.
-                </p>
+                <p className="text-xs text-neutral-500">Set by Asana when you register the webhook.</p>
               ) : shownSecret ? (
-                <>
-                  <p className="text-emerald-500">Handshake complete — Asana set this agent&rsquo;s secret.</p>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="text-emerald-500">Handshake complete &mdash; Asana set this agent&rsquo;s secret.</span>
                   <button
                     onClick={async () => {
                       if (!confirm("Clear the secret? The current Asana webhook stops working until you re-register it.")) return;
                       await api.clearSecret(agent.id);
                       setSecret(null);
                     }}
-                    className="mt-2 rounded border border-neutral-700 px-2 py-0.5 text-xs text-amber-400 hover:bg-neutral-800"
+                    className="rounded border border-neutral-700 px-2 py-0.5 text-amber-400 hover:bg-neutral-800"
                   >
-                    Clear and await a new handshake
+                    Clear
                   </button>
-                </>
+                </div>
               ) : (
-                <p className="text-amber-400">
-                  Waiting for Asana&rsquo;s handshake. Register the webhook in Asana now; the first
-                  request sets the secret.
+                <p className="text-xs text-amber-400">
+                  Waiting for Asana&rsquo;s handshake &mdash; the first request sets the secret.
                 </p>
               )}
             </div>
           ) : (
-          <div>
-            <span className={label}>Secret</span>
-            <div className="flex gap-2">
-              <input
-                readOnly
-                value={revealed ? (shownSecret ?? "") : "•".repeat(24)}
-                className={`${field} font-mono text-xs text-neutral-400`}
-              />
-              <button
-                onClick={() => setRevealed((r) => !r)}
-                className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-              >
-                {revealed ? "Hide" : "Reveal"}
-              </button>
-              <button
-                onClick={() => shownSecret && void navigator.clipboard.writeText(shownSecret)}
-                className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-              >
-                Copy
-              </button>
-              <button
-                onClick={async () => {
-                  if (!agent) {
-                    set("webhookSecret", randomSecret());
+            <div>
+              <span className={label}>Secret</span>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={revealed ? (shownSecret ?? "") : "•".repeat(24)}
+                  className={`${field} font-mono text-xs text-neutral-400`}
+                />
+                <button
+                  onClick={() => setRevealed((r) => !r)}
+                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                >
+                  {revealed ? "Hide" : "Reveal"}
+                </button>
+                <button
+                  onClick={() => shownSecret && void navigator.clipboard.writeText(shownSecret)}
+                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                >
+                  Copy
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!agent) {
+                      set("webhookSecret", randomSecret());
+                      setRevealed(true);
+                      return;
+                    }
+                    if (!confirm("Rotate the secret? Anything already using the old one stops working.")) return;
+                    const { webhookSecret } = await api.rotateSecret(agent.id);
+                    setSecret(webhookSecret);
                     setRevealed(true);
-                    return;
-                  }
-                  if (!confirm("Rotate the secret? Anything already using the old one stops working.")) return;
-                  const { webhookSecret } = await api.rotateSecret(agent.id);
-                  setSecret(webhookSecret);
-                  setRevealed(true);
-                }}
-                className="shrink-0 rounded border border-neutral-700 px-2 text-xs text-amber-400 hover:bg-neutral-800"
-              >
-                Rotate
-              </button>
+                  }}
+                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs text-amber-400 hover:bg-neutral-800"
+                >
+                  Rotate
+                </button>
+              </div>
             </div>
-          </div>
           )}
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowNotes((v) => !v)}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              {showNotes ? "▾" : "▸"} Set up {PROVIDERS.find(([v]) => v === mode)?.[1] ?? "the sender"}
+            </button>
+            {showNotes && (
+              <div className="mt-2 space-y-2 text-xs leading-relaxed text-neutral-500">
+                <ol className="list-decimal space-y-1.5 pl-5">
+                  {setup.steps.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+                {setup.note && <p className="text-neutral-600">{setup.note}</p>}
+              </div>
+            )}
+          </div>
 
           {draft.space && (
             <p className="text-xs leading-relaxed text-neutral-600">
-              This agent also answers the shared webhook for the{" "}
-              <strong>{draft.space}</strong> space, alongside every other agent in it. That URL and
-              its secret are configured in the space&rsquo;s settings &mdash; &ldquo;Space
-              settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
+              This agent also answers the <strong>{draft.space}</strong> space&rsquo;s shared webhook,
+              set up under &ldquo;Space settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
             </p>
           )}
+
+          {shape.eventHeader && (
+            <div>
+              <span className={label}>Only these events</span>
+              <ListInput
+                key={`events-${agent?.id ?? "new"}`}
+                placeholder="any event"
+                value={draft.webhookEvents ?? []}
+                onChange={(next) => set("webhookEvents", next)}
+              />
+              {EVENT_SUGGESTIONS[mode] && (
+                <Pills
+                  mono
+                  options={EVENT_SUGGESTIONS[mode]!.map((e) => [e, e] as const)}
+                  isOn={(v) => (draft.webhookEvents ?? []).includes(v)}
+                  onPick={(v) => {
+                    const on = draft.webhookEvents ?? [];
+                    set("webhookEvents", on.includes(v) ? on.filter((x) => x !== v) : [...on, v]);
+                  }}
+                />
+              )}
+              <p className="mt-1 text-xs text-neutral-600">Matched against {shape.eventHeader}.</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <span className={label}>Only run when</span>
+              <button
+                type="button"
+                onClick={() => setShowFilterHelp((v) => !v)}
+                className="text-xs text-neutral-500 hover:text-neutral-300"
+              >
+                {showFilterHelp ? "Hide help" : "How filtering works"}
+              </button>
+            </div>
+            {showFilterHelp && (
+              <div className="space-y-2 text-xs leading-relaxed text-neutral-600">
+                <p>
+                  Dot paths into the body, all of which must hold, checked before the agent starts —
+                  nothing runs and nothing is spent when one doesn&rsquo;t match. For this sender,{" "}
+                  <code>{example.path}</code> is {example.what}. Use <code>0</code> as a path segment
+                  to index an array. A path the payload doesn&rsquo;t have counts as absent:{" "}
+                  <em>is one of</em> drops the delivery, <em>is not one of</em> lets it through.
+                </p>
+                <p>
+                  The payload reaches the agent as data, never as instructions: pull fields into
+                  this agent&rsquo;s prompt with <code>{"{{payload.a.b}}"}</code>, and read the whole
+                  body from <code>.bullpen/payload.json</code> in the workspace.
+                </p>
+              </div>
+            )}
+            {conditions.length === 0 && (
+              <p className="text-xs text-neutral-600">No conditions yet.</p>
+            )}
+            {conditions.map((cond, i) => (
+              <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
+                <input
+                  className={field}
+                  placeholder={example.path}
+                  value={cond.path}
+                  onFocus={() => setActiveCond(i)}
+                  onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
+                />
+                <select
+                  className={field}
+                  value={cond.op}
+                  onChange={(e) =>
+                    setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
+                  }
+                >
+                  <option value="in">is one of</option>
+                  <option value="not_in">is not one of</option>
+                </select>
+                <ListInput
+                  key={`filter-${agent?.id ?? "new"}-${i}`}
+                  placeholder={example.values}
+                  value={cond.values}
+                  onChange={(next) => setCondition(i, { ...cond, values: next })}
+                />
+                <button
+                  onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
+                  title="Remove this condition"
+                  className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+            {suggest && conditions[pillTarget] && (
+              <Pills
+                mono
+                options={suggest.paths.map((pth) => [pth, pth] as const)}
+                isOn={(v) => conditions[pillTarget]!.path === v}
+                onPick={(v) => setCondition(pillTarget, { ...conditions[pillTarget]!, path: v })}
+              />
+            )}
+            <button
+              onClick={() => {
+                setConditions([...conditions, { path: "", op: "in", values: [] }]);
+                setActiveCond(conditions.length);
+              }}
+              className="text-xs text-neutral-400 hover:text-neutral-100"
+            >
+              {conditions.length === 0 ? "+ Add a condition" : "+ Add another condition"}
+            </button>
+          </div>
 
           <div>
             <div className="flex flex-wrap gap-4">
               <button
                 type="button"
-                onClick={() => setShowNotes((v) => !v)}
+                onClick={() => setShowLabel((v) => !v)}
                 className="text-xs text-neutral-500 hover:text-neutral-300"
               >
-                {showNotes ? "▾" : "▸"} Setup notes
+                {showLabel ? "▾" : "▸"} Name each run
               </button>
               <button
                 type="button"
@@ -927,10 +1096,19 @@ export function TriggerSettings({
               )}
             </div>
 
-            {showNotes && (
-              <p className="mt-2 text-xs leading-relaxed text-neutral-500">
-                {SENDER_NOTES[senderOption(draft.webhookMode)]}
-              </p>
+            {showLabel && (
+              <div className="mt-2">
+                <input
+                  className={field}
+                  placeholder={example.label}
+                  value={draft.labelTemplate ?? ""}
+                  onChange={(e) => set("labelTemplate", e.target.value || null)}
+                />
+                <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                  Optional label beside each run in lists, from the delivery &mdash; same{" "}
+                  <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
+                </p>
+              </div>
             )}
 
             {showExample && (
@@ -939,9 +1117,7 @@ export function TriggerSettings({
                   {exampleRequest(hookUrl, draft)}
                 </pre>
                 <button
-                  onClick={() =>
-                    void navigator.clipboard.writeText(exampleRequest(hookUrl, draft))
-                  }
+                  onClick={() => void navigator.clipboard.writeText(exampleRequest(hookUrl, draft))}
                   className="mt-1 rounded border border-neutral-700 px-2 py-0.5 text-xs hover:bg-neutral-800"
                 >
                   Copy
@@ -973,169 +1149,13 @@ export function TriggerSettings({
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-neutral-600">
-                  Signs the request the same way a real caller would, using the settings above. Save
-                  first if you just changed them.
+                  Signed the way this sender signs, from the saved settings &mdash; save first if you
+                  just changed them. Filters apply, so a body that doesn&rsquo;t match is dropped.
                 </p>
-                {testResult && (
-                  <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>
-                )}
+                {testResult && <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>}
               </div>
             )}
           </div>
-
-          {shape.eventHeader && (
-            <div>
-              <span className={label}>Only these events</span>
-              <ListInput
-                key={`events-${agent?.id ?? "new"}`}
-                placeholder="issues, pull_request"
-                value={draft.webhookEvents ?? []}
-                onChange={(next) => set("webhookEvents", next)}
-              />
-              {EVENT_SUGGESTIONS[senderOption(draft.webhookMode)] && (
-                <Pills
-                  mono
-                  options={EVENT_SUGGESTIONS[senderOption(draft.webhookMode)]!.map(
-                    (e) => [e, e] as const,
-                  )}
-                  isOn={(v) => (draft.webhookEvents ?? []).includes(v)}
-                  onPick={(v) => {
-                    const on = draft.webhookEvents ?? [];
-                    set("webhookEvents", on.includes(v) ? on.filter((x) => x !== v) : [...on, v]);
-                  }}
-                />
-              )}
-              <p className="mt-1 text-xs text-neutral-600">Matched against {shape.eventHeader}.</p>
-            </div>
-          )}
-
-          {draft.webhookMode === "custom" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className={label}>Signature header</span>
-                <input
-                  className={field}
-                  placeholder="X-Hook-Signature"
-                  value={draft.webhookSignatureHeader ?? ""}
-                  onChange={(e) => set("webhookSignatureHeader", e.target.value || null)}
-                />
-              </div>
-              <div>
-                <span className={label}>Prefix</span>
-                <input
-                  className={field}
-                  placeholder="sha256="
-                  value={draft.webhookSignaturePrefix ?? ""}
-                  onChange={(e) => set("webhookSignaturePrefix", e.target.value || null)}
-                />
-              </div>
-            </div>
-          )}
-
-          {draft.webhookMode === "custom" && (
-            <p className="-mt-2 text-xs text-neutral-600">
-              Leave the signature header blank to match the secret as a plain token. Otherwise the
-              secret is used as an HMAC-SHA256 key over the raw body, hex, with your prefix.
-            </p>
-          )}
-
-
-
-          <span className={label}>Only run when</span>
-          {conditions.map((cond, i) => (
-            <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
-              <input
-                className={field}
-                placeholder={example.path}
-                value={cond.path}
-                onFocus={() => setActiveCond(i)}
-                onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
-              />
-              <select
-                className={field}
-                value={cond.op}
-                onChange={(e) =>
-                  setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
-                }
-              >
-                <option value="in">is one of</option>
-                <option value="not_in">is not one of</option>
-              </select>
-              <ListInput
-                key={`filter-${agent?.id ?? "new"}-${i}`}
-                placeholder={example.values}
-                value={cond.values}
-                onChange={(next) => setCondition(i, { ...cond, values: next })}
-              />
-              <button
-                onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
-                title="Remove this condition"
-                className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
-              >
-                &times;
-              </button>
-            </div>
-          ))}
-          {suggest && conditions[pillTarget] && (
-            <Pills
-              mono
-              options={suggest.paths.map((pth) => [pth, pth] as const)}
-              isOn={(v) => conditions[pillTarget]!.path === v}
-              onPick={(v) => setCondition(pillTarget, { ...conditions[pillTarget]!, path: v })}
-            />
-          )}
-
-          <button
-            onClick={() => {
-              setConditions([...conditions, { path: "", op: "in", values: [] }]);
-              setActiveCond(conditions.length);
-            }}
-            className="self-start text-xs text-neutral-400 hover:text-neutral-100"
-          >
-            + Add another condition
-          </button>
-          <div>
-            <span className={label}>Name each run</span>
-            <input
-              className={field}
-              placeholder={example.label}
-              value={draft.labelTemplate ?? ""}
-              onChange={(e) => set("labelTemplate", e.target.value || null)}
-            />
-            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-              Optional. Rendered per delivery and shown beside the run in lists, so a feed of
-              identical agent names becomes readable. Same <code>{"{{payload.a.b}}"}</code> syntax as
-              the prompt; any sender, any field. A field the payload lacks renders empty.
-            </p>
-          </div>
-
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowFilterHelp((v) => !v)}
-              className="text-xs text-neutral-500 hover:text-neutral-300"
-            >
-              {showFilterHelp ? "▾" : "▸"} How filtering works
-            </button>
-            {showFilterHelp && (
-              <>
-                <p className="mt-2 text-xs leading-relaxed text-neutral-600">
-                  Dot paths into the body, all of which must hold, checked before the agent starts —
-                  nothing runs and nothing is spent when one doesn&rsquo;t match. Any sender, any
-                  field; for this one, <code>{example.path}</code> is {example.what}. Use{" "}
-                  <code>0</code> as a path segment to index an array. A condition with no path or no
-                  values is ignored. A path the payload doesn&rsquo;t have counts as absent:{" "}
-                  <em>is one of</em> drops the delivery, <em>is not one of</em> lets it through.
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-neutral-600">
-                  The payload reaches the agent as data, never as instructions: pull fields into
-                  this agent&rsquo;s prompt with <code>{"{{payload.a.b}}"}</code>, and read the whole
-                  body from <code>.bullpen/payload.json</code> in the workspace.
-                </p>
-              </>
-            )}
-          </div>
-
         </div>
       )}
     </div>
