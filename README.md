@@ -33,6 +33,9 @@ npm run build && npm start
 
 Then open **http://localhost:4322**.
 
+Nothing needs configuring for either. Optional settings go in a repo-root `.env`, which both
+read if it exists — see [`.env.example`](.env.example).
+
 Other useful commands:
 
 - `npm test`
@@ -102,13 +105,15 @@ to reach it:
 
 **1. Point the config at your server.** Nothing deployment-specific is committed.
 `config/deploy.yml` reads it from the environment, and `.kamal/secrets` names the secrets it
-reads from your shell:
+reads from your shell. These configure Kamal, not bullpen — only `BULLPEN_TZ` reaches the app,
+as `TZ`. The app's own settings, the Claude token and the GitHub token agents use, are entered
+in the dashboard and live in `/data`.
 
 | Variable | What it is |
 |---|---|
 | `BULLPEN_HOST` | The server's IP or hostname. Required. |
 | `BULLPEN_TZ` | The container's timezone. Defaults to `UTC`. |
-| `GITHUB_TOKEN` | Needs `read:packages`, to pull the image. |
+| `GITHUB_TOKEN` | Only for pulling the image from ghcr, so it needs `read:packages`. Not the token agents use — that one goes in Settings → Global environment. Set `KAMAL_REGISTRY_PASSWORD` instead if your shell's `GITHUB_TOKEN` is an agent token without that scope. |
 | `TS_HOSTNAME` | Tailscale only: the node name, so the dashboard is `https://<node>.<tailnet>.ts.net`. Defaults to `bullpen`. |
 | `TS_AUTHKEY` | Tailscale only: an auth key, used once. |
 
