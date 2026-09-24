@@ -10,7 +10,7 @@ import { runMigrations } from "./db/migrate.ts";
 import { hub } from "./hub.ts";
 import { api } from "./routes/api.ts";
 import { eventsSince } from "./runs/eventLog.ts";
-import { recoverOrphanedRuns, shutdownLiveRuns } from "./runs/RunManager.ts";
+import { recoverOrphanedRuns, shutdownLiveRuns, startWorkspaceSweep, sweepWorkspaces } from "./runs/RunManager.ts";
 import { seedScratchAgent } from "./seed.ts";
 import { pullSkillsIfManaged, startSkillsRefresh, stopSkillsRefresh } from "./skills.ts";
 import { startScheduler, stopScheduler } from "./triggers/cron.ts";
@@ -27,6 +27,9 @@ const skillsNote = pullSkillsIfManaged();
 if (skillsNote) console.log(`[bullpen] ${skillsNote}`);
 const refreshHours = startSkillsRefresh();
 if (refreshHours > 0) console.log(`[bullpen] skills refresh every ${refreshHours}h`);
+const swept = sweepWorkspaces();
+if (swept > 0) console.log(`[bullpen] removed ${swept} expired run workspace(s)`);
+startWorkspaceSweep();
 const scheduled = startScheduler();
 if (scheduled > 0) console.log(`[bullpen] scheduled ${scheduled} cron agent(s)`);
 

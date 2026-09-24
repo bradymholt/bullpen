@@ -157,6 +157,12 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ hours }),
     }).then(json<{ refreshHours: number }>),
+  setWorkspaceRetention: (hours: number) =>
+    fetch("/api/setup/workspace-retention", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hours }),
+    }).then(json<{ workspaceRetentionHours: number }>),
   /** With a passphrase, secrets ride along sealed; without one they are left out. */
   exportAgents: (passphrase?: string) =>
     fetch("/api/export", {

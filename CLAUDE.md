@@ -90,7 +90,7 @@ mode, so a string prompt silently costs the stop button and mid-run mode changes
 **Three workspace kinds, two old spellings.** `scratch` (a per-agent directory kept between runs,
 and the answer for agents that never touch code), `existing` (a path you name, used in place — the
 agent edits a live working tree and is never cleaned up), and `clone` (fresh clone on a new branch
-per run, deleted after). Stored records may still say `persistent` and `git`; both parse and mean
+per run, kept for its diff). Stored records may still say `persistent` and `git`; both parse and mean
 `scratch` and `clone`. `removeWorkspace` only deletes below `workspacesDir`, which is what keeps an
 `existing` directory safe.
 
@@ -150,7 +150,8 @@ close together. Running in parallel is only safe when runs do not share a direct
 the workspace default moved with it. `allow` on a `scratch` or `existing` workspace means parallel
 runs overwrite each other's files, `.bullpen/payload.json` included; the editor warns on that pair.
 An ephemeral directory is now kept when a run does not reach `completed`, since it is the only
-evidence a failure leaves.
+evidence a failure leaves. A completed one is kept for `workspaceRetentionHours` (global, default 24) and
+removed by `sweepWorkspaces()` at boot and hourly; 0 restores removal at run end.
 
 **Files an agent hands back live in `.bullpen/out/`, and only there.** Every run's system prompt
 says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under

@@ -656,7 +656,9 @@ export function App() {
   const [health, setHealth] = useState<{
     dataDir: string;
     claudeCredential: { source: string; detail: string };
+    workspaceRetentionHours: number;
   } | null>(null);
+  const [retentionNote, setRetentionNote] = useState<string | null>(null);
 
   // Back and forward are the browser's, so the view follows the URL rather than
   // the other way round.
@@ -1743,6 +1745,34 @@ export function App() {
                   <RailRow label="Claude credential" value={health?.claudeCredential.source ?? "…"} />
                   {health && (
                     <p className="text-xs leading-relaxed text-neutral-600">{health.claudeCredential.detail}</p>
+                  )}
+                  {health && (
+                    <label className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                      Keep a fresh directory after its run completes
+                      <select
+                        value={health.workspaceRetentionHours}
+                        onChange={async (e) => {
+                          const hours = Number(e.target.value);
+                          const previous = health.workspaceRetentionHours;
+                          setHealth({ ...health, workspaceRetentionHours: hours });
+                          setRetentionNote(null);
+                          try {
+                            await api.setWorkspaceRetention(hours);
+                          } catch (err) {
+                            setHealth({ ...health, workspaceRetentionHours: previous });
+                            setRetentionNote(String((err as Error).message));
+                          }
+                        }}
+                        className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                      >
+                        <option value={0}>no, remove it right away</option>
+                        <option value={1}>for an hour</option>
+                        <option value={24}>for a day</option>
+                        <option value={72}>for 3 days</option>
+                        <option value={168}>for a week</option>
+                      </select>
+                      {retentionNote && <span className="text-red-400">{retentionNote}</span>}
+                    </label>
                   )}
                 </RailSection>
 

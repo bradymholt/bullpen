@@ -160,6 +160,8 @@ export type Health = {
   claudeCredential: { source: string; detail: string };
   /** The space a cold load opens; null means each browser reopens its last. */
   defaultSpace: string | null;
+  /** How long a completed run's fresh directory is kept; 0 removes it when the run ends. */
+  workspaceRetentionHours: number;
 };
 
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */

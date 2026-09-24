@@ -1,0 +1,1 @@
+ALTER TABLE `global_config` ADD `workspace_retention_hours` integer DEFAULT 24 NOT NULL;

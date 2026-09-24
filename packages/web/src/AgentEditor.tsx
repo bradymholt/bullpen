@@ -283,19 +283,19 @@ export function AgentEditor({
             );
           }}
         >
-          <option value="ephemeral">Fresh directory — a new folder per run, deleted after</option>
+          <option value="ephemeral">Fresh directory — a new empty folder per run, cleaned up later</option>
           <option value="scratch">Scratch directory — one folder this agent reuses every run</option>
-          <option value="existing">Existing directory — run in a checkout you already have</option>
-          <option value="clone">Git clone — new clone and branch per run, discarded after</option>
+          <option value="existing">Existing directory — works in place in a folder you name</option>
+          <option value="clone">Git clone — new clone and branch per run, kept for review</option>
         </select>
         <p className="mt-1 text-xs text-neutral-600">
           {wsKind === "scratch"
             ? "One directory per agent, reused by every run of it and shared with no other agent. Files left behind are still there next time, so an agent can keep notes, caches, or a checkout it manages itself."
             : wsKind === "ephemeral"
-              ? "A new directory per run, removed when the run ends. Nothing carries over, which is what lets several runs of this agent work at once."
+              ? "A new directory per run, removed a while after the run completes — how long is under Settings. Nothing carries over, which is what lets several runs of this agent work at once."
               : wsKind === "existing"
-                ? "The agent works in your real checkout, on whatever branch is there."
-                : "Isolated per run. Review the diff and open a PR from the run view."}
+                ? "The agent edits that directory directly, on whatever branch is checked out. Nothing isolates it and nothing cleans it up."
+                : "Isolated per run. The clone stays on disk so you can review the diff and open a PR from the run view."}
         </p>
       </Row>
 

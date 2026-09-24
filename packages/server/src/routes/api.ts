@@ -16,7 +16,7 @@ import {
 } from "../triggers/webhook.ts";
 import { config } from "../config.ts";
 import { git } from "../workspaces.ts";
-import { claudeCredential, defaultSpace, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setDefaultSpace, setGlobalEnv, setSkillsRefreshHours, spaceEnv } from "../env.ts";
+import { claudeCredential, defaultSpace, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setDefaultSpace, setGlobalEnv, setSkillsRefreshHours, setWorkspaceRetentionHours, spaceEnv, workspaceRetentionHours } from "../env.ts";
 import { claudeRunner } from "../runs/ClaudeRunner.ts";
 import { open, seal, type SealedBundle, type SecretsBundle } from "../secretsBundle.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
@@ -67,6 +67,7 @@ import {
   QueueFullError,
   requestRun,
   stopRun,
+  sweepWorkspaces,
 } from "../runs/RunManager.ts";
 
 export const api = new Hono();
@@ -167,6 +168,7 @@ api.get("/health", (c) => {
     repoUrl: config.repoUrl,
     claudeCredential: credential,
     defaultSpace: defaultSpace(),
+    workspaceRetentionHours: workspaceRetentionHours(),
   });
 });
 
@@ -799,6 +801,17 @@ api.put("/setup/skills/refresh", async (c) => {
   setSkillsRefreshHours(hours);
   startSkillsRefresh();
   return c.json(skillsState());
+});
+
+api.put("/setup/workspace-retention", async (c) => {
+  const body = await c.req.json<{ hours?: number }>().catch(() => null);
+  const hours = body?.hours;
+  if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 0 || hours > 24 * 30) {
+    return c.json({ error: "hours must be a whole number between 0 and 720" }, 400);
+  }
+  setWorkspaceRetentionHours(hours);
+  sweepWorkspaces();
+  return c.json({ workspaceRetentionHours: hours });
 });
 
 api.patch("/agents/:id", async (c) => {

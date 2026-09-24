@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.ts";
 import { writePayload } from "../triggers/webhook.ts";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
-import { resolveEnv } from "../env.ts";
+import { resolveEnv, workspaceRetentionHours } from "../env.ts";
 import { selectMcp } from "../mcp.ts";
 import { exportMachineMcp } from "../machineMcp.ts";
 import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
@@ -340,7 +340,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
       const final = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
       // Stopped or interrupted runs never reached onResult; anything they left is gathered here.
       keepArtifacts();
-      if (ephemeral && final?.status === "completed") removeWorkspace(workspace.path);
+      if (ephemeral && final?.status === "completed" && workspaceRetentionHours() === 0) removeWorkspace(workspace.path);
       // The next queued run, if any, waits on exactly this.
       drainQueue(agent.id);
     });
@@ -437,6 +437,42 @@ export function recoverOrphanedRuns(): number {
     .all();
   for (const { agentId } of waiting) drainQueue(agentId);
   return orphans.length;
+}
+
+/**
+ * A completed run's fresh directory is kept for the retention window so it can
+ * still be looked into, then removed here. Clones and runs that did not
+ * complete are left alone, the same as at run end.
+ */
+export function sweepWorkspaces(): number {
+  const cutoff = Math.floor(Date.now() / 1000) - workspaceRetentionHours() * 3600;
+  const due = db
+    .select({ id: runs.id, path: runs.workspacePath })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.status, "completed"),
+        isNull(runs.branch),
+        lte(runs.endedAt, cutoff),
+        like(runs.workspacePath, `${config.workspacesDir}/%`),
+      ),
+    )
+    .all();
+  let removed = 0;
+  for (const { id, path } of due) {
+    if (path !== join(config.workspacesDir, id) || !existsSync(path)) continue;
+    removeWorkspace(path);
+    removed++;
+  }
+  return removed;
+}
+
+let sweepTimer: NodeJS.Timeout | null = null;
+
+export function startWorkspaceSweep(): void {
+  if (sweepTimer) clearInterval(sweepTimer);
+  sweepTimer = setInterval(sweepWorkspaces, 60 * 60 * 1000);
+  sweepTimer.unref();
 }
 
 /**
