@@ -245,8 +245,8 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
       A GroupMe bot POSTs every message in its group, as JSON, to one callback URL — no signature,
       no headers you control. So the secret goes in the URL: create the bot at{" "}
       <code>dev.groupme.com/bots</code> and set its <strong>Callback URL</strong> to the webhook URL
-      above with <code>?token=&lt;secret&gt;</code> appended, using the secret below. Anyone who
-      sees that URL can trigger the agent, so treat it as the password it is.
+      above, which already carries the secret as <code>?token=</code>. Anyone who sees that URL can
+      trigger the agent, so treat it as the password it is; rotating the secret changes the URL.
       <br />
       <br />
       The bot is called back for <em>its own</em> posts too, so add a filter on{" "}
@@ -471,6 +471,9 @@ export function TriggerSettings({
   const agentId = agent?.id ?? draft.id;
   const hookUrl = agentId ? `${hookBase}/api/hooks/${agentId}` : null;
   const shownSecret = agent ? secret : (draft.webhookSecret ?? null);
+  const secretInUrl = senderOption(draft.webhookMode) === "groupme";
+  const shownUrl =
+    hookUrl && secretInUrl && shownSecret ? `${hookUrl}?token=${encodeURIComponent(shownSecret)}` : hookUrl;
   const shape = shapeOf(draft);
   const example = FILTER_EXAMPLES[senderOption(draft.webhookMode)] ?? FILTER_EXAMPLES.custom!;
 
@@ -745,16 +748,18 @@ export function TriggerSettings({
           <div>
             <span className={label}>Webhook URL</span>
             <div className="flex gap-2">
-              <input readOnly value={hookUrl} className={`${field} font-mono text-xs text-neutral-400`} />
+              <input readOnly value={shownUrl ?? ""} className={`${field} font-mono text-xs text-neutral-400`} />
               <button
-                onClick={() => void navigator.clipboard.writeText(hookUrl)}
+                onClick={() => shownUrl && void navigator.clipboard.writeText(shownUrl)}
                 className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
               >
                 Copy
               </button>
             </div>
             <p className="mt-1 text-xs text-neutral-600">
-              {agent
+              {secretInUrl
+                ? "The secret is in the URL, so anyone who sees it can trigger this agent. Rotate the secret to revoke it."
+                : agent
                 ? "Reachable by anything that can route here. Its secret is what protects it."
                 : "This is the URL this agent will answer on — it starts working when you create it."}
             </p>
