@@ -2592,6 +2592,9 @@ export function App() {
                   if (run) {
                     api.send(run.id, prompt.trim());
                     setPrompt("");
+                    stickToBottom.current = true;
+                    const el = outputRef.current;
+                    if (el) el.scrollTop = el.scrollHeight;
                   }
                 }}
                 placeholder="Reply to this run…"
