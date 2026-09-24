@@ -232,11 +232,33 @@ export function startRun(opts: RunRequest, existingId?: string): string {
 
   appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, permissionMode, cwd: workspace.path });
 
+  launch(runId, agent, { cwd: workspace.path, prompt, permissionMode, env, systemNote: payloadNote, ephemeral });
+  return runId;
+}
+
+type Launch = {
+  cwd: string;
+  prompt: string;
+  permissionMode: string;
+  env: Record<string, string>;
+  systemNote: string;
+  ephemeral: boolean;
+  resumeSessionId?: string;
+  /** What earlier sessions of this run already spent; a resumed session reports only its own. */
+  prior?: { numTurns: number; costUsd: number };
+};
+
+function launch(runId: string, agent: Agent, l: Launch): void {
+  const { env, ephemeral, permissionMode } = l;
+  const prior = l.prior ?? { numTurns: 0, costUsd: 0 };
+  const workspace = { path: l.cwd };
+  const payloadNote = l.systemNote;
   const mcp = selectMcp(agent, exportMachineMcp(), env);
   const handle = runner.start(
     {
       cwd: workspace.path,
-      prompt,
+      prompt: l.prompt,
+      resumeSessionId: l.resumeSessionId,
       model: agent.model ?? undefined,
       permissionMode: isPermissionMode(permissionMode) ? permissionMode : "supervised",
       allowedTools: agent.allowedTools as string[],
@@ -265,9 +287,9 @@ export function startRun(opts: RunRequest, existingId?: string): string {
       onResult: ({ numTurns, costUsd, isError }) => {
         db.update(runs)
           .set({
-            numTurns,
+            numTurns: numTurns === undefined ? undefined : prior.numTurns + numTurns,
             // Stored in micro-dollars: an integer column, and sums stay exact.
-            costUsd: Math.round((costUsd ?? 0) * 1_000_000),
+            costUsd: prior.costUsd + Math.round((costUsd ?? 0) * 1_000_000),
             endedAt: Math.floor(Date.now() / 1000),
           })
           .where(eq(runs.id, runId))
@@ -322,13 +344,47 @@ export function startRun(opts: RunRequest, existingId?: string): string {
       // The next queued run, if any, waits on exactly this.
       drainQueue(agent.id);
     });
+}
 
-  return runId;
+/**
+ * Every deploy closes every session, so a reply that could only reach a live
+ * one would lose most runs' context within the hour. The harness keeps the
+ * transcript on disk under the cwd, so resuming in the same directory — made
+ * again if an ephemeral run's was removed — picks the conversation back up.
+ */
+function resumeRun(runId: string, text: string): boolean {
+  const run = db.select().from(runs).where(eq(runs.id, runId)).get();
+  if (!run?.claudeSessionId || !run.workspacePath) return false;
+  if (run.status === "queued" || ACTIVE_STATUSES.includes(run.status as RunStatus)) return false;
+  const agent = getAgent(run.agentId);
+  if (!agent) return false;
+
+  mkdirSync(run.workspacePath, { recursive: true });
+  const env = resolveEnv(agent);
+  appendEvent(runId, "user.message", { text });
+  setStatus(runId, "running", { endedAt: null });
+  launch(runId, agent, {
+    cwd: run.workspacePath,
+    prompt: text,
+    permissionMode: run.permissionMode ?? agent.permissionMode,
+    env,
+    systemNote: systemNote(run.trigger as RunRequest["trigger"], env),
+    ephemeral: !run.branch && run.workspacePath === join(config.workspacesDir, runId),
+    resumeSessionId: run.claudeSessionId,
+    prior: { numTurns: run.numTurns ?? 0, costUsd: run.costUsd ?? 0 },
+  });
+  return true;
+}
+
+/** A finished run whose session is closed can still be replied to while its transcript can be found. */
+export function isResumable(run: { id: string; status: string; claudeSessionId: string | null }): boolean {
+  if (live.has(run.id)) return true;
+  return run.claudeSessionId != null && run.status !== "queued" && !ACTIVE_STATUSES.includes(run.status as RunStatus);
 }
 
 export function sendToRun(runId: string, text: string): boolean {
   const handle = live.get(runId);
-  if (!handle) return false;
+  if (!handle) return resumeRun(runId, text);
   appendEvent(runId, "user.message", { text });
   // A finished run is still attached; talking to it puts it back to work, and
   // the status should say so rather than reading completed while it thinks.

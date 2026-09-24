@@ -59,7 +59,7 @@ import { decideApproval, pendingApprovals } from "../runs/approvals.ts";
 import {
   agentHasActiveRun,
   getAgent,
-  isActive,
+  isResumable,
   isPermissionMode,
   listAgents,
   sendToRun,
@@ -1221,7 +1221,7 @@ api.get("/runs/:id", (c) => {
   const run = db.select().from(runs).where(eq(runs.id, c.req.param("id"))).get();
   if (!run) return c.json({ error: "not found" }, 404);
   // A completed run keeps its session open, so it can still be talked to.
-  return c.json({ run: { ...run, resumable: isActive(run.id) }, events: eventsSince(run.id, 0) });
+  return c.json({ run: { ...run, resumable: isResumable(run) }, events: eventsSince(run.id, 0) });
 });
 
 api.post("/agents/:id/run", async (c) => {
@@ -1256,7 +1256,7 @@ api.post("/agents/:id/run", async (c) => {
 api.post("/runs/:id/messages", async (c) => {
   const body = await c.req.json<{ text: string }>();
   const ok = sendToRun(c.req.param("id"), body.text);
-  return ok ? c.json({ ok: true }) : c.json({ error: "run is not live" }, 409);
+  return ok ? c.json({ ok: true }) : c.json({ error: "run has no session to reply to" }, 409);
 });
 
 /** Git actions only make sense on a git workspace with a branch to push. */
@@ -1376,10 +1376,10 @@ api.post("/runs/:id/permission-mode", async (c) => {
   if (result.ok) return c.json({ ok: true });
   return result.live
     ? c.json({ error: result.error ?? "the run refused that mode" }, 409)
-    : c.json({ error: "run is not live" }, 409);
+    : c.json({ error: "run has no session to reply to" }, 409);
 });
 
 api.post("/runs/:id/stop", async (c) => {
   const ok = await stopRun(c.req.param("id"));
-  return ok ? c.json({ ok: true }) : c.json({ error: "run is not live" }, 409);
+  return ok ? c.json({ ok: true }) : c.json({ error: "run has no session to reply to" }, 409);
 });

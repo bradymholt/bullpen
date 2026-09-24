@@ -869,7 +869,7 @@ export function App() {
 
   const isLive = run != null && ACTIVE.has(run.status);
   const isQueued = run?.status === "queued";
-  // Finished but still attached: replying continues the same session rather
+  // Finished, attached or not: replying continues the same session rather
   // than starting a fresh run with none of its context.
   const canReply = run != null && (isLive || run.resumable === true);
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? "—";
@@ -2472,7 +2472,7 @@ export function App() {
                   ) : (
                     <button
                       onClick={() => api.stop(run.id)}
-                      title="End the session. The run is finished; this only removes the ability to reply to it."
+                      title="End the session. The run is finished; replying later picks it back up."
                       className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
                     >
                       Close
