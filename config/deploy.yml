@@ -32,15 +32,16 @@ servers:
 registry:
   server: ghcr.io
   username: bradymholt
-  password:
-    - KAMAL_REGISTRY_PASSWORD
+  # Needs read:packages. KAMAL_REGISTRY_PASSWORD, when set, lets a laptop deploy
+  # use a different token from the GITHUB_TOKEN its shell already holds.
+  password: <%= ENV["KAMAL_REGISTRY_PASSWORD"] || ENV.fetch("GITHUB_TOKEN") %>
 
 env:
   clear:
     TZ: <%= ENV.fetch("BULLPEN_TZ", "UTC") %>
-  secret:
-    # Not a secret — the release tag — but the only per-deploy value Kamal can carry.
-    - BULLPEN_RELEASE
+    # The release the deploy workflow is creating; empty from a laptop, and the
+    # footer then links to the commit instead.
+    BULLPEN_RELEASE: <%= ENV.fetch("BULLPEN_RELEASE", "") %>
   # Everything else — Claude token, GitHub token, per-agent env — is configured
   # in the dashboard and stored under /data. BULLPEN_DATA, CLAUDE_CONFIG_DIR and
   # GOG_HOME are set in the image.
