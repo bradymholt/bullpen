@@ -53,7 +53,7 @@ jobs:
         env:
           KAMAL_HOST_KEY: ${{ secrets.KAMAL_HOST_KEY }}
 
-      # .kamal/secrets reads the registry password from GITHUB_TOKEN; the job's
+      # config/deploy.yml reads the registry password from GITHUB_TOKEN; the job's
       # token can pull this repo's package.
       - run: kamal deploy --skip-push --version "$VERSION"
         env:

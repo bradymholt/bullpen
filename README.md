@@ -131,7 +131,7 @@ first deploy, export `TS_AUTHKEY` and run `kamal accessory reboot tailscale`.
 ### Configuration
 
 Nothing deployment-specific is committed. `config/deploy.yml` reads it from the environment,
-and `.kamal/secrets` names the secrets it reads from your shell. These configure Kamal, not
+and `.kamal/secrets` names the one secret, `TS_AUTHKEY`. These configure Kamal, not
 bullpen — only `BULLPEN_TZ` reaches the app, as `TZ`. The app's own settings, the Claude token
 and the GitHub token agents use, are entered in the dashboard and live in `/data`.
 
