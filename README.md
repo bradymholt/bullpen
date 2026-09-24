@@ -7,6 +7,10 @@ from a webhook, and watch them work.
 Agents run through [`@anthropic-ai/claude-agent-sdk`](https://code.claude.com/docs/en/agent-sdk),
 which drives the real `claude` binary, so a Claude subscription works without an API key.
 
+![Bullpen dashboard: a space's agents, recent runs, and what needs attention](docs/screenshot.png)
+
+![A run in progress: the agent's messages, tool calls and their output as they stream in](docs/run-view.png)
+
 ## Run it locally
 
 Needs Node 22.16+. Nothing else — if you already use Claude Code on this machine, your
