@@ -297,8 +297,10 @@ function launch(runId: string, agent: Agent, l: Launch): void {
         if (stopping.has(runId)) return;
         setStatus(runId, isError ? "failed" : "completed");
         // The run is over here even though the session stays open (handle.done
-        // resolves only on close), so this is when the files are gathered.
+        // resolves only on close), so this is when the files are gathered and
+        // the next queued run may start.
         keepArtifacts();
+        drainQueue(agent.id);
       },
     },
   );
@@ -341,7 +343,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
       // Stopped or interrupted runs never reached onResult; anything they left is gathered here.
       keepArtifacts();
       if (ephemeral && final?.status === "completed" && workspaceRetentionHours() === 0) removeWorkspace(workspace.path);
-      // The next queued run, if any, waits on exactly this.
+      // A stopped or crashed run never reached onResult.
       drainQueue(agent.id);
     });
 }

@@ -139,7 +139,7 @@ agent running `echo` never prompts, but a file write does. Test approval changes
 entry point every trigger uses. With `concurrency: queue` and an active run, the request becomes a
 `runs` row with status `queued` and its payload spooled to `dataDir/queue/<runId>.json` — bodies
 can be a megabyte, and the row already holds prompt and mode. `drainQueue()` starts the oldest one
-when a run ends and at boot, promoting the existing row rather than inserting a new one, so the id
+when a run reaches its result — not when its session closes, which waits for a stop or a deploy — and at boot, promoting the existing row rather than inserting a new one, so the id
 a webhook delivery recorded is the id that eventually runs. Depth is capped at `QUEUE_DEPTH`;
 beyond it a trigger is refused and recorded as a `queue full` delivery drop. `queued` is not an
 active status: it must never count toward `agentHasActiveRun`, or the queue would block itself.
