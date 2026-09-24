@@ -92,6 +92,26 @@ wins over a `claude login`. `GET /api/health` reports which one is in force.
 Deploys are handled by [Kamal 2](https://kamal-deploy.org): one Linux server, one container,
 with the image built by CI rather than on your machine or the server.
 
+### First deploy
+
+From an up-to-date `main` (CI must have built an image for `HEAD`), with `gem install kamal`
+done and root SSH access to the server:
+
+```bash
+export BULLPEN_HOST=203.0.113.10       # the server
+export GITHUB_TOKEN=ghp_…              # needs read:packages, to pull the image
+export BULLPEN_TZ=America/New_York     # optional, defaults to UTC
+export TS_AUTHKEY=tskey-auth-…         # optional, only for Tailscale
+npm run deploy:setup                   # installs Docker, starts the app and accessories
+kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs unprivileged
+npm run deploy
+```
+
+Then open a tunnel with `ssh -N -L 4322:127.0.0.1:4322 root@$BULLPEN_HOST` and go to
+**http://localhost:4322**. The setup screen asks for your Claude token, and that's it.
+
+### Reaching the dashboard
+
 **The dashboard has no login/authentication**, so the container publishes no port of its own. There are two ways
 to reach it:
 
@@ -103,11 +123,17 @@ to reach it:
   server and nothing else is public. To expose bullpen some other way, replace this accessory
   in `config/deploy.yml` with your own proxy.
 
-**1. Point the config at your server.** Nothing deployment-specific is committed.
-`config/deploy.yml` reads it from the environment, and `.kamal/secrets` names the secrets it
-reads from your shell. These configure Kamal, not bullpen — only `BULLPEN_TZ` reaches the app,
-as `TZ`. The app's own settings, the Claude token and the GitHub token agents use, are entered
-in the dashboard and live in `/data`.
+With Tailscale the dashboard is at `https://<node>.<tailnet>.ts.net`. Funnel needs the `funnel`
+attribute in your tailnet policy, and the tailnet's ACL must let your devices reach each other
+(`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}` if it doesn't). To add it after the
+first deploy, export `TS_AUTHKEY` and run `kamal accessory reboot tailscale`.
+
+### Configuration
+
+Nothing deployment-specific is committed. `config/deploy.yml` reads it from the environment,
+and `.kamal/secrets` names the secrets it reads from your shell. These configure Kamal, not
+bullpen — only `BULLPEN_TZ` reaches the app, as `TZ`. The app's own settings, the Claude token
+and the GitHub token agents use, are entered in the dashboard and live in `/data`.
 
 | Variable | What it is |
 |---|---|
@@ -120,29 +146,9 @@ in the dashboard and live in `/data`.
 The image is `ghcr.io/<owner>/bullpen`, built by CI from this repo — change `image` and the
 registry `username` in `config/deploy.yml` if you deploy a fork.
 
-**2. First deploy**, from your machine, with `gem install kamal` done and SSH access to the
-server:
+### Deploying from CI
 
-```bash
-export BULLPEN_HOST=203.0.113.10 BULLPEN_TZ=America/New_York
-git push                      # CI builds the image and tags it with the commit sha
-npm run deploy:setup          # installs Docker on the server and starts the app
-kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs unprivileged
-npm run deploy
-```
-
-Then open the dashboard through the SSH tunnel and walk through setup. To add Tailscale:
-
-```bash
-export TS_HOSTNAME=bullpen TS_AUTHKEY=tskey-auth-…
-kamal accessory boot tailscale
-```
-
-The dashboard is then at `https://<node>.<tailnet>.ts.net`. Funnel needs the `funnel` attribute
-in your tailnet policy, and the tailnet's ACL must let your devices reach each other
-(`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}` if it doesn't).
-
-**3. Every deploy after that is a push to `main`.** The `build` workflow pushes the image; the
+Every deploy after the first is a push to `main`. The `build` workflow pushes the image; the
 `deploy` workflow runs Kamal for that sha. For the deploy workflow to reach the server, add these
 Actions secrets:
 
