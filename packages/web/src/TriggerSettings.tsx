@@ -213,7 +213,7 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
   github: (
     <>
       GitHub signs every delivery with HMAC-SHA256 over the raw body and sends it as{" "}
-      <code>X-Hub-Signature-256: sha256=&lt;hex&gt;</code>, keyed by the secret below — paste that
+      <code>X-Hub-Signature-256: sha256=&lt;hex&gt;</code>, keyed by the secret above — paste that
       into GitHub&rsquo;s webhook form. It names the event in <code>X-GitHub-Event</code> and gives
       each delivery an <code>X-GitHub-Delivery</code> id, which bullpen uses to ignore retries of
       something it already ran. Saving the hook sends a <code>ping</code> first; that gets a 200 and
@@ -237,7 +237,7 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
       Slack signs <code>v0:&lt;timestamp&gt;:&lt;body&gt;</code> — the timestamp and body together,
       not the body alone — and sends the result as <code>X-Slack-Signature: v0=&lt;hex&gt;</code>
       alongside <code>X-Slack-Request-Timestamp</code>. The key is your app&rsquo;s{" "}
-      <strong>signing secret</strong> from Slack&rsquo;s Basic Information page; paste it below,
+      <strong>signing secret</strong> from Slack&rsquo;s Basic Information page; paste it above,
       then set the Request URL in Event Subscriptions. Slack checks that URL by POSTing{" "}
       <code>url_verification</code> and expecting the <code>challenge</code> value echoed back —
       bullpen does that once the signature checks out. Requests older than five minutes are refused
@@ -265,7 +265,7 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
     <>
       Create the bot with BotFather, then register the URL above by calling the Bot API&rsquo;s{" "}
       <code>setWebhook</code> with <code>url</code> set to it and <code>secret_token</code> set to the
-      secret below. Telegram sends that secret back verbatim on every update as{" "}
+      secret above. Telegram sends that secret back verbatim on every update as{" "}
       <code>X-Telegram-Bot-Api-Secret-Token</code> &mdash; nothing is signed, so treat it as a
       password. Anyone who finds the bot can message it, so add a filter on{" "}
       <code>message.from.id</code> <em>is one of</em> your own numeric id. Telegram retries until it
