@@ -13,8 +13,7 @@ which drives the real `claude` binary, so a Claude subscription works without an
 
 ## Run it locally
 
-Needs Node 22.16+. Nothing else — if you already use Claude Code on this machine, your
-existing login is picked up automatically.
+Needs Node 22.16+. If you already use Claude Code on your local machine, your existing authentication and configuration should be picked up automatically.
 
 ```bash
 npm install
@@ -34,27 +33,21 @@ Then open **http://localhost:4322**.
 
 Other useful commands:
 
-```bash
-npm test
-```
+- `npm test`
+- `npm run typecheck`
 
-```bash
-npm run typecheck
-```
+## Standalone mode
 
-## Two modes: unmanaged and managed
+By default bullpen uses your own Claude config, `~/.claude` — your login, skills, and MCP
+servers — and only ever reads it. This is `npm run dev` on your Mac, where your existing Claude
+login is picked up automatically, and Settings is a read-only view of that config.
 
-One environment variable decides how bullpen treats the Claude config: **`CLAUDE_CONFIG_DIR`**.
+Set **`CLAUDE_CONFIG_DIR`** and bullpen runs standalone: that directory is bullpen's to own and
+write. The image sets `CLAUDE_CONFIG_DIR=/data/claude`, which is what makes a deployed box
+standalone. It is a property of the config dir, not of the machine or the OS — the same build
+runs either way.
 
-- **Unmanaged** — it is unset, so the config dir is your own `~/.claude`. Bullpen reads it and
-  never writes it. This is `npm run dev` on your Mac, where your existing Claude login is picked
-  up automatically.
-- **Managed** — it is set, so the config dir is bullpen's to own and write. The image sets
-  `CLAUDE_CONFIG_DIR=/data/claude`, which is what makes a deployed box managed.
-
-It is a property of the config dir, not of the machine or the OS — the same build runs either way.
-
-| | Unmanaged | Managed |
+| | Default | Standalone |
 |---|---|---|
 | Config dir | `~/.claude` | `/data/claude` (or whatever you set) |
 | Settings → Skills | read-only; **Pull latest** button | clone or replace the skills repo |
@@ -64,23 +57,22 @@ It is a property of the config dir, not of the machine or the OS — the same bu
 | Onboarding MCP step | skipped | shown |
 | Credential | your existing login | `claude setup-token`, or an API key |
 
-The rule behind the table: managed means Settings is editable, unmanaged means it is a read-only
-view of your own config. `GET /api/setup/skills`, `/api/setup/claude-md` and
-`/api/setup/mcp-catalog` each return a `managed` flag, which is what the UI branches on.
+`GET /api/setup/skills`, `/api/setup/claude-md` and `/api/setup/mcp-catalog` each return a
+`standalone` flag, which is what the UI branches on.
 
-Credentials are a separate axis that travels with it in practice. A managed box needs its own —
+Credentials are a separate axis that travels with it in practice. A standalone box needs its own —
 a harness pointed at a config dir other than `~/.claude` cannot see your Mac's Keychain login, so
 bullpen deliberately does not count `~/.claude.json` as a login when `CLAUDE_CONFIG_DIR` is set.
 
-To see the managed Settings page without touching your own `~/.claude`:
+To try standalone mode without touching your own `~/.claude`:
 
 ```bash
-npm run dev:managed
+npm run dev:standalone
 ```
 
-That runs against a throwaway `~/.bullpen-managed/` (its own database and `CLAUDE_CONFIG_DIR`),
+That runs against a throwaway `~/.bullpen-standalone/` (its own database and `CLAUDE_CONFIG_DIR`),
 so it starts at onboarding and needs a `claude setup-token`. Stop it and run `npm run dev` to be
-back on your real data. The sandbox keeps its state between runs; `npm run dev:managed:fresh`
+back on your real data. The sandbox keeps its state between runs; `npm run dev:standalone:fresh`
 wipes it and starts over at onboarding.
 
 ## Docker
@@ -163,7 +155,7 @@ Everything the agents need lives in the `/data` volume, not on the box:
 
 ```
 /data/bullpen.db          agents, runs, deliveries, webhook and space secrets, agent env
-/data/claude/             CLAUDE_CONFIG_DIR — what ~/.claude is on your Mac; makes the box managed
+/data/claude/             CLAUDE_CONFIG_DIR — what ~/.claude is on your Mac; makes the box standalone
 /data/claude/skills/      the skills agents invoke (pr-review, gmail-archive, …)
 /data/claude/settings.json
 /data/gog/                GOG_HOME — gog's OAuth tokens and keyring file
@@ -172,7 +164,7 @@ Everything the agents need lives in the `/data` volume, not on the box:
 The image sets `CLAUDE_CONFIG_DIR=/data/claude` and `GOG_HOME=/data/gog`, and both the
 harness and bullpen honour them. So `~/.claude` stops being machine state and becomes a
 directory you can version. The simplest way to populate it is a git checkout of your
-skills — a managed box runs `git pull --ff-only` on it at every boot, so a deploy picks up new
+skills — a standalone box runs `git pull --ff-only` on it at every boot, so a deploy picks up new
 skills on its own, and Settings → Skills has **Pull latest** in between:
 
 ```bash
@@ -294,7 +286,7 @@ Pick one, in order of preference:
 1. **Subscription.** Run `claude setup-token` on a machine already logged in, and put the result
    in `CLAUDE_CODE_OAUTH_TOKEN`.
 2. **Mounted config.** Point `CLAUDE_CONFIG_DIR` at a volume holding `.credentials.json`.
-   Note that setting it at all also puts you in managed mode, above.
+   Note that setting it at all also puts you in standalone mode, above.
 3. **API key.** Set `ANTHROPIC_API_KEY`.
 
 `GET /api/health` reports which one resolved.
@@ -370,7 +362,7 @@ exactly the way GitHub would, using the settings you just saved.
 ## Notes
 
 - **MCP servers are shared, and off by default.** They live in the Claude config (`~/.claude.json`
-  unmanaged, `CLAUDE_CONFIG_DIR/.claude.json` managed) and are listed under Settings. An agent
+  by default, `CLAUDE_CONFIG_DIR/.claude.json` standalone) and are listed under Settings. An agent
   gets them only with "Use the shared MCP servers" checked — and then gets all of them, plus the
   repo's `.mcp.json` and claude.ai connectors. Reference secrets as `${NAME}` and define them
   in global, space, or agent env; the API never returns their values. Servers that use OAuth

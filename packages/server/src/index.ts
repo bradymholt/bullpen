@@ -12,7 +12,7 @@ import { api } from "./routes/api.ts";
 import { eventsSince } from "./runs/eventLog.ts";
 import { recoverOrphanedRuns, shutdownLiveRuns, startWorkspaceSweep, sweepWorkspaces } from "./runs/RunManager.ts";
 import { seedScratchAgent } from "./seed.ts";
-import { pullSkillsIfManaged, startSkillsRefresh, stopSkillsRefresh } from "./skills.ts";
+import { pullSkillsIfStandalone, startSkillsRefresh, stopSkillsRefresh } from "./skills.ts";
 import { startScheduler, stopScheduler } from "./triggers/cron.ts";
 
 process.on("unhandledRejection", (reason) => {
@@ -23,7 +23,7 @@ runMigrations();
 const recovered = recoverOrphanedRuns();
 if (recovered > 0) console.warn(`[bullpen] marked ${recovered} orphaned run(s) interrupted`);
 seedScratchAgent();
-const skillsNote = pullSkillsIfManaged();
+const skillsNote = pullSkillsIfStandalone();
 if (skillsNote) console.log(`[bullpen] ${skillsNote}`);
 const refreshHours = startSkillsRefresh();
 if (refreshHours > 0) console.log(`[bullpen] skills refresh every ${refreshHours}h`);

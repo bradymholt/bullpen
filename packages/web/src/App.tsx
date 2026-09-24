@@ -646,7 +646,7 @@ export function App() {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [machineMcp, setMachineMcp] = useState<MachineMcp | null>(null);
   const [skillList, setSkillList] = useState<Skill[]>([]);
-  const [claudeMd, setClaudeMd] = useState<{ path: string; exists: boolean; size: number; managed: boolean; content: string } | null>(null);
+  const [claudeMd, setClaudeMd] = useState<{ path: string; exists: boolean; size: number; standalone: boolean; content: string } | null>(null);
   const [claudeMdDraft, setClaudeMdDraft] = useState("");
   const [claudeMdNote, setClaudeMdNote] = useState<string | null>(null);
   const [mcpNote, setMcpNote] = useState<string | null>(null);
@@ -716,7 +716,7 @@ export function App() {
       .catch(() => setEnvSaved("Couldn\u2019t load the global environment \u2014 reload before editing."));
     void api.health().then(setHealth).catch(() => setHealth(null));
     void api.systemPrompt().then(setSystemPrompt).catch(() => setSystemPrompt(null));
-    void api.mcpCatalog().then((r) => setMcpCatalogEntries(r.managed ? r.entries : null)).catch(() => setMcpCatalogEntries(null));
+    void api.mcpCatalog().then((r) => setMcpCatalogEntries(r.standalone ? r.entries : null)).catch(() => setMcpCatalogEntries(null));
     void api
       .processEnvNames()
       .then((r) => setProcessEnvNames(r.names))
@@ -1827,7 +1827,7 @@ export function App() {
                             </button>
                             {skillsNote && <span className="text-xs text-neutral-400">{skillsNote}</span>}
                           </div>
-                          {skillsInfo.managed && (
+                          {skillsInfo.standalone && (
                             <label className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                               Then pull again automatically
                               <select
@@ -1856,7 +1856,7 @@ export function App() {
                           )}
                         </div>
                       )}
-                      {skillsInfo.managed ? (
+                      {skillsInfo.standalone ? (
                         <>
                           {!skillsInfo.remote && skillsNote && (
                             <span className="text-xs text-neutral-400">{skillsNote}</span>
@@ -1913,7 +1913,7 @@ export function App() {
 
                 <RailSection title="MCP servers">
                   {machineMcp && (() => {
-                    const writable = machineMcp.managed;
+                    const writable = machineMcp.standalone;
                     return (
                       <>
                         {machineMcp.global.length === 0 ? (
@@ -1983,7 +1983,7 @@ export function App() {
                         {machineMcp.connectors.length === 0 && (
                           <p className="pt-1 text-xs text-neutral-600">
                             claude.ai connectors (Gmail, Slack, &hellip;) come with the login &mdash; nothing to
-                            configure here. {machineMcp.managed
+                            configure here. {machineMcp.standalone
                               ? "There is no record of them in this config; whether a run gets them shows in that run\u2019s MCP status, for agents with \u201cUse the shared MCP servers\u201d on."
                               : "None have been connected from Claude Code on this machine yet."}
                           </p>
@@ -2010,7 +2010,7 @@ export function App() {
                         <p className="text-xs leading-relaxed text-neutral-600">
                           The dot is what the most recent run that reached each server reported
                           &mdash; connected, needs auth, or failed; none means no run has tried it yet.{" "}
-                          {machineMcp.managed
+                          {machineMcp.standalone
                             ? "This config is bullpen\u2019s (CLAUDE_CONFIG_DIR is set), so it can be edited here. "
                             : ""}
                           Every agent with &ldquo;Use the shared MCP servers&rdquo; checked gets all of these
@@ -2070,12 +2070,12 @@ export function App() {
                       <textarea
                         className="h-40 w-full resize-y rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs leading-relaxed text-neutral-300 outline-hidden focus:border-neutral-600 read-only:text-neutral-500"
                         value={claudeMdDraft}
-                        readOnly={!claudeMd.managed}
+                        readOnly={!claudeMd.standalone}
                         spellCheck={false}
-                        placeholder={claudeMd.managed ? "Standing instructions for agents that opt in." : ""}
+                        placeholder={claudeMd.standalone ? "Standing instructions for agents that opt in." : ""}
                         onChange={(e) => setClaudeMdDraft(e.target.value)}
                       />
-                      {claudeMd.managed ? (
+                      {claudeMd.standalone ? (
                         <div className="flex items-center gap-3">
                           <button
                             disabled={claudeMdDraft === claudeMd.content}
@@ -2097,7 +2097,7 @@ export function App() {
                         </div>
                       ) : null}
                       <p className="text-xs leading-relaxed text-neutral-600">
-                        {claudeMd.managed
+                        {claudeMd.standalone
                           ? "This directory is bullpen\u2019s, so the file can be edited here."
                           : "This is your own file; edit it on this machine."}
                       </p>

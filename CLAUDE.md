@@ -27,8 +27,8 @@ npm run dev        # API on :4322, Vite on :5173 — open :5173
 npm test           # vitest, server package
 npm run typecheck  # both packages
 npm run build && npm start   # single port, the way the container runs
-npm run dev:managed          # sandbox: own data dir + CLAUDE_CONFIG_DIR, so Settings is editable
-npm run dev:managed:fresh    # same, after wiping ~/.bullpen-managed
+npm run dev:standalone       # sandbox: own data dir + CLAUDE_CONFIG_DIR, so Settings is editable
+npm run dev:standalone:fresh # same, after wiping ~/.bullpen-standalone
 npm run deploy               # kamal deploy --skip-push --version <HEAD sha>; CI must have built it, BULLPEN_HOST exported
 ```
 
@@ -197,7 +197,7 @@ side row, so removing a space (`DELETE /spaces/:name`) is "move the members to G
 the row". General itself cannot be renamed or removed — it is where those members go — but has a
 shared webhook URL and env like any other. It shows in the rail only while it has agents.
 
-**An export carries the shared MCP servers, and import writes them only in managed mode.** The
+**An export carries the shared MCP servers, and import writes them only in standalone mode.** The
 `SecretsBundle` has an optional `mcp` (older exports lack it) holding `mcpServers` verbatim, headers
 and env included — which is why it lives inside the sealed part. `importMachineMcp` refuses without
 `CLAUDE_CONFIG_DIR`, and the import route turns that refusal into `mcpNote` rather than failing the
@@ -352,7 +352,7 @@ carry the `.ts` extension.
   like nothing to report. Status is visible in the UI and nowhere else.
 - **Nothing sweeps `workspacesDir`.** A failed ephemeral run keeps its directory on purpose, and
   no boot-time or age-based cleanup removes it, so failures accumulate on disk.
-- **claude.ai connectors don't reach runs in a fresh managed config dir.** Measured: after
+- **claude.ai connectors don't reach runs in a fresh standalone config dir.** Measured: after
   `claude login` into the sandbox dir, `claude mcp list` there shows every connector, but a `-p`/SDK
   run in that same dir reports `mcp_servers: []`, while the identical run against `~/.claude` lists
   them all. Same account, same login type — some config-dir state we haven't identified. Until it

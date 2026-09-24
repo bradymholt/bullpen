@@ -128,7 +128,7 @@ export type MachineMcp = {
   configPath: string;
   found: boolean;
   /** Bullpen may write the file directly (CLAUDE_CONFIG_DIR is set). */
-  managed: boolean;
+  standalone: boolean;
   global: McpServerSummary[];
   connectors: string[];
   /** Last connection state seen in a run's init message, by server name. */
@@ -175,7 +175,7 @@ export type SkillsState = {
   subdir: string | null;
   /** When the checkout last fetched from its remote; null when it is not a checkout. */
   lastPulledAt: number | null;
-  managed: boolean;
+  standalone: boolean;
   refreshHours: number;
   preapproved: { count: number; bare: string[] };
 };

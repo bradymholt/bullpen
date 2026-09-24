@@ -21,7 +21,7 @@ export type MachineMcp = {
    * dir is bullpen's (the container). Otherwise it is the user's own ~/.claude.json:
    * bullpen reads it and shows what agents inherit, and never changes it.
    */
-  managed: boolean;
+  standalone: boolean;
   /** Servers in the config's own `mcpServers` — inherited by every run. */
   global: McpServerSummary[];
   /** claude.ai connectors this machine has connected at some point. */
@@ -67,20 +67,20 @@ function readConfig(): Record<string, any> | null {
 
 export function readMachineMcp(): MachineMcp {
   const p = configPath();
-  const managed = Boolean(process.env.CLAUDE_CONFIG_DIR);
+  const standalone = Boolean(process.env.CLAUDE_CONFIG_DIR);
   const parsed = readConfig();
-  if (!parsed) return { configPath: p, found: false, managed, global: [], connectors: [] };
+  if (!parsed) return { configPath: p, found: false, standalone, global: [], connectors: [] };
 
   return {
     configPath: p,
     found: true,
-    managed,
+    standalone,
     global: Object.entries((parsed.mcpServers ?? {}) as Record<string, unknown>).map(([n, c]) => summarize(n, c)),
     connectors: Array.isArray(parsed.claudeAiMcpEverConnected) ? parsed.claudeAiMcpEverConnected : [],
   };
 }
 
-/** Managed mode only: rewrite the file atomically. */
+/** Standalone mode only: rewrite the file atomically. */
 function writeConfig(mutate: (cfg: Record<string, any>) => void): void {
   const p = configPath();
   const cfg = readConfig() ?? {};
@@ -114,7 +114,7 @@ export function exportMachineMcp(): Record<string, McpServerConfig> {
 }
 
 /**
- * Managed mode only: merge servers from an export into the config, replacing
+ * Standalone mode only: merge servers from an export into the config, replacing
  * any with the same name. Returns how many were written.
  */
 export function importMachineMcp(servers: Record<string, McpServerConfig>): number {
@@ -183,7 +183,7 @@ export function mcpCatalog(opts: { wrapper?: string } = {}): CatalogEntry[] {
   }));
 }
 
-/** Managed mode only. Returns what changed. */
+/** Standalone mode only. Returns what changed. */
 export function applyMcpCatalog(keys: string[], opts: { dataDir: string; wrapper?: string }): { added: string[]; removed: string[] } {
   if (!process.env.CLAUDE_CONFIG_DIR) throw new Error("this is the user's own ~/.claude.json, not managed by bullpen");
   const want = new Set(keys);

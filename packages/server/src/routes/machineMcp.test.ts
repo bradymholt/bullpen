@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 process.env.BULLPEN_DATA = mkdtempSync(join(tmpdir(), "bullpen-test-"));
-// Managed mode, so the routes may write the config instead of shelling out to `claude`.
+// Standalone mode, so the routes may write the config instead of shelling out to `claude`.
 const configDir = mkdtempSync(join(tmpdir(), "bullpen-mcp-routes-"));
 process.env.CLAUDE_CONFIG_DIR = configDir;
 
