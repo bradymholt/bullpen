@@ -115,7 +115,7 @@ api.post("/machine-mcp/:name/logout", async (c) => {
   }
 });
 
-/** Adds a server every run inherits. Managed dirs are written directly; otherwise via the `claude` CLI. */
+/** Adds a server every run inherits. Standalone config dirs are written directly; otherwise via the `claude` CLI. */
 api.post("/machine-mcp", async (c) => {
   const body = await c.req.json<{ name?: string; config?: Record<string, unknown> }>().catch(() => null);
   if (!body?.name || !body.config || typeof body.config !== "object") return c.json({ error: "name and config are required" }, 400);
@@ -694,7 +694,7 @@ api.post("/import", async (c) => {
     }
     setGlobalEnv({ ...globalEnv(), ...secrets.global });
     // MCP config lives in the Claude config dir, which is only bullpen's to write
-    // in managed mode; on a laptop the export's servers are reported, not applied.
+    // in standalone mode; on a laptop the export's servers are reported, not applied.
     let mcp = 0;
     const mcpCount = Object.keys(secrets.mcp ?? {}).length;
     if (mcpCount > 0) {
@@ -709,8 +709,8 @@ api.post("/import", async (c) => {
   return c.json({ created, updated, envNeeded, errors, secretsApplied, secretsNote, mcpNote });
 });
 
-/** Suggested servers for a managed box: what is offered, what is installed, and applying a selection. */
-api.get("/setup/mcp-catalog", (c) => c.json({ managed: Boolean(process.env.CLAUDE_CONFIG_DIR), entries: mcpCatalog() }));
+/** Suggested servers for a standalone box: what is offered, what is installed, and applying a selection. */
+api.get("/setup/mcp-catalog", (c) => c.json({ standalone: Boolean(process.env.CLAUDE_CONFIG_DIR), entries: mcpCatalog() }));
 api.post("/setup/mcp-catalog", async (c) => {
   const body = await c.req.json<{ keys?: string[] }>().catch(() => null);
   if (!Array.isArray(body?.keys)) return c.json({ error: "keys is required" }, 400);
@@ -747,7 +747,7 @@ api.post("/setup/skills", async (c) => {
   if (!url || !/^(https?:\/\/|git@)/.test(url)) return c.json({ error: "a git URL is required" }, 400);
   const state = skillsState();
   // Replacing is fine where bullpen owns the directory; never over the user's own.
-  if (state.count > 0 && !state.managed) {
+  if (state.count > 0 && !state.standalone) {
     return c.json({ error: `${state.dir} is not managed by bullpen and already has ${state.count} skills` }, 409);
   }
 

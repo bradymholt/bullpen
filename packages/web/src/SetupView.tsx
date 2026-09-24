@@ -21,14 +21,14 @@ async function saveGlobal(key: string, value: string) {
  */
 export function SetupView({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<"claude" | "github" | "skills" | "mcp">("claude");
-  // The MCP step exists only on a managed box (a config dir that is bullpen's to write).
+  // The MCP step exists only on a standalone box (a config dir that is bullpen's to write).
   const [catalog, setCatalog] = useState<McpCatalogEntry[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     void api
       .mcpCatalog()
       .then((r) => {
-        if (!r.managed) return;
+        if (!r.standalone) return;
         setCatalog(r.entries);
         // Pre-selected: what is installed, or every available entry on a fresh box.
         const installed = r.entries.filter((e) => e.installed).map((e) => e.key);

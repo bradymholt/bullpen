@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
-// Managed mode: a temp CLAUDE_CONFIG_DIR that bullpen owns and may write.
+// Standalone mode: a temp CLAUDE_CONFIG_DIR that bullpen owns and may write.
 const dir = mkdtempSync(join(tmpdir(), "bullpen-mcp-"));
 process.env.CLAUDE_CONFIG_DIR = dir;
 const { addMachineMcp, applyMcpCatalog, exportMachineMcp, importMachineMcp, mcpCatalog, readMachineMcp, removeMachineMcp } = await import("./machineMcp.ts");
@@ -13,8 +13,8 @@ beforeEach(() => {
   writeFileSync(file, JSON.stringify({ mcpServers: {} }));
 });
 
-describe("machine MCP (managed)", () => {
-  it("adds and removes user-scope servers by rewriting the managed file", () => {
+describe("machine MCP (standalone)", () => {
+  it("adds and removes user-scope servers by rewriting the config file", () => {
     addMachineMcp("cf", { type: "http", url: "https://mcp.cloudflare.com/mcp" });
     expect(readMachineMcp().global.map((s) => s.name)).toEqual(["cf"]);
     removeMachineMcp("cf");

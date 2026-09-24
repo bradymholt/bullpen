@@ -124,15 +124,15 @@ export const api = {
     fetch(`/api/machine-mcp/${encodeURIComponent(name)}/logout`, { method: "POST" }).then(json<{ ok: true }>),
   claudeMd: () =>
     fetch("/api/setup/claude-md").then(
-      json<{ path: string; exists: boolean; size: number; managed: boolean; content: string }>,
+      json<{ path: string; exists: boolean; size: number; standalone: boolean; content: string }>,
     ),
   setClaudeMd: (content: string) =>
     fetch("/api/setup/claude-md", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ content }),
-    }).then(json<{ path: string; exists: boolean; size: number; managed: boolean; content: string }>),
-  mcpCatalog: () => fetch("/api/setup/mcp-catalog").then(json<{ managed: boolean; entries: McpCatalogEntry[] }>),
+    }).then(json<{ path: string; exists: boolean; size: number; standalone: boolean; content: string }>),
+  mcpCatalog: () => fetch("/api/setup/mcp-catalog").then(json<{ standalone: boolean; entries: McpCatalogEntry[] }>),
   applyMcpCatalog: (keys: string[]) =>
     fetch("/api/setup/mcp-catalog", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) }).then(
       json<{ added: string[]; removed: string[]; entries: McpCatalogEntry[] }>,

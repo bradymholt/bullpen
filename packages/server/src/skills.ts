@@ -149,7 +149,7 @@ export function skillsState() {
     remote,
     subdir,
     lastPulledAt,
-    managed: Boolean(process.env.CLAUDE_CONFIG_DIR),
+    standalone: Boolean(process.env.CLAUDE_CONFIG_DIR),
     refreshHours: skillsRefreshHours(),
     preapproved: preapprovedTools(),
   };
@@ -164,7 +164,7 @@ export function skillsState() {
  * surprise, so there it stays manual (the Settings page has "Pull now").
  * Never fatal: stale skills beat a server that refuses to start.
  */
-export function pullSkillsIfManaged(): string | null {
+export function pullSkillsIfStandalone(): string | null {
   if (!process.env.CLAUDE_CONFIG_DIR) return null;
   const state = skillsState();
   if (!state.remote) return null;
@@ -180,7 +180,7 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Boot is the only pull a long-lived container would otherwise get, and it can
- * run for weeks — so repeat it on a timer. Same rule as the boot pull: managed
+ * run for weeks — so repeat it on a timer. Same rule as the boot pull: standalone
  * directories only. Returns the interval in hours, 0 when nothing was started.
  */
 export function startSkillsRefresh(): number {
@@ -189,7 +189,7 @@ export function startSkillsRefresh(): number {
   if (hours <= 0 || !process.env.CLAUDE_CONFIG_DIR) return 0;
   refreshTimer = setInterval(
     () => {
-      const note = pullSkillsIfManaged();
+      const note = pullSkillsIfStandalone();
       if (note) console.log(`[bullpen] ${note}`);
     },
     hours * 60 * 60 * 1000,
@@ -212,11 +212,11 @@ const CLAUDE_MD_MAX = 64 * 1024;
  */
 export function claudeMdState() {
   const path = join(claudeConfigDir(), "CLAUDE.md");
-  const managed = Boolean(process.env.CLAUDE_CONFIG_DIR);
-  if (!existsSync(path)) return { path, exists: false, size: 0, managed, content: "" };
+  const standalone = Boolean(process.env.CLAUDE_CONFIG_DIR);
+  if (!existsSync(path)) return { path, exists: false, size: 0, standalone, content: "" };
   const size = statSync(path).size;
   const content = size <= CLAUDE_MD_MAX ? readFileSync(path, "utf8") : readFileSync(path, "utf8").slice(0, CLAUDE_MD_MAX);
-  return { path, exists: true, size, managed, content };
+  return { path, exists: true, size, standalone, content };
 }
 
 export function writeClaudeMd(content: string): void {
