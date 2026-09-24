@@ -127,7 +127,10 @@ export function skillsState() {
   let remote: string | null = null;
   let subdir: string | null = null;
   let lastPulledAt: number | null = null;
-  if (existsSync(dir)) {
+  // Set CLAUDE_CONFIG_DIR and the directory is bullpen's to manage; otherwise
+  // it is the user's own ~/.claude and bullpen only reads it.
+  const standalone = Boolean(process.env.CLAUDE_CONFIG_DIR);
+  if (standalone && existsSync(dir)) {
     try {
       remote = git(dir, ["remote", "get-url", "origin"], 5_000).trim();
       const top = git(dir, ["rev-parse", "--show-toplevel"], 5_000).trim();
@@ -138,8 +141,6 @@ export function skillsState() {
       remote = null;
     }
   }
-  // Set CLAUDE_CONFIG_DIR and the directory is bullpen's to manage; otherwise
-  // it is the user's own ~/.claude and bullpen only reads it.
   const home = homedir();
   const dirDisplay = dir === home || dir.startsWith(home + "/") ? "~" + dir.slice(home.length) : dir;
   return {
@@ -149,7 +150,7 @@ export function skillsState() {
     remote,
     subdir,
     lastPulledAt,
-    standalone: Boolean(process.env.CLAUDE_CONFIG_DIR),
+    standalone,
     refreshHours: skillsRefreshHours(),
     preapproved: preapprovedTools(),
   };
@@ -160,8 +161,7 @@ export function skillsState() {
  * Refreshes the skills checkout at boot — but only where bullpen owns the
  * directory. CLAUDE_CONFIG_DIR being set is the signal: the container sets it
  * to /data/claude, which exists to be managed. On a laptop using ~/.claude the
- * checkout is the user's own working copy, and touching it uninvited would be a
- * surprise, so there it stays manual (the Settings page has "Pull now").
+ * skills are read as they sit, git checkout or not.
  * Never fatal: stale skills beat a server that refuses to start.
  */
 export function pullSkillsIfStandalone(): string | null {

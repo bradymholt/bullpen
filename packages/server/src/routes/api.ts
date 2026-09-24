@@ -782,6 +782,7 @@ api.post("/setup/skills", async (c) => {
 
 api.post("/setup/skills/pull", (c) => {
   const state = skillsState();
+  if (!state.standalone) return c.json({ error: "skills are read as they sit unless CLAUDE_CONFIG_DIR is set" }, 409);
   if (!state.remote) return c.json({ error: "skills directory is not a git checkout" }, 409);
   try {
     git(state.dir, ["pull", "--ff-only"], 120_000);
