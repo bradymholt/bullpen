@@ -291,7 +291,7 @@ Pick one, in order of preference:
   auto / full access / locked. `auto` is the default — a classifier rules on each call and
   never prompts, which is what an unattended cron or webhook run needs.
 - **Triggers**: run by hand, on a cron with a per-agent timezone, or from a webhook — GitHub,
-  Slack, Asana (each verified the way that service actually signs), GroupMe, a plain token
+  Slack, Asana (each verified the way that service actually signs), GroupMe, Telegram, a plain token
   header or `?token=` query parameter, or custom header names for anything else, with an event allowlist and a delivery log.
 - **Git**: review the diff a run produced, then commit, push, and open a PR.
 - **Live view**: every run streams over one WebSocket. Reconnecting replays from the event

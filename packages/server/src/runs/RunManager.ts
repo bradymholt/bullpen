@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { config } from "../config.ts";
 import { writePayload } from "../triggers/webhook.ts";
+import { startTelegramTyping } from "../triggers/telegram.ts";
 import { and, asc, eq, inArray, isNull, like, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
@@ -232,11 +233,12 @@ export function startRun(opts: RunRequest, existingId?: string): string {
 
   appendEvent(runId, "run.started", { agentId: agent.id, trigger, prompt, permissionMode, cwd: workspace.path });
 
-  launch(runId, agent, { cwd: workspace.path, prompt, permissionMode, env, systemNote: payloadNote, ephemeral });
+  launch(runId, agent, { trigger, cwd: workspace.path, prompt, permissionMode, env, systemNote: payloadNote, ephemeral });
   return runId;
 }
 
 type Launch = {
+  trigger: RunRequest["trigger"];
   cwd: string;
   prompt: string;
   permissionMode: string;
@@ -254,6 +256,8 @@ function launch(runId: string, agent: Agent, l: Launch): void {
   const workspace = { path: l.cwd };
   const payloadNote = l.systemNote;
   const mcp = selectMcp(agent, exportMachineMcp(), env);
+  const stopTyping =
+    agent.webhookMode === "telegram" && l.trigger === "webhook" ? startTelegramTyping(l.cwd, env) : () => {};
   const handle = runner.start(
     {
       cwd: workspace.path,
@@ -285,6 +289,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
         if (servers.length > 0) appendEvent(runId, "mcp.status", { servers });
       },
       onResult: ({ numTurns, costUsd, isError }) => {
+        stopTyping();
         db.update(runs)
           .set({
             numTurns: numTurns === undefined ? undefined : prior.numTurns + numTurns,
@@ -334,6 +339,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
       });
     })
     .finally(() => {
+      stopTyping();
       live.delete(runId);
       stopping.delete(runId);
       // Only for a one-off dir, and only when it ended cleanly: a failed run's
@@ -366,6 +372,7 @@ function resumeRun(runId: string, text: string): boolean {
   appendEvent(runId, "user.message", { text });
   setStatus(runId, "running", { endedAt: null });
   launch(runId, agent, {
+    trigger: run.trigger as RunRequest["trigger"],
     cwd: run.workspacePath,
     prompt: text,
     permissionMode: run.permissionMode ?? agent.permissionMode,

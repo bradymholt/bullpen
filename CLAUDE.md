@@ -230,7 +230,8 @@ only health signal there is — the harness never fails a run for a server that 
 **Webhook shape is per-agent, and header names are lowercased before lookup.** `presetFor()`
 resolves `webhookMode` to a signature header, prefix, event header and handshake header — `github`
 (`x-hub-signature-256`, `sha256=`), `asana` (`x-hook-signature`, bare hex, echoes `x-hook-secret`),
-`token`, or `custom` from the agent's own fields. The route now forwards every request header, so
+`telegram` (`x-telegram-bot-api-secret-token`, compared verbatim), `token`, or `custom` from the
+agent's own fields. The route now forwards every request header, so
 a configured name that isn't lowercased silently matches nothing — that cost a debugging round.
 `hmac` is the pre-preset spelling of `github` and `token` of a bare `custom`; both still parse, so
 old records round-trip. The event allowlist is GitHub's alone — it is the only sender that names
@@ -242,6 +243,13 @@ a five-minute skew window, `X-Slack-Retry-Num` dropped rather than run twice, `e
 dedup key (Slack puts it in the body), the event name read from `event.type`, and the
 `url_verification` challenge echoed *in the body* where Asana echoes a header. Signature is checked
 before the challenge is answered, so the signing secret must be pasted in first.
+
+**A Telegram agent's typing indicator is bullpen's, not the agent's.** Asking the agent to send
+it cost a full model turn before any work, and it then went out beside the reply, which clears
+it at once. `startTelegramTyping` sends `sendChatAction` when a webhook run launches and every
+4s until the result — not until the session closes, which `handle.done` waits for — reading the
+chat from `.bullpen/payload.json` and the token from the run's `TELEGRAM_BOT_TOKEN`. Retries
+dedup on the body's `update_id`, as Slack's do on `event_id`.
 
 **An Asana handshake is only honoured while the agent has no secret.** Asana picks the secret and
 asks for it back; accepting that unconditionally would let anyone who knows the URL replace a live

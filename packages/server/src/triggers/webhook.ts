@@ -71,6 +71,8 @@ const PRESETS: Record<string, WebhookPreset> = {
   token: TOKEN_PRESET,
   // GroupMe signs nothing and sets no headers; the secret rides in `?token=`.
   groupme: TOKEN_PRESET,
+  // Telegram echoes setWebhook's `secret_token` verbatim; nothing is signed.
+  telegram: { ...TOKEN_PRESET, signatureHeader: "x-telegram-bot-api-secret-token" },
   github: {
     scheme: "hmac",
     signatureHeader: "x-hub-signature-256",
@@ -285,6 +287,16 @@ export function urlVerificationChallenge(preset: WebhookPreset, rawBody: string)
   } catch {
     return null;
   }
+}
+
+/**
+ * Senders that put their retry-stable id in the body: Slack's `event_id`,
+ * Telegram's `update_id`.
+ */
+export function bodyDeliveryKey(payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.event_id === "string") return payload.event_id;
+  if (typeof payload.update_id === "number") return String(payload.update_id);
+  return undefined;
 }
 
 /** {{payload.a.b}} substitution. Values land as JSON, never as bare instructions. */

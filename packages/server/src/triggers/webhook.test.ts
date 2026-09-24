@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 process.env.BULLPEN_DATA = mkdtempSync(join(tmpdir(), "bullpen-test-"));
 const {
+  bodyDeliveryKey,
   decideDelivery,
   handshakeSecret,
   presetFor,
@@ -178,6 +179,13 @@ describe("provider presets", () => {
   it("is the plain token sender when custom names no headers", () => {
     expect(decide({ webhookMode: "custom" }, body, { "x-bullpen-token": SECRET })).toMatchObject({ ok: true });
     expect(presetFor({ webhookMode: "token" } as never)).toEqual(presetFor({ webhookMode: "custom" } as never));
+  });
+
+  it("checks Telegram's secret token header, and dedups on update_id", () => {
+    const update = '{"update_id":42,"message":{"text":"hi"}}';
+    expect(decide({ webhookMode: "telegram" }, update, { "x-telegram-bot-api-secret-token": SECRET })).toMatchObject({ ok: true });
+    expect(decide({ webhookMode: "telegram" }, update, { "x-bullpen-token": SECRET })).toMatchObject({ ok: false, status: 401 });
+    expect(bodyDeliveryKey(JSON.parse(update))).toBe("42");
   });
 
   it("echoes an Asana handshake only while the agent has no secret", () => {

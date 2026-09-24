@@ -124,6 +124,7 @@ const PROVIDERS = [
   ["slack", "Slack — v0= signature over timestamp + body"],
   ["asana", "Asana — X-Hook-Signature, with handshake"],
   ["groupme", "GroupMe — bot callback, token in the URL"],
+  ["telegram", "Telegram — bot webhook, X-Telegram-Bot-Api-Secret-Token"],
 ] as const;
 
 /** A real field from each sender's payload, so the path isn't a guessing game. */
@@ -184,6 +185,9 @@ const FILTER_SUGGESTIONS: Record<string, { paths: string[] }> = {
   groupme: {
     paths: ["sender_type", "group_id", "text", "name", "user_id"],
   },
+  telegram: {
+    paths: ["message.from.id", "message.chat.id", "message.chat.type", "message.text"],
+  },
 };
 
 const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: string; label: string }> = {
@@ -191,6 +195,7 @@ const FILTER_EXAMPLES: Record<string, { path: string; values: string; what: stri
   github: { path: "action", values: "opened, reopened", what: "the action on a GitHub issue or PR", label: "{{payload.repository.full_name}} #{{payload.pull_request.number}}" },
   asana: { path: "events.0.action", values: "changed, added", what: "what Asana did to the resource", label: "{{payload.events.0.resource.gid}}" },
   groupme: { path: "sender_type", values: "bot", what: "who posted — pick “is not one of” so the bot doesn’t answer itself", label: "{{payload.name}}: {{payload.text}}" },
+  telegram: { path: "message.from.id", values: "123456789", what: "your numeric Telegram user id — anyone can message a bot, so this is the allowlist", label: "{{payload.message.text}}" },
   custom: { path: "type", values: "deploy.failed", what: "whatever field your sender uses to say what happened", label: "{{payload.type}}" },
 };
 
@@ -254,6 +259,23 @@ const SENDER_NOTES: Record<string, React.ReactNode> = {
       forever. To reply, have the agent POST <code>{"{"}&quot;bot_id&quot;, &quot;text&quot;{"}"}</code>{" "}
       to <code>https://api.groupme.com/v3/bots/post</code>, with the bot id in the agent&rsquo;s env.
       GroupMe does not retry and sends no delivery id, so every message runs once.
+    </>
+  ),
+  telegram: (
+    <>
+      Create the bot with BotFather, then register the URL above by calling the Bot API&rsquo;s{" "}
+      <code>setWebhook</code> with <code>url</code> set to it and <code>secret_token</code> set to the
+      secret below. Telegram sends that secret back verbatim on every update as{" "}
+      <code>X-Telegram-Bot-Api-Secret-Token</code> &mdash; nothing is signed, so treat it as a
+      password. Anyone who finds the bot can message it, so add a filter on{" "}
+      <code>message.from.id</code> <em>is one of</em> your own numeric id. Telegram retries until it
+      gets a 2xx, with the same <code>update_id</code>, which bullpen uses to run each message once.
+      <br />
+      <br />
+      With <code>TELEGRAM_BOT_TOKEN</code> in the agent&rsquo;s env, bullpen shows{" "}
+      <em>typing&hellip;</em> in the chat from the moment a message starts a run until the run
+      reaches its result. The reply is still the agent&rsquo;s to send, with{" "}
+      <code>sendMessage</code> to <code>message.chat.id</code>.
     </>
   ),
 
@@ -348,6 +370,8 @@ function shapeOf(draft: AgentInput): Shape {
       handshake: false,
       pasted: true,
     };
+  if (mode === "telegram")
+    return { header: "X-Telegram-Bot-Api-Secret-Token", prefix: "", eventHeader: null, handshake: false, pasted: false };
   if (mode === "asana")
     return { header: "X-Hook-Signature", prefix: "", eventHeader: null, handshake: true, pasted: false };
   if (mode === "github" || mode === "hmac")
@@ -363,7 +387,7 @@ function shapeOf(draft: AgentInput): Shape {
 
 function exampleRequest(url: string, draft: AgentInput): string {
   const shape = shapeOf(draft);
-  const signed = shape.header.toLowerCase() !== "x-bullpen-token";
+  const signed = !["x-bullpen-token", "x-telegram-bot-api-secret-token"].includes(shape.header.toLowerCase());
   if (signed) {
     return [
       `BODY='{"word":"hello"}'`,

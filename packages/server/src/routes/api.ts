@@ -6,6 +6,7 @@ import { nextRuns, rescheduleAgent } from "../triggers/cron.ts";
 import { pollOnce, probePoll } from "../triggers/poll.ts";
 import {
   alreadyDelivered,
+  bodyDeliveryKey,
   decideDelivery,
   eventNameOf,
   handshakeSecret,
@@ -445,7 +446,7 @@ api.post("/hooks/space/:key", async (c) => {
   const deliveryKey =
     headers["x-bullpen-idempotency-key"] ??
     headers["x-github-delivery"] ??
-    (typeof payload.event_id === "string" ? payload.event_id : undefined);
+    bodyDeliveryKey(payload);
 
   // The space's own secret is what the sender signs with, so every agent is
   // checked against it. Without one, each falls back to its own — which is how
@@ -519,9 +520,7 @@ api.post("/hooks/:id", async (c) => {
   } catch {
     payload = {};
   }
-  // Slack repeats event_id across its retries, and puts it in the body.
-  const deliveryKey =
-    headerDeliveryKey ?? (typeof payload.event_id === "string" ? payload.event_id : undefined);
+  const deliveryKey = headerDeliveryKey ?? bodyDeliveryKey(payload);
 
   const decision = decideDelivery({ agent, rawBody, headers });
 
