@@ -108,12 +108,12 @@ Then run:
 
 ```bash
 gem install kamal
-export BULLPEN_HOST=203.0.113.10       # the server
-export BULLPEN_TZ=America/New_York     # optional, defaults to UTC
-export GITHUB_TOKEN=ghp_…              # needs read:packages, to pull the image
-export TS_HOSTNAME=bullpen             # the Tailscale node name
-export TS_AUTHKEY=tskey-auth-…         # optional, only for Tailscale
-npm run deploy:setup                   # installs Docker, starts the app and accessories
+export BULLPEN_HOST=203.0.113.10
+export BULLPEN_TZ=America/New_York
+export GITHUB_TOKEN=ghp_…
+export TS_HOSTNAME=bullpen
+export TS_AUTHKEY=tskey-auth-…
+npm run deploy:setup
 ```
 
 Then open a tunnel with `ssh -N -L 4322:127.0.0.1:4322 root@$BULLPEN_HOST` and go to
@@ -127,8 +127,8 @@ After the first manual deploy, the `deploy` workflow deploys new changes that la
 ```bash
 gh secret set BULLPEN_HOST --body "$BULLPEN_HOST"
 gh secret set KAMAL_HOST_KEY --body "$(ssh-keyscan -t ed25519 "$BULLPEN_HOST")"
-ssh-keygen -t ed25519 -N '' -C bullpen-deploy -f ~/.ssh/bullpen_deploy 
-ssh-copy-id -i ~/.ssh/bullpen_deploy.pub root@"$BULLPEN_HOST"
+[ -f ~/.ssh/bullpen_deploy ] || ssh-keygen -t ed25519 -N '' -C bullpen-deploy -f ~/.ssh/bullpen_deploy
+ssh-copy-id -f -i ~/.ssh/bullpen_deploy.pub root@"$BULLPEN_HOST"
 gh secret set KAMAL_SSH_KEY < ~/.ssh/bullpen_deploy
 [ -n "$BULLPEN_TZ" ] && gh variable set BULLPEN_TZ --body "$BULLPEN_TZ"
 [ -n "$TS_HOSTNAME" ] && gh secret set TS_HOSTNAME --body "$TS_HOSTNAME"
