@@ -1,0 +1,17 @@
+#!/bin/sh
+# Hands the app's data directory to the container's user before anything boots.
+#
+# config/deploy.yml bind-mounts /srv/bullpen/data onto /data. Docker creates a
+# missing bind-mount source owned by root, and a bind mount (unlike a named
+# volume) does not take the image's ownership of /data, so the app, which runs
+# as `node` (uid 1000), could not create its database and would fail on boot.
+#
+# Kamal runs this hook on your machine, not the server, during `kamal setup`
+# and `kamal server bootstrap`, after Docker is installed and before the app or
+# accessories start. It never runs on a plain deploy. KAMAL_HOSTS is the
+# comma-separated host list; root matches `ssh.user` in config/deploy.yml.
+set -e
+
+for host in $(echo "$KAMAL_HOSTS" | tr , ' '); do
+  ssh root@"$host" 'mkdir -p /srv/bullpen/data && chown 1000:1000 /srv/bullpen/data'
+done
