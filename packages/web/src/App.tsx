@@ -54,6 +54,14 @@ function PencilIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   );
 }
 
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-5 w-5" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
 function GearIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
@@ -156,7 +164,7 @@ function CrumbBar({
   current: string;
 }) {
   return (
-    <header className="flex shrink-0 items-center gap-3 border-b border-neutral-800 px-6 py-3">
+    <header className="flex shrink-0 items-center gap-3 border-b border-neutral-800 px-4 py-3 md:px-6">
       <button
         onClick={onParent}
         className="text-sm text-neutral-400 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-100 hover:decoration-neutral-400"
@@ -558,6 +566,9 @@ export function App() {
   const [view, setViewState] = useState<View>(route.view);
 
   const [editDirty, setEditDirty] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  // Any navigation, rail click or back button alike, puts the phone drawer away.
+  useEffect(() => setNavOpen(false), [view]);
   const viewRef = useRef(view);
   const dirtyRef = useRef(false);
   viewRef.current = view;
@@ -1023,7 +1034,7 @@ export function App() {
 
   // Nothing can run without a credential, so there is no dashboard to show
   // behind a dialog — setup replaces it until health says otherwise.
-  if (credentialSource === null) return <div className="h-screen bg-neutral-950" />;
+  if (credentialSource === null) return <div className="h-dvh bg-neutral-950" />;
   if (credentialSource === "none" || forceSetup) {
     return (
       <SetupView
@@ -1037,8 +1048,16 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen bg-neutral-950 font-sans text-neutral-100">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-neutral-800">
+    <div className="flex h-dvh bg-neutral-950 font-sans text-neutral-100">
+      {/* Below md the rail is a drawer over the page rather than a column beside it. */}
+      {navOpen && (
+        <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setNavOpen(false)} />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 transition-transform md:static md:max-w-none md:translate-x-0 md:transition-none ${
+          navOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="shrink-0 px-4 pt-4">
           <button
             onClick={() => setView({ kind: "home" })}
@@ -1176,6 +1195,21 @@ export function App() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-2 py-2 md:hidden">
+          <button
+            onClick={() => setNavOpen(true)}
+            title="Agents and spaces"
+            aria-label="Open navigation"
+            className="rounded p-2 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
+          >
+            <MenuIcon />
+          </button>
+          <button onClick={() => setView({ kind: "home" })} className="flex min-w-0 items-center gap-2">
+            <img src="/favicon.svg" alt="" className="h-6 w-6" />
+            <span className="font-semibold tracking-tight">Bullpen</span>
+            <span className="truncate text-sm text-neutral-500">{active}</span>
+          </button>
+        </div>
 
         {view.kind === "edit" && (
           <>
@@ -1252,9 +1286,9 @@ export function App() {
         )}
 
         {view.kind === "detail" && detailAgent && view.tab !== "settings" && (
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+          <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
                 <h2 className="text-lg font-semibold">{detailAgent.name}</h2>
                 {!detailAgent.enabled && (
                   <p className="mt-1 text-xs text-amber-500">
@@ -1267,7 +1301,7 @@ export function App() {
                 )}
                 {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
               </div>
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 <button
                   onClick={() => setView({ kind: "detail", id: detailAgent.id, tab: "settings" })}
                   title="Prompt, trigger, workspace, permissions"
@@ -1422,7 +1456,7 @@ export function App() {
               onParent={() => setView({ kind: "home" })}
               current="Edit"
             />
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6">
             <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="min-w-0 space-y-8">
                 <RailSection title="Name">
@@ -1639,7 +1673,7 @@ export function App() {
         )}
 
         {view.kind === "settings" && (
-          <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6">
             <h2 className="text-lg font-semibold">Settings</h2>
             <p className="mt-1 text-xs text-neutral-500">
               What this bullpen needs regardless of agent or space.
@@ -2190,7 +2224,7 @@ export function App() {
         )}
 
         {view.kind === "home" && (
-          <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6">
             {spaceHeader}
 
             {awaiting.length + running.length + failing.length + paused.length === 0 ? (
@@ -2422,7 +2456,7 @@ export function App() {
 
         {view.kind === "run" && run && (
           <>
-            <header className="flex items-center gap-3 border-b border-neutral-800 px-6 py-3">
+            <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-neutral-800 px-4 py-3 md:px-6">
               <button
                 onClick={() => setView({ kind: "detail", id: run.agentId })}
                 className="text-sm text-neutral-400 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-100 hover:decoration-neutral-400"
@@ -2448,7 +2482,7 @@ export function App() {
               >
                 {ago(run.startedAt)}
               </span>
-              <span className="ml-auto flex items-center gap-2">
+              <span className="ml-auto flex flex-wrap items-center gap-2">
               {isQueued && (
                 <button
                   onClick={() => api.stop(run.id).then(() => setView({ kind: "detail", id: run.agentId }))}
@@ -2518,7 +2552,7 @@ export function App() {
                 // Scrolling up parks the view; scrolling back to the bottom resumes.
                 stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
               }}
-              className="flex-1 overflow-y-auto px-6 py-4"
+              className="flex-1 overflow-y-auto px-4 py-4 md:px-6"
             >
               <Timeline events={events} partial={partial} meteredBilling={metered} runId={run.id} />
               {approvals.length > 0 && (
@@ -2535,7 +2569,7 @@ export function App() {
         )}
 
         {view.kind === "run" && canReply && (
-          <div className="border-t border-neutral-800 p-4">
+          <div className="border-t border-neutral-800 p-3 md:p-4">
             {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
             {skillMatches.length > 0 && (
               <div className="mb-2 overflow-hidden rounded border border-neutral-800 bg-neutral-900">

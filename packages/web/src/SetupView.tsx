@@ -67,7 +67,7 @@ export function SetupView({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-neutral-950 px-6 font-sans text-neutral-100">
+    <div className="flex h-dvh items-center justify-center bg-neutral-950 px-4 font-sans md:px-6 text-neutral-100">
       <div className="w-full max-w-xl space-y-6">
         <div className="flex items-center gap-3">
           <img src="/favicon.svg" alt="" className="h-10 w-10" />

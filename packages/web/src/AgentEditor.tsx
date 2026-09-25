@@ -210,7 +210,7 @@ export function AgentEditor({
   };
 
   return (
-    <div className="space-y-4 px-6 py-5">
+    <div className="space-y-4 px-4 py-5 md:px-6">
       {droppedEnv.length > 0 && (
         <p className="text-xs text-amber-500/80">
           {droppedEnv.join(", ")} {droppedEnv.length === 1 ? "was" : "were"} not copied &mdash;
@@ -670,7 +670,7 @@ export function AgentEditor({
         </div>
       </div>
 
-      <div className="sticky bottom-0 -mx-6 -mb-5 flex items-center gap-2 border-t border-neutral-800 bg-neutral-950 px-6 py-3">
+      <div className="sticky bottom-0 -mx-4 -mb-5 flex items-center gap-2 border-t border-neutral-800 bg-neutral-950 px-4 py-3 md:-mx-6 md:px-6">
         <button
           onClick={save}
           disabled={busy || !draft.name}
