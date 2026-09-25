@@ -1346,7 +1346,7 @@ export function App() {
                   <p className="mt-2 text-sm text-neutral-600">Nothing has run yet.</p>
                 ) : (
                   <ul className="mt-2 space-y-1">
-                    {agentRuns.map((r) => (
+                    {agentRuns.slice(0, 15).map((r) => (
                       <li key={r.id}>
                         <button
                           onClick={() => setView({ kind: "run", id: r.id })}
