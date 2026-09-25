@@ -94,13 +94,24 @@ with the image built by CI rather than on your machine or the server.
 
 ### First deploy
 
-After CI has build has run successfully on `HEAD` at least once, run the following locally:
+After the CI build has run successfully on `HEAD` at least once, determine the following variables:
+
+| Variable | What it is |
+|---|---|
+| `BULLPEN_HOST` | The server's IP or hostname. Required. |
+| `BULLPEN_TZ` | The container's timezone. Defaults to `UTC`. |
+| `GITHUB_TOKEN` | Only for pulling the image from ghcr, so it needs `read:packages`. |
+| `TS_HOSTNAME` | Tailscale only: the node name, so the dashboard is `https://<node>.<tailnet>.ts.net`. Defaults to `bullpen`. |
+| `TS_AUTHKEY` | Tailscale only: an auth key, used once. |
+
+Then run:
 
 ```bash
 gem install kamal
 export BULLPEN_HOST=203.0.113.10       # the server
-export GITHUB_TOKEN=ghp_…              # needs read:packages, to pull the image
 export BULLPEN_TZ=America/New_York     # optional, defaults to UTC
+export GITHUB_TOKEN=ghp_…              # needs read:packages, to pull the image
+export TS_HOSTNAME=bullpen             # the Tailscale node name
 export TS_AUTHKEY=tskey-auth-…         # optional, only for Tailscale
 npm run deploy:setup                   # installs Docker, starts the app and accessories
 ```
@@ -126,39 +137,29 @@ attribute in your tailnet policy, and the tailnet's ACL must let your devices re
 (`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}` if it doesn't). To add it after the
 first deploy, export `TS_AUTHKEY` and run `kamal accessory reboot tailscale`.
 
-### Configuration
-
-Nothing deployment-specific is committed. `config/deploy.yml` reads it from the environment,
-and `.kamal/secrets` names the one secret, `TS_AUTHKEY`. These configure Kamal, not
-bullpen — only `BULLPEN_TZ` reaches the app, as `TZ`. The app's own settings, the Claude token
-and the GitHub token agents use, are entered in the dashboard and live in `/data`.
-
-| Variable | What it is |
-|---|---|
-| `BULLPEN_HOST` | The server's IP or hostname. Required. |
-| `BULLPEN_TZ` | The container's timezone. Defaults to `UTC`. |
-| `GITHUB_TOKEN` | Only for pulling the image from ghcr, so it needs `read:packages`. Not the token agents use — that one goes in Settings → Global environment. Set `KAMAL_REGISTRY_PASSWORD` instead if your shell's `GITHUB_TOKEN` is an agent token without that scope. |
-| `TS_HOSTNAME` | Tailscale only: the node name, so the dashboard is `https://<node>.<tailnet>.ts.net`. Defaults to `bullpen`. |
-| `TS_AUTHKEY` | Tailscale only: an auth key, used once. |
-
-The image is `ghcr.io/<owner>/bullpen`, built by CI from this repo — change `image` and the
-registry `username` in `config/deploy.yml` if you deploy a fork.
-
 ### Deploying from CI
 
 Every deploy after the first is a push to `main`. The `build` workflow pushes the image; the
-`deploy` workflow runs Kamal for that sha. For the deploy workflow to reach the server, add these
-Actions secrets:
+`deploy` workflow runs Kamal for that sha. To let it reach the server, run this in the shell
+you did the first deploy from, so the variables exported there carry over:
 
-- `BULLPEN_HOST` — the same value as above.
-- `KAMAL_SSH_KEY` — a private key authorized on the server, used for nothing else.
-- `KAMAL_HOST_KEY` — the output of `ssh-keyscan -t ed25519 <host>`.
-- `TS_HOSTNAME` — optional, only if you use Tailscale and changed it from `bullpen`.
+```bash
+gh secret set BULLPEN_HOST --body "$BULLPEN_HOST"
+gh secret set KAMAL_HOST_KEY --body "$(ssh-keyscan -t ed25519 "$BULLPEN_HOST")"
+ssh-keygen -t ed25519 -N '' -C bullpen-deploy -f ~/.ssh/bullpen_deploy   # a key CI uses for nothing else
+ssh-copy-id -i ~/.ssh/bullpen_deploy.pub root@"$BULLPEN_HOST"
+gh secret set KAMAL_SSH_KEY < ~/.ssh/bullpen_deploy
+[ -n "$BULLPEN_TZ" ] && gh variable set BULLPEN_TZ --body "$BULLPEN_TZ"
+[ -n "$TS_HOSTNAME" ] && gh secret set TS_HOSTNAME --body "$TS_HOSTNAME"
+```
 
-`BULLPEN_TZ` can be an Actions *variable*. The rest are secrets because an Actions log masks a
-secret's value wherever it appears, and a public repo's logs are public. To redeploy an
-older commit, run the workflow by hand with its sha; `npm run deploy` does the same from your
-machine, with the variables above exported.
+`GITHUB_TOKEN` needs nothing: the job's own token can pull this repo's image. `TS_AUTHKEY`
+isn't needed either, since a deploy never boots the Tailscale accessory. `BULLPEN_TZ` is a
+variable; the rest are secrets because an Actions log masks a secret's value wherever it
+appears, and a public repo's logs are public.
+
+To redeploy an older commit, run the workflow by hand with its sha; `npm run deploy` does the
+same from your machine, with the variables above exported.
 
 Nothing is ever built on your machine or the server — `better-sqlite3` compiles from source and
 a small server hasn't the memory. A deploy stops the old container (waiting for running agents)
