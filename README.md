@@ -127,7 +127,7 @@ After the first manual deploy, the `deploy` workflow deploys new changes that la
 ```bash
 gh secret set BULLPEN_HOST --body "$BULLPEN_HOST"
 gh secret set KAMAL_HOST_KEY --body "$(ssh-keyscan -t ed25519 "$BULLPEN_HOST")"
-ssh-keygen -t ed25519 -N '' -C bullpen-deploy -f ~/.ssh/bullpen_deploy   # a key CI uses for nothing else
+ssh-keygen -t ed25519 -N '' -C bullpen-deploy -f ~/.ssh/bullpen_deploy 
 ssh-copy-id -i ~/.ssh/bullpen_deploy.pub root@"$BULLPEN_HOST"
 gh secret set KAMAL_SSH_KEY < ~/.ssh/bullpen_deploy
 [ -n "$BULLPEN_TZ" ] && gh variable set BULLPEN_TZ --body "$BULLPEN_TZ"
