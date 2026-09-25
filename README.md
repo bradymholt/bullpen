@@ -94,17 +94,15 @@ with the image built by CI rather than on your machine or the server.
 
 ### First deploy
 
-From an up-to-date `main` (CI must have built an image for `HEAD`), with `gem install kamal`
-done and root SSH access to the server:
+After CI has build has run successfully on `HEAD` at least once, run the following locally:
 
 ```bash
+gem install kamal
 export BULLPEN_HOST=203.0.113.10       # the server
 export GITHUB_TOKEN=ghp_…              # needs read:packages, to pull the image
 export BULLPEN_TZ=America/New_York     # optional, defaults to UTC
 export TS_AUTHKEY=tskey-auth-…         # optional, only for Tailscale
 npm run deploy:setup                   # installs Docker, starts the app and accessories
-kamal server exec 'chown -R 1000:1000 /srv/bullpen/data'   # the image runs unprivileged
-npm run deploy
 ```
 
 Then open a tunnel with `ssh -N -L 4322:127.0.0.1:4322 root@$BULLPEN_HOST` and go to
@@ -170,20 +168,6 @@ and starts the new one, so it costs a few seconds of downtime.
 `https://<node>.<tailnet>.ts.net:8443/api/hooks/...`; the dashboard shows the right URL.
 
 **Afterwards:** `kamal app logs -f` and `kamal app details`.
-
-### What's in `/data`
-
-The container keeps everything in one volume, `/srv/bullpen/data` on the server. Back that up and
-you have everything.
-
-```
-/data/bullpen.db          agents, runs, deliveries, webhook and space secrets, env
-/data/claude/             CLAUDE_CONFIG_DIR — skills, settings.json, shared MCP servers
-/data/gog/                GOG_HOME — gog's OAuth tokens and keyring file
-```
-
-**Never put a `CLAUDE.md` in `/data`.** Agent workspaces live under it, and Claude Code
-collects `CLAUDE.md` from every parent of its working directory.
 
 ## Layout
 
