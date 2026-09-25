@@ -20,7 +20,7 @@ servers:
     hosts:
       - <%= ENV.fetch("BULLPEN_HOST") %>
     proxy: false
-    # Shutdown waits for agents' child processes to wind down (see CLAUDE.md).
+    # Shutdown waits for agents' child processes to wind down (see AGENTS.md).
     stop_timeout: 120
     options:
       # No host port at all: the tailscale accessory reaches the app as
