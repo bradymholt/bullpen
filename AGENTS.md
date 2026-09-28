@@ -10,9 +10,10 @@ merge it. Merging `main` is what deploys — `build` pushes the image, `deploy` 
 `workflow_run` after it and cuts a release — so an unmerged PR is an undeployed change.
 `.claude/settings.json` carries the `gh pr merge` allow rule that makes this possible.
 
-Run `npm run typecheck` and `npm test` before merging. The `test` workflow runs both on every
-PR, but a squash-merge does not wait for it unless auto-merge is used, so locally is still
-where you find out. Keep unrelated work out of the commit — the tree often holds more than one
+Run `npm run typecheck` and `npm test` before merging, then merge with
+`gh pr merge --squash --auto`. The `default` ruleset on `main` requires the `test` check, so a
+plain merge is refused while it is pending; `--auto` merges when it passes and is the standing
+instruction, not something to ask about. Keep unrelated work out of the commit — the tree often holds more than one
 change in progress. Don't use `--admin`, and stop rather than merge when something looks wrong.
 
 Dependabot opens weekly npm, Actions and Docker PRs. The routine npm bumps come grouped;

@@ -2491,6 +2491,22 @@ export function App() {
                   Cancel
                 </button>
               )}
+              {run.status === "interrupted" && (
+                <button
+                  onClick={() => {
+                    setError(null);
+                    api.restart(run.id).catch((err) => setError(String(err)));
+                  }}
+                  title={
+                    run.resumable
+                      ? "Resume the session where the restart cut it off"
+                      : "Start over on the original prompt, in the same workspace"
+                  }
+                  className="rounded border border-amber-800 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
+                >
+                  Restart
+                </button>
+              )}
               {canReply && (
                 <>
                   <select

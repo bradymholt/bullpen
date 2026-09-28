@@ -89,6 +89,8 @@ export function renderTranscript(run: RunLike, agentName: string, events: Ev[], 
       out.push(`[${p.allow ? "allowed" : "denied"} ${p.toolName}]`, "");
     } else if (e.type === "run.interrupted") {
       out.push(`[interrupted — ${p.reason}]`, "");
+    } else if (e.type === "run.restarted") {
+      out.push(p.resumed ? "[restarted — resuming the session]" : "[restarted — starting over]", "");
     } else if (e.type === "user.message") {
       out.push("YOU", indent(String(p.text ?? "")), "");
     } else if (e.type === "assistant") {

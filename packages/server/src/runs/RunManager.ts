@@ -362,27 +362,50 @@ function launch(runId: string, agent: Agent, l: Launch): void {
  */
 function resumeRun(runId: string, text: string): boolean {
   const run = db.select().from(runs).where(eq(runs.id, runId)).get();
-  if (!run?.claudeSessionId || !run.workspacePath) return false;
+  if (!run?.claudeSessionId) return false;
+  return relaunch(runId, text, run.claudeSessionId, () => appendEvent(runId, "user.message", { text }));
+}
+
+function relaunch(runId: string, prompt: string, resumeSessionId: string | undefined, record: () => void): boolean {
+  const run = db.select().from(runs).where(eq(runs.id, runId)).get();
+  if (!run?.workspacePath) return false;
   if (run.status === "queued" || ACTIVE_STATUSES.includes(run.status as RunStatus)) return false;
   const agent = getAgent(run.agentId);
   if (!agent) return false;
 
   mkdirSync(run.workspacePath, { recursive: true });
   const env = resolveEnv(agent);
-  appendEvent(runId, "user.message", { text });
+  record();
   setStatus(runId, "running", { endedAt: null });
   launch(runId, agent, {
     trigger: run.trigger as RunRequest["trigger"],
     cwd: run.workspacePath,
-    prompt: text,
+    prompt,
     permissionMode: run.permissionMode ?? agent.permissionMode,
     env,
     systemNote: systemNote(run.trigger as RunRequest["trigger"], env),
     ephemeral: !run.branch && run.workspacePath === join(config.workspacesDir, runId),
-    resumeSessionId: run.claudeSessionId,
+    resumeSessionId,
     prior: { numTurns: run.numTurns ?? 0, costUsd: run.costUsd ?? 0 },
   });
   return true;
+}
+
+const RESTART_NOTE =
+  "The server restarted while you were working and your session was cut off. Check what you already did, then carry on from where you left off.";
+
+/**
+ * An interrupted run picks its session back up when it had one. A run cut off
+ * before the harness reported a session has nothing to resume, so it starts
+ * over on its original prompt in the same workspace, where the payload still is.
+ */
+export function restartRun(runId: string): boolean {
+  const run = db.select().from(runs).where(eq(runs.id, runId)).get();
+  if (run?.status !== "interrupted") return false;
+  const resume = run.claudeSessionId ?? undefined;
+  return relaunch(runId, resume ? RESTART_NOTE : run.prompt, resume, () =>
+    appendEvent(runId, "run.restarted", { resumed: resume !== undefined }),
+  );
 }
 
 /** A finished run whose session is closed can still be replied to while its transcript can be found. */

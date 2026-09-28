@@ -130,6 +130,12 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
       });
     } else if (e.type === "run.interrupted") {
       items.push({ key: k, kind: "error", body: `Interrupted — ${e.payload.reason}` });
+    } else if (e.type === "run.restarted") {
+      items.push({
+        key: k,
+        kind: "meta",
+        body: e.payload.resumed ? "Restarted — resuming the session" : "Restarted — starting over on the original prompt",
+      });
     } else if (e.type === "user.message") {
       items.push({ key: k, kind: "user", body: e.payload.text });
     } else if (e.type === "assistant") {
