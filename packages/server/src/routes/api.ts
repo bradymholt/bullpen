@@ -63,6 +63,7 @@ import {
   isResumable,
   isPermissionMode,
   listAgents,
+  restartRun,
   sendToRun,
   setRunPermissionMode,
   QueueFullError,
@@ -1270,6 +1271,11 @@ api.post("/runs/:id/messages", async (c) => {
   const body = await c.req.json<{ text: string }>();
   const ok = sendToRun(c.req.param("id"), body.text);
   return ok ? c.json({ ok: true }) : c.json({ error: "run has no session to reply to" }, 409);
+});
+
+api.post("/runs/:id/restart", (c) => {
+  const ok = restartRun(c.req.param("id"));
+  return ok ? c.json({ ok: true }) : c.json({ error: "only an interrupted run can be restarted" }, 409);
 });
 
 /** Git actions only make sense on a git workspace with a branch to push. */

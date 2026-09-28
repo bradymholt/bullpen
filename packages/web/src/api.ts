@@ -286,5 +286,6 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ mode }),
     }).then(json<{ ok: true }>),
+  restart: (runId: string) => fetch(`/api/runs/${runId}/restart`, { method: "POST" }).then(json<{ ok: true }>),
   stop: (runId: string) => fetch(`/api/runs/${runId}/stop`, { method: "POST" }).then(json<{ ok: true }>),
 };
