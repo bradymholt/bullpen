@@ -49,6 +49,8 @@ export type RunnerHandle = {
   /** Resolves when the backend's stream ends. */
   done: Promise<void>;
   send(text: string): void;
+  /** Ends input without interrupting; the backend exits once it has answered everything it was sent. */
+  close(): void;
   stop(): Promise<void>;
   setPermissionMode(mode: ModeName): Promise<void>;
   sessionId(): string | undefined;

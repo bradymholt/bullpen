@@ -84,6 +84,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
   return {
     done,
     send: (text) => input.push(text),
+    close: () => input.close(),
     async stop() {
       try {
         await q?.interrupt();

@@ -140,7 +140,7 @@ agent running `echo` never prompts, but a file write does. Test approval changes
 entry point every trigger uses. With `concurrency: queue` and an active run, the request becomes a
 `runs` row with status `queued` and its payload spooled to `dataDir/queue/<runId>.json` — bodies
 can be a megabyte, and the row already holds prompt and mode. `drainQueue()` starts the oldest one
-when a run reaches its result — not when its session closes, which waits for a stop or a deploy — and at boot, promoting the existing row rather than inserting a new one, so the id
+when a run reaches its result — not when its session's process exits a moment later — and at boot, promoting the existing row rather than inserting a new one, so the id
 a webhook delivery recorded is the id that eventually runs. Depth is capped at `QUEUE_DEPTH`;
 beyond it a trigger is refused and recorded as a `queue full` delivery drop. `queued` is not an
 active status: it must never count toward `agentHasActiveRun`, or the queue would block itself.
@@ -248,7 +248,7 @@ before the challenge is answered, so the signing secret must be pasted in first.
 **A Telegram agent's typing indicator is bullpen's, not the agent's.** Asking the agent to send
 it cost a full model turn before any work, and it then went out beside the reply, which clears
 it at once. `startTelegramTyping` sends `sendChatAction` when a webhook run launches and every
-4s until the result — not until the session closes, which `handle.done` waits for — reading the
+4s until the result — not until the session's process exits, which `handle.done` waits for — reading the
 chat from `.bullpen/payload.json` and the token from the run's `TELEGRAM_BOT_TOKEN`. Retries
 dedup on the body's `update_id`, as Slack's do on `event_id`.
 
@@ -264,10 +264,15 @@ agent just quietly lacks those tools. That's why the init message's per-server s
 as an `mcp.status` event and rendered.
 
 **`handle.done` is not "the run finished."** In streaming-input mode the session stays open after
-the `result` message so a completed run can still be replied to — so `done` resolves only when the
-session is closed, by a stop or a shutdown. Anything one-shot (the setup token test, say) must treat
-`onResult` as the finish line and then call `stop()` itself. Awaiting `done` there hangs until the
-timeout, which is exactly how the token test first shipped.
+the `result` message until its input is closed, so `done` resolves only then. `RunManager` closes it
+at the result — a reply sent mid-turn is folded into that same turn, so there is no later one to
+wait for — and a later reply resumes the session from its transcript in a new process. Idle
+sessions used to be kept for replies; each is a ~120MB `claude` process, and 42 of them from four
+days without a deploy ran the 4GB box out of memory until it stopped answering ssh. Because a closed session can outlive its `live` entry, the
+`done` cleanup only clears state that still belongs to its own handle. Anything one-shot (the setup
+token test, say) must treat `onResult` as the finish line and then close the session itself.
+Awaiting `done` without closing hangs until the timeout, which is exactly how the token test first
+shipped.
 
 **A deliberate stop must not read as a failure.** The interrupted turn's `result` arrives after
 we set `cancelled` and would overwrite it, so `RunManager` tracks intentionally-stopped runs.

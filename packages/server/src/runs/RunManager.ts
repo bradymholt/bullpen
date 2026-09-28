@@ -258,6 +258,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
   const mcp = selectMcp(agent, exportMachineMcp(), env);
   const stopTyping =
     agent.webhookMode === "telegram" && l.trigger === "webhook" ? startTelegramTyping(l.cwd, env) : () => {};
+  let closed = false;
   const handle = runner.start(
     {
       cwd: workspace.path,
@@ -299,11 +300,12 @@ function launch(runId: string, agent: Agent, l: Launch): void {
           })
           .where(eq(runs.id, runId))
           .run();
-        if (stopping.has(runId)) return;
+        if (closed || stopping.has(runId)) return;
         setStatus(runId, isError ? "failed" : "completed");
-        // The run is over here even though the session stays open (handle.done
-        // resolves only on close), so this is when the files are gathered and
-        // the next queued run may start.
+        // An idle session is a whole claude process; a reply resumes it from its transcript instead.
+        closed = true;
+        live.delete(runId);
+        handle.close();
         keepArtifacts();
         drainQueue(agent.id);
       },
@@ -324,14 +326,14 @@ function launch(runId: string, agent: Agent, l: Launch): void {
 
   handle.done
     .then(() => {
-      if (stopping.has(runId)) return;
+      if (closed || stopping.has(runId)) return;
       const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
       if (current && ACTIVE_STATUSES.includes(current.status as RunStatus)) {
         setStatus(runId, "completed", { endedAt: Math.floor(Date.now() / 1000) });
       }
     })
     .catch((err: unknown) => {
-      if (stopping.has(runId)) return;
+      if (closed || stopping.has(runId)) return;
       appendEvent(runId, "run.error", { message: String(err) });
       setStatus(runId, "failed", {
         error: String(err),
@@ -340,17 +342,20 @@ function launch(runId: string, agent: Agent, l: Launch): void {
     })
     .finally(() => {
       stopTyping();
-      live.delete(runId);
-      stopping.delete(runId);
+      // A reply may already have resumed this run in a new session, which these belong to.
+      if (live.get(runId) === handle) {
+        live.delete(runId);
+        stopping.delete(runId);
+      }
       // Only for a one-off dir, and only when it ended cleanly: a failed run's
       // directory is the only evidence it leaves, and a clone is always kept so
       // its diff can still be reviewed.
       const final = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
       // Stopped or interrupted runs never reached onResult; anything they left is gathered here.
-      keepArtifacts();
+      if (!closed) keepArtifacts();
       if (ephemeral && final?.status === "completed" && workspaceRetentionHours() === 0) removeWorkspace(workspace.path);
       // A stopped or crashed run never reached onResult.
-      drainQueue(agent.id);
+      if (!closed) drainQueue(agent.id);
     });
 }
 
@@ -418,12 +423,6 @@ export function sendToRun(runId: string, text: string): boolean {
   const handle = live.get(runId);
   if (!handle) return resumeRun(runId, text);
   appendEvent(runId, "user.message", { text });
-  // A finished run is still attached; talking to it puts it back to work, and
-  // the status should say so rather than reading completed while it thinks.
-  const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
-  if (current && !ACTIVE_STATUSES.includes(current.status as RunStatus)) {
-    setStatus(runId, "running", { endedAt: null });
-  }
   handle.send(text);
   return true;
 }
@@ -546,8 +545,6 @@ export async function shutdownLiveRuns(timeoutMs = 5000): Promise<number> {
         handle.done.catch(() => {}),
         new Promise((r) => setTimeout(r, timeoutMs)),
       ]);
-      // A finished run stays attached so it can be replied to. Shutting the
-      // session down is not an interruption of work that already ended.
       const current = db.select({ status: runs.status }).from(runs).where(eq(runs.id, id)).get();
       if (current && ACTIVE_STATUSES.includes(current.status as RunStatus)) {
         setStatus(id, "interrupted", { endedAt: Math.floor(Date.now() / 1000) });
