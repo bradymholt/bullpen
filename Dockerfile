@@ -50,6 +50,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends gh \
  && apt-get purge -y gnupg && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
+# gh reads GITHUB_TOKEN from the env but git does not, so an agent's own
+# `git clone` of a private repo fails without this.
+RUN git config --system credential.https://github.com.helper '!gh auth git-credential'
 
 # gog (Gmail CLI) has no apt package and is a 44MB Go binary, so the image ships
 # a wrapper instead and the binary downloads into the data volume the first time

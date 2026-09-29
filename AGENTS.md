@@ -325,7 +325,11 @@ cannot start, hence `--no-sandbox`.
 
 **`gh`, `gog`, `python3` and `jq` are all in the image, and none of them arrive on their own.**
 The SDK brings the `claude` binary and nothing else, so the agents' `gh api` calls need the CLI
-installed separately; `python3` and `jq` are there because agents reach for them unprompted to read
+installed separately. Plain `git` ignores `GITHUB_TOKEN`, so an agent's own `git clone` (or
+`gh repo clone`, which shells out to it) of a private repo died on "could not read Username" until
+`/etc/gitconfig` got `gh auth git-credential` as the github.com helper. Bullpen's own git calls
+still pass their helper per command in `gitEnv()`, and the process env has no token on the box,
+so the system helper finds nothing there and git falls through to it. `python3` and `jq` are there because agents reach for them unprompted to read
 a payload, and a `command not found` costs a turn. `gog` used to install only when `GOG_URL` was
 passed at build — but CI builds with no build args at all, so the deployed image never had it and
 the email-archiving skill failed every run. It is now a wrapper that downloads the 44MB binary into
