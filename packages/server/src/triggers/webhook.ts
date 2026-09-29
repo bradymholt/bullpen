@@ -6,7 +6,7 @@ import { webhookDeliveries, type Agent } from "../db/schema.ts";
 
 export const MAX_BODY_BYTES = 1_000_000;
 
-export type FilterCondition = { path: string; op: "in" | "not_in"; values: string[] };
+export type FilterCondition = { path: string; op: "in" | "not_in"; values: string[]; group?: number };
 
 export function verifyToken(provided: string | undefined, secret: string): boolean {
   if (!provided) return false;
@@ -191,21 +191,36 @@ export function decideDelivery(opts: {
     return { ok: false, status: 202, reason: `event ${event} not in this agent's allowlist` };
   }
 
-  for (const cond of filterConditions(agent)) {
+  const groups = filterGroups(filterConditions(agent));
+  const failures = groups.map((conds) => filterFailure(payload, conds));
+  if (groups.length > 0 && !failures.includes(null)) {
+    return { ok: false, status: 202, reason: failures.join("; ") };
+  }
+
+  return { ok: true, prompt: renderPrompt(agent.prompt, payload) };
+}
+
+function filterFailure(payload: Record<string, unknown>, conds: FilterCondition[]): string | null {
+  for (const cond of conds) {
     const found = valuesAtPath(payload, cond.path);
     const present = found.some((v) => cond.values.includes(v));
     if (cond.op === "in" ? !present : present) {
       const verb = cond.op === "in" ? "is not in" : "is excluded by";
       const shown = found.length > 0 ? found.join(", ").slice(0, 120) : "(missing)";
-      return {
-        ok: false,
-        status: 202,
-        reason: `${cond.path}=${shown} ${verb} the filter`,
-      };
+      return `${cond.path}=${shown} ${verb} the filter`;
     }
   }
+  return null;
+}
 
-  return { ok: true, prompt: renderPrompt(agent.prompt, payload) };
+/** Groups in the order they first appear, which is the order the editor shows them. */
+export function filterGroups(conds: FilterCondition[]): FilterCondition[][] {
+  const byGroup = new Map<number, FilterCondition[]>();
+  for (const c of conds) {
+    const g = c.group ?? 0;
+    byGroup.set(g, [...(byGroup.get(g) ?? []), c]);
+  }
+  return [...byGroup.values()];
 }
 
 /**

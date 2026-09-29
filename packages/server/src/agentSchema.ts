@@ -26,11 +26,15 @@ const mcpRemote = z.object({
 /** Mirrors the SDK's McpServerConfig union so bad config fails at save, not mid-run. */
 export const mcpServersSchema = z.record(z.string(), z.union([mcpStdio, mcpRemote]));
 
-/** ANDed payload conditions, checked before a run starts. */
+/**
+ * Payload conditions checked before a run starts. Conditions sharing a `group`
+ * are ANDed, and the run starts when any group holds; no `group` is group 0.
+ */
 export const filterConditionSchema = z.object({
   path: z.string().min(1).max(200),
   op: z.enum(["in", "not_in"]),
   values: z.array(z.string().max(200)).min(1).max(100),
+  group: z.number().int().min(0).max(9).optional(),
 });
 
 /** `persistent` and `git` are the old spellings of `scratch` and `clone`. */
@@ -83,7 +87,7 @@ const fields = {
   webhookMode: z.enum(["token", "github", "slack", "asana", "groupme", "telegram", "custom", "hmac"]),
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
-  filters: z.array(filterConditionSchema).max(10),
+  filters: z.array(filterConditionSchema).max(30),
   labelTemplate: z.string().max(300).nullish(),
   webhookSignatureHeader: z.string().max(120).nullish(),
   webhookSignaturePrefix: z.string().max(40).nullish(),

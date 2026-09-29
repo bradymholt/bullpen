@@ -224,10 +224,14 @@ function triggerLines(a: Agent): string[] {
   const lines = triggersOf(a);
   if (a.trigger !== "webhook") return lines;
   if (a.webhookEvents.length > 0) lines.push(`on ${a.webhookEvents.join(", ")}`);
-  for (const c of a.filters) {
-    if (!c.path.trim() || c.values.length === 0) continue;
-    lines.push(`${c.path} ${c.op === "in" ? "is one of" : "is not one of"} ${c.values.join(", ")}`);
-  }
+  const groups = [...new Set(a.filters.map((c) => c.group ?? 0))];
+  groups.forEach((g, gi) => {
+    if (gi > 0) lines.push("or");
+    for (const c of a.filters) {
+      if ((c.group ?? 0) !== g || !c.path.trim() || c.values.length === 0) continue;
+      lines.push(`${c.path} ${c.op === "in" ? "is one of" : "is not one of"} ${c.values.join(", ")}`);
+    }
+  });
   return lines;
 }
 

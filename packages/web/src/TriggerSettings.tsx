@@ -529,6 +529,12 @@ export function TriggerSettings({
   };
   const setCondition = (i: number, cond: FilterCondition) =>
     setConditions(conditions.map((c, j) => (j === i ? cond : c)));
+  const groupIds = [...new Set(conditions.map((c) => c.group ?? 0))];
+  const grouped = groupIds.length > 1;
+  const addCondition = (group: number) => {
+    setConditions([...conditions, { path: "", op: "in", values: [], ...(group > 0 ? { group } : {}) }]);
+    setActiveCond(conditions.length);
+  };
   const suggest = FILTER_SUGGESTIONS[mode];
   const [activeCond, setActiveCond] = useState<number | null>(null);
   // Pills fill one condition at a time, but they sit under the whole list so a
@@ -1005,6 +1011,8 @@ export function TriggerSettings({
                   <code>{example.path}</code> is {example.what}. Use <code>0</code> as a path segment
                   to index an array. A path the payload doesn&rsquo;t have counts as absent:{" "}
                   <em>is one of</em> drops the delivery, <em>is not one of</em> lets it through.
+                  Split the conditions into sets when different kinds of delivery need different
+                  rules: the agent runs when any one set holds.
                 </p>
                 <p>
                   The payload reaches the agent as data, never as instructions: pull fields into
@@ -1016,38 +1024,59 @@ export function TriggerSettings({
             {conditions.length === 0 && (
               <p className="text-xs text-neutral-600">No conditions yet.</p>
             )}
-            {conditions.map((cond, i) => (
-              <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
-                <input
-                  className={field}
-                  placeholder={example.path}
-                  value={cond.path}
-                  onFocus={() => setActiveCond(i)}
-                  onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
-                />
-                <select
-                  className={field}
-                  value={cond.op}
-                  onChange={(e) =>
-                    setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
-                  }
-                >
-                  <option value="in">is one of</option>
-                  <option value="not_in">is not one of</option>
-                </select>
-                <ListInput
-                  key={`filter-${agent?.id ?? "new"}-${i}`}
-                  placeholder={example.values}
-                  value={cond.values}
-                  onChange={(next) => setCondition(i, { ...cond, values: next })}
-                />
-                <button
-                  onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
-                  title="Remove this condition"
-                  className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
-                >
-                  &times;
-                </button>
+            {groupIds.map((g, gi) => (
+              <div key={g} className="space-y-2">
+                {gi > 0 && (
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-600">
+                    <span className="h-px flex-1 bg-neutral-800" />
+                    or
+                    <span className="h-px flex-1 bg-neutral-800" />
+                  </div>
+                )}
+                {conditions.map((cond, i) =>
+                  (cond.group ?? 0) !== g ? null : (
+                  <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
+                    <input
+                      className={field}
+                      placeholder={example.path}
+                      value={cond.path}
+                      onFocus={() => setActiveCond(i)}
+                      onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
+                    />
+                    <select
+                      className={field}
+                      value={cond.op}
+                      onChange={(e) =>
+                        setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
+                      }
+                    >
+                      <option value="in">is one of</option>
+                      <option value="not_in">is not one of</option>
+                    </select>
+                    <ListInput
+                      key={`filter-${agent?.id ?? "new"}-${i}`}
+                      placeholder={example.values}
+                      value={cond.values}
+                      onChange={(next) => setCondition(i, { ...cond, values: next })}
+                    />
+                    <button
+                      onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
+                      title="Remove this condition"
+                      className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  ),
+                )}
+                {grouped && (
+                  <button
+                    onClick={() => addCondition(g)}
+                    className="text-xs text-neutral-400 hover:text-neutral-100"
+                  >
+                    + Add a condition to this set
+                  </button>
+                )}
               </div>
             ))}
             {suggest && conditions[pillTarget] && (
@@ -1058,15 +1087,25 @@ export function TriggerSettings({
                 onPick={(v) => setCondition(pillTarget, { ...conditions[pillTarget]!, path: v })}
               />
             )}
-            <button
-              onClick={() => {
-                setConditions([...conditions, { path: "", op: "in", values: [] }]);
-                setActiveCond(conditions.length);
-              }}
-              className="text-xs text-neutral-400 hover:text-neutral-100"
-            >
-              {conditions.length === 0 ? "+ Add a condition" : "+ Add another condition"}
-            </button>
+            <div className="flex flex-wrap items-baseline gap-4">
+              {!grouped && (
+                <button
+                  onClick={() => addCondition(groupIds[0] ?? 0)}
+                  className="text-xs text-neutral-400 hover:text-neutral-100"
+                >
+                  {conditions.length === 0 ? "+ Add a condition" : "+ Add another condition"}
+                </button>
+              )}
+              {conditions.length > 0 && (
+                <button
+                  onClick={() => addCondition(Math.max(...groupIds) + 1)}
+                  title="Run when either this set or another one holds"
+                  className="text-xs text-neutral-600 hover:text-neutral-300"
+                >
+                  {grouped ? "+ Add another set" : "or run on a different set of conditions"}
+                </button>
+              )}
+            </div>
           </div>
 
           <div>
