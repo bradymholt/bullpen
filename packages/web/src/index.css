@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  scrollbar-color: var(--color-neutral-600) transparent;
+}
