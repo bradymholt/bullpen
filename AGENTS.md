@@ -268,7 +268,14 @@ the `result` message until its input is closed, so `done` resolves only then. `R
 at the result — a reply sent mid-turn is folded into that same turn, so there is no later one to
 wait for — and a later reply resumes the session from its transcript in a new process. Idle
 sessions used to be kept for replies; each is a ~120MB `claude` process, and 42 of them from four
-days without a deploy ran the 4GB box out of memory until it stopped answering ssh. Because a closed session can outlive its `live` entry, the
+days without a deploy ran the 4GB box out of memory until it stopped answering ssh. The one
+exception is a result that lands while the agent has background tasks live (`background_tasks_changed`,
+ambient ones excluded): an agent that backgrounds a `sleep` and ends its turn to wait gets its
+result at once, and closing there kills the task and the turn its completion would have started —
+which is how a review agent told to wait three minutes never approved. `ResultGate` holds that
+result until a later one arrives with nothing live, or `backgroundWaitMs` (30 minutes,
+`BULLPEN_BACKGROUND_WAIT_MS`) passes. Each result's `num_turns` is its own turn's while its cost is
+the process's running total, so the gate sums the one and keeps the latest of the other. Because a closed session can outlive its `live` entry, the
 `done` cleanup only clears state that still belongs to its own handle. Anything one-shot (the setup
 token test, say) must treat `onResult` as the finish line and then close the session itself.
 Awaiting `done` without closing hangs until the timeout, which is exactly how the token test first

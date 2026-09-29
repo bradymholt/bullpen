@@ -76,6 +76,13 @@ export const config = {
    * have no one to answer at all, so prompts expire instead of wedging.
    */
   approvalTimeoutMs: Number(process.env.BULLPEN_APPROVAL_TIMEOUT_MS ?? 15 * 60_000),
+  /**
+   * How long a result is held while the agent still has background tasks it
+   * ended its turn to wait on. Past this the session is closed anyway, since
+   * a task that never settles (a dev server, say) would otherwise pin a
+   * whole claude process.
+   */
+  backgroundWaitMs: Number(process.env.BULLPEN_BACKGROUND_WAIT_MS ?? 30 * 60_000),
 };
 
 /**

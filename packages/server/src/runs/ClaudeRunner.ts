@@ -1,6 +1,8 @@
 import { query, type PermissionMode, type Query } from "@anthropic-ai/claude-agent-sdk";
+import { config } from "../config.ts";
 import { summarizeMcpStatus } from "../mcp.ts";
 import { InputQueue } from "./inputQueue.ts";
+import { ResultGate } from "./resultGate.ts";
 import type { ModeName, Runner, RunnerEvents, RunnerHandle, RunnerSpec } from "./runner.ts";
 
 /**
@@ -30,6 +32,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
   const abort = new AbortController();
   let sessionId: string | undefined;
   let q: Query | undefined;
+  const gate = new ResultGate((r) => events.onResult(r), config.backgroundWaitMs);
 
   input.push(spec.prompt);
 
@@ -68,8 +71,11 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
           events.onSession(message.session_id);
           events.onMcpStatus(summarizeMcpStatus(message));
         }
+        if (message.type === "system" && message.subtype === "background_tasks_changed") {
+          gate.backgroundTasks(message.tasks);
+        }
         if (message.type === "result") {
-          events.onResult({
+          gate.result({
             numTurns: message.num_turns,
             costUsd: message.total_cost_usd,
             isError: message.is_error,
@@ -77,6 +83,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
         }
       }
     } finally {
+      gate.flush();
       input.close();
     }
   })();
