@@ -555,7 +555,7 @@ export async function shutdownLiveRuns(timeoutMs = 5000): Promise<number> {
 }
 
 export function listAgents(): Agent[] {
-  return db.select().from(agents).all();
+  return db.select().from(agents).orderBy(agents.sortOrder, sql`rowid`).all();
 }
 
 export function getAgent(id: string): Agent | undefined {

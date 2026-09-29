@@ -47,6 +47,12 @@ export const api = {
     fetch(`/api/spaces/${encodeURIComponent(space)}/default`, { method: "DELETE" }).then(
       json<{ defaultSpace: string | null }>,
     ),
+  reorderAgents: (space: string, ids: string[]) =>
+    fetch(`/api/spaces/${encodeURIComponent(space)}/order`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).then(json<{ ids: string[] }>),
   machineMcp: () => fetch("/api/machine-mcp").then(json<MachineMcp>),
   skills: () => fetch("/api/skills").then(json<Skill[]>),
   repos: (refresh = false) =>

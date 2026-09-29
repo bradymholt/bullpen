@@ -9,6 +9,8 @@ export const agents = sqliteTable("agents", {
   description: text("description"),
   /** A label for filtering the roster — "work", "personal". Not isolation. */
   space: text("space"),
+  /** Position within its space; ties fall back to creation order. */
+  sortOrder: integer("sort_order").notNull().default(0),
   model: text("model"),
   prompt: text("prompt").notNull().default(""),
   permissionMode: text("permission_mode").notNull().default("supervised"),

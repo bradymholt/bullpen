@@ -65,6 +65,7 @@ const fields = {
   name: z.string().min(1).max(120),
   description: z.string().max(500).nullish(),
   space: z.string().trim().min(1).max(60),
+  sortOrder: z.number().int().min(0),
   model: z.string().max(120).nullish(),
   prompt: z.string(),
   permissionMode: z.enum(["supervised", "acceptEdits", "plan", "auto", "full", "locked"]),
