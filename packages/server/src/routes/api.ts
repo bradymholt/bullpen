@@ -557,9 +557,11 @@ function createAgentRecord(data: ReturnType<typeof agentCreateSchema.parse>): st
   // A sender that does its own handshake picks the secret, so start empty and
   // let the handshake fill it in — minting one here would refuse that handshake.
   const awaitsHandshake = presetFor({ ...values, id } as never).handshakeHeader !== null;
+  const last = listAgents().filter((a) => a.space === values.space).at(-1);
   db.insert(agents)
     .values({
       id,
+      sortOrder: last ? last.sortOrder + 1 : 0,
       ...values,
       workspaceKind: data.workspaceConfig.kind,
       webhookSecret: proposedSecret ?? (awaitsHandshake ? null : randomBytes(32).toString("base64url")),
@@ -1009,6 +1011,24 @@ api.delete("/spaces/:name", (c) => {
   db.delete(spaceSecrets).where(eq(spaceSecrets.space, name)).run();
   if (defaultSpace() === name) setDefaultSpace(null);
   return c.json({ moved: members.length, name: DEFAULT_SPACE });
+});
+
+/** The whole space's order at once: every member must be named exactly once, so a stale client can't half-apply. */
+api.put("/spaces/:name/order", async (c) => {
+  const name = c.req.param("name");
+  const body = await c.req.json<{ ids?: unknown }>().catch(() => null);
+  const ids = Array.isArray(body?.ids) && body.ids.every((x) => typeof x === "string") ? (body.ids as string[]) : null;
+  if (!ids) return c.json({ error: "expected { ids: string[] }" }, 400);
+  const members = listAgents().filter((a) => a.space === name);
+  if (members.length === 0) return c.json({ error: "not found" }, 404);
+  const expected = new Set(members.map((a) => a.id));
+  if (ids.length !== expected.size || !ids.every((id) => expected.has(id))) {
+    return c.json({ error: "ids must name every agent in the space exactly once" }, 409);
+  }
+  db.transaction((tx) => {
+    ids.forEach((id, i) => tx.update(agents).set({ sortOrder: i }).where(eq(agents.id, id)).run());
+  });
+  return c.json({ ids });
 });
 
 /** Which space a cold load opens. Unset, each browser reopens whichever it used last. */

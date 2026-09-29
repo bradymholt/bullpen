@@ -898,6 +898,36 @@ export function App() {
   });
   const visibleAgents = agents.filter((a) => a.space === active);
 
+  // Drag state lives in refs as well: the handlers read it between renders.
+  const [dragId, setDragIdState] = useState<string | null>(null);
+  const [dropAt, setDropAtState] = useState<number | null>(null);
+  const dragRef = useRef<string | null>(null);
+  const dropRef = useRef<number | null>(null);
+  const setDragId = (id: string | null) => {
+    dragRef.current = id;
+    setDragIdState(id);
+  };
+  const setDropAt = (at: number | null) => {
+    dropRef.current = at;
+    setDropAtState(at);
+  };
+  const endDrag = () => {
+    setDragId(null);
+    setDropAt(null);
+  };
+  /** Optimistic: the roster moves at once and the server order is pushed behind it. */
+  function reorderAgents(id: string, to: number) {
+    const ids = visibleAgents.map((a) => a.id);
+    const from = ids.indexOf(id);
+    if (from < 0) return;
+    ids.splice(from, 1);
+    ids.splice(to > from ? to - 1 : to, 0, id);
+    if (ids.every((x, i) => x === visibleAgents[i]?.id)) return;
+    const byId = new Map(agents.map((a) => [a.id, a]));
+    setAgents([...agents.filter((a) => a.space !== active), ...ids.map((x, i) => ({ ...byId.get(x)!, sortOrder: i }))]);
+    api.reorderAgents(active, ids).catch(() => api.agents().then(setAgents));
+  }
+
 
   /** The space's landing: the home view filtered to it. Bypasses the guard — callers have settled that. */
   const goToSpace = (name: string) => {
@@ -1099,18 +1129,48 @@ export function App() {
           </button>
         </div>
 
-        {visibleAgents.map((a) => {
+        <div
+          className="flex flex-col"
+          onDragOver={(e) => {
+            if (dragRef.current === null) return;
+            e.preventDefault();
+            setDropAt(visibleAgents.length);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (dragRef.current !== null && dropRef.current !== null) reorderAgents(dragRef.current, dropRef.current);
+            endDrag();
+          }}
+        >
+        {visibleAgents.map((a, i) => {
           const live = stats?.active[a.id] ?? 0;
           const last = stats?.latest[a.id];
+          const dropLine = dragId !== null && dropAt === i;
           return (
             <button
               key={a.id}
+              draggable={visibleAgents.length > 1}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", a.id);
+                e.dataTransfer.effectAllowed = "move";
+                setDragId(a.id);
+              }}
+              onDragOver={(e) => {
+                if (dragRef.current === null) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const box = e.currentTarget.getBoundingClientRect();
+                setDropAt(e.clientY < box.top + box.height / 2 ? i : i + 1);
+              }}
+              onDragEnd={endDrag}
               onClick={() => setView({ kind: "detail", id: a.id })}
-              className={`mt-2 block w-full shrink-0 rounded border p-3 text-left transition ${
+              className={`relative mt-2 block w-full shrink-0 rounded border p-3 text-left transition ${
                 selectedAgentId === a.id
                   ? "border-neutral-600 bg-neutral-900"
                   : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700"
-              } ${a.enabled ? "" : "opacity-60"}`}
+              } ${a.enabled ? "" : "opacity-60"} ${dragId === a.id ? "opacity-30" : ""} ${
+                dropLine ? "before:absolute before:-top-1.5 before:left-0 before:right-0 before:h-0.5 before:rounded before:bg-sky-400" : ""
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -1168,6 +1228,8 @@ export function App() {
             </button>
           );
         })}
+        {dragId !== null && dropAt === visibleAgents.length && <div className="mt-1.5 h-0.5 rounded bg-sky-400" />}
+        </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 border-t border-neutral-800 px-3 py-2">
           <button

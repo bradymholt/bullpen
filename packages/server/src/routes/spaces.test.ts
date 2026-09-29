@@ -116,3 +116,28 @@ describe("DELETE /spaces/:name", () => {
     expect((await remove("never")).status).toBe(404);
   });
 });
+
+describe("PUT /spaces/:name/order", () => {
+  const order = (name: string, body: unknown) =>
+    api.request(`/spaces/${encodeURIComponent(name)}/order`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const listed = async (space: string) =>
+    ((await (await api.request("/agents")).json()) as { id: string; space: string }[])
+      .filter((a) => a.space === space)
+      .map((a) => a.id);
+
+  it("lists a space's agents in the given order, ahead of creation order", async () => {
+    expect(await listed("work")).toEqual(["a1", "a2"]);
+    expect((await order("work", { ids: ["a2", "a1"] })).status).toBe(200);
+    expect(await listed("work")).toEqual(["a2", "a1"]);
+  });
+
+  it("refuses a list that misses or adds a member, leaving the order alone", async () => {
+    expect((await order("work", { ids: ["a2"] })).status).toBe(409);
+    expect((await order("work", { ids: ["a2", "a1", "a3"] })).status).toBe(409);
+    expect(await listed("work")).toEqual(["a1", "a2"]);
+  });
+});

@@ -18,6 +18,7 @@ export type Agent = {
   name: string;
   description: string | null;
   space: string;
+  sortOrder: number;
   model: string | null;
   prompt: string;
   permissionMode: string;
