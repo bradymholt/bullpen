@@ -334,6 +334,23 @@ describe("filter conditions", () => {
     expect(fire(both, { action: "opened" })).toMatchObject({ ok: false, status: 202 });
   });
 
+  it("runs when any one group holds", () => {
+    const either = {
+      filters: [
+        { path: "action", op: "in", values: ["submitted"] },
+        { path: "sender.login", op: "in", values: ["me"] },
+        { path: "action", op: "in", values: ["closed"], group: 1 },
+      ],
+    };
+    expect(fire(either, { action: "submitted", sender: { login: "me" } })).toMatchObject({ ok: true });
+    expect(fire(either, { action: "closed", sender: { login: "you" } })).toMatchObject({ ok: true });
+    const d = fire(either, { action: "submitted", sender: { login: "you" } });
+    expect(d).toMatchObject({ ok: false, status: 202 });
+    expect((d as { reason: string }).reason).toBe(
+      "sender.login=you is not in the filter; action=submitted is not in the filter",
+    );
+  });
+
   it("skips a half-filled condition rather than dropping everything", () => {
     const partial = { filters: [{ path: "action", op: "in", values: [] }] };
     expect(fire(partial, { action: "anything" })).toMatchObject({ ok: true });
