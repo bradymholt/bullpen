@@ -922,7 +922,7 @@ api.put("/spaces/:name/icon", async (c) => {
   return c.json({ icon });
 });
 
-/** The fan-out URL's own secret. Never returned — the UI can set or rotate, not read. */
+/** Readable for the same reason an agent's is: the dashboard has no auth of its own, so hiding it here would protect nothing. */
 api.get("/spaces/:name/secret", (c) => {
   const space = c.req.param("name");
   const row = db.select().from(spaceSecrets).where(eq(spaceSecrets.space, space)).get();
@@ -931,9 +931,9 @@ api.get("/spaces/:name/secret", (c) => {
   if (row && !row.hookId) {
     const hookId = randomUUID();
     db.update(spaceSecrets).set({ hookId }).where(eq(spaceSecrets.space, space)).run();
-    return c.json({ configured: true, hookId });
+    return c.json({ configured: true, hookId, secret: row.secret });
   }
-  return c.json({ configured: row !== undefined, hookId: row?.hookId ?? null });
+  return c.json({ configured: row !== undefined, hookId: row?.hookId ?? null, secret: row?.secret ?? null });
 });
 
 api.post("/spaces/:name/secret", async (c) => {
