@@ -220,8 +220,8 @@ export const api = {
       body: JSON.stringify({ icon }),
     }).then(json<{ icon: string | null }>),
   spaceSecretState: (space: string) =>
-    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean; hookId: string | null }>),
-  /** Omit `secret` to have the server mint one. Returns it once, then never again. */
+    fetch(`/api/spaces/${encodeURIComponent(space)}/secret`).then(json<{ configured: boolean; hookId: string | null; secret: string | null }>),
+  /** Omit `secret` to have the server mint one. */
   setSpaceSecret: (space: string, secret?: string) =>
     fetch(`/api/spaces/${encodeURIComponent(space)}/secret`, {
       method: "POST",

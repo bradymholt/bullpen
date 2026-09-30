@@ -621,8 +621,9 @@ export function App() {
   const [spaceSecret, setSpaceSecret] = useState<{
     configured: boolean;
     hookId: string | null;
-    value?: string;
+    value: string | null;
   } | null>(null);
+  const [spaceSecretRevealed, setSpaceSecretRevealed] = useState(false);
   const [spaceError, setSpaceError] = useState<string | null>(null);
   /** A space named in the switcher exists only once an agent lands in it. */
   const [pendingSpace, setPendingSpace] = useState<string | null>(null);
@@ -705,6 +706,7 @@ export function App() {
 
   useEffect(() => {
     setSpaceError(null);
+    setSpaceSecretRevealed(false);
     if (spaceName === null) return setSpaceSecret(null);
     setSpaceDraft(spaceName);
     setSpaceEnvMap(null);
@@ -717,7 +719,7 @@ export function App() {
       .catch(() => setEnvSaved("Couldn\u2019t load this space\u2019s environment \u2014 reload before editing."));
     void api
       .spaceSecretState(spaceName)
-      .then((s) => setSpaceSecret({ configured: s.configured, hookId: s.hookId }))
+      .then((s) => setSpaceSecret({ configured: s.configured, hookId: s.hookId, value: s.secret }))
       .catch(() => setSpaceSecret(null));
   }, [spaceName]);
 
@@ -1630,20 +1632,31 @@ export function App() {
                     <input
                       readOnly
                       value={
-                        spaceSecret?.value ??
-                        (spaceSecret?.configured ? "\u2022".repeat(24) : "no shared secret yet")
+                        !spaceSecret?.value
+                          ? "no shared secret yet"
+                          : spaceSecretRevealed
+                            ? spaceSecret.value
+                            : "\u2022".repeat(24)
                       }
                       className={`w-full rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-hidden ${
-                        spaceSecret?.value ? "text-neutral-200" : "text-neutral-500"
+                        spaceSecret?.value && spaceSecretRevealed ? "text-neutral-200" : "text-neutral-500"
                       }`}
                     />
                     {spaceSecret?.value && (
-                      <button
-                        onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
-                        className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
-                      >
-                        Copy
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setSpaceSecretRevealed((r) => !r)}
+                          className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
+                        >
+                          {spaceSecretRevealed ? "Hide" : "Reveal"}
+                        </button>
+                        <button
+                          onClick={() => void navigator.clipboard.writeText(spaceSecret.value!)}
+                          className="shrink-0 rounded border border-neutral-700 px-3 text-xs hover:bg-neutral-800"
+                        >
+                          Copy
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={async () => {
@@ -1657,6 +1670,7 @@ export function App() {
                         }
                         const r = await api.setSpaceSecret(view.name);
                         setSpaceSecret({ configured: true, hookId: r.hookId, value: r.secret });
+                        setSpaceSecretRevealed(true);
                       }}
                       className="shrink-0 rounded border border-neutral-700 px-3 text-xs text-amber-400 hover:bg-neutral-800"
                     >
@@ -1667,7 +1681,7 @@ export function App() {
                     One webhook for the whole space. Every enabled agent in it gets the delivery and
                     its own filters decide whether it runs, so agents split by author or action share
                     one hook. This secret is the space&rsquo;s own — the per-agent secrets are not
-                    used here. It is shown once, when generated, and takes effect immediately.
+                    used here. A new one takes effect immediately.
                   </p>
                 </RailSection>
 
