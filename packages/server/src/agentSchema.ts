@@ -32,7 +32,7 @@ export const mcpServersSchema = z.record(z.string(), z.union([mcpStdio, mcpRemot
  */
 export const filterConditionSchema = z.object({
   path: z.string().min(1).max(200),
-  op: z.enum(["in", "not_in"]),
+  op: z.enum(["in", "not_in", "contains", "not_contains"]),
   values: z.array(z.string().max(200)).min(1).max(100),
   group: z.number().int().min(0).max(9).optional(),
 });
