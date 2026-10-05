@@ -18,6 +18,17 @@ const SDK_MODES: Record<ModeName, PermissionMode> = {
   locked: "dontAsk",
 };
 
+/**
+ * Session-scheduling tools that only work in an interactive `/loop`. A run
+ * that reaches for one to wait on a background command gets a bare
+ * "`prompt` is required" error and then waits some other, wrong way.
+ */
+export const HEADLESS_DISALLOWED_TOOLS = ["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"];
+
+export function runDisallowedTools(agentTools: string[] = []): string[] {
+  return [...new Set([...agentTools, ...HEADLESS_DISALLOWED_TOOLS])];
+}
+
 export function toSdkPermissionMode(mode: string): PermissionMode {
   return SDK_MODES[mode as ModeName] ?? "default";
 }
@@ -44,7 +55,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
         ...(spec.model ? { model: spec.model } : {}),
         permissionMode: toSdkPermissionMode(spec.permissionMode),
         ...(spec.allowedTools?.length ? { allowedTools: spec.allowedTools } : {}),
-        ...(spec.disallowedTools?.length ? { disallowedTools: spec.disallowedTools } : {}),
+        disallowedTools: runDisallowedTools(spec.disallowedTools),
         ...(spec.mcpServers ? { mcpServers: spec.mcpServers } : {}),
         strictMcpConfig: spec.strictMcpConfig,
         ...(spec.canUseTool ? { canUseTool: spec.canUseTool } : {}),

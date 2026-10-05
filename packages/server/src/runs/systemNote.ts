@@ -22,6 +22,11 @@ export const SYSTEM_NOTE = {
     `unreachable when the run ends, and only ${OUT_DIR}/ is kept and offered to the user for ` +
     `download. When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming ` +
     `the files you saved there.`,
+  /** Every run: the shell's `wait` and `jobs` never see a harness background task. */
+  waiting:
+    `To wait for a background command (a \`sleep\`, a build), end your turn: you are re-invoked ` +
+    `when it finishes. Shell \`wait\` and \`jobs\` do not see background commands, and polling ` +
+    `its output file only tells you it has not finished yet.`,
   /**
    * Only when the config dir is not `~/.claude`. Agents reach for
    * `~/.claude/skills` by reflex, and in the container HOME is /home/node
@@ -52,6 +57,7 @@ export function systemNote(trigger: string, env: Record<string, string> = {}): s
   return [
     trigger === "webhook" || trigger === "poll" ? SYSTEM_NOTE.delivery(trigger) : null,
     SYSTEM_NOTE.files,
+    SYSTEM_NOTE.waiting,
     configDir ? SYSTEM_NOTE.config(configDir) : null,
   ]
     .filter(Boolean)

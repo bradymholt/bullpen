@@ -38,5 +38,6 @@ describe("systemNote", () => {
     const note = systemNote("webhook", {});
     expect(note).toContain("payload.json");
     expect(note).toContain(".bullpen/out");
+    expect(note).toContain("end your turn");
   });
 });
