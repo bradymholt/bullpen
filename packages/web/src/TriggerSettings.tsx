@@ -1052,6 +1052,8 @@ export function TriggerSettings({
                     >
                       <option value="in">is one of</option>
                       <option value="not_in">is not one of</option>
+                      <option value="contains">contains</option>
+                      <option value="not_contains">does not contain</option>
                     </select>
                     <ListInput
                       key={`filter-${agent?.id ?? "new"}-${i}`}

@@ -11,7 +11,7 @@ export type WorkspaceConfig =
   | { kind: "git"; repoUrl: string; baseBranch?: string };
 
 /** ANDed payload conditions; supersedes the single filterPath/filterValues pair. */
-export type FilterCondition = { path: string; op: "in" | "not_in"; values: string[]; group?: number };
+export type FilterCondition = { path: string; op: "in" | "not_in" | "contains" | "not_contains"; values: string[]; group?: number };
 
 export type Agent = {
   id: string;

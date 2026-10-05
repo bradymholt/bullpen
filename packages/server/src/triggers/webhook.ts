@@ -6,7 +6,7 @@ import { webhookDeliveries, type Agent } from "../db/schema.ts";
 
 export const MAX_BODY_BYTES = 1_000_000;
 
-export type FilterCondition = { path: string; op: "in" | "not_in"; values: string[]; group?: number };
+export type FilterCondition = { path: string; op: "in" | "not_in" | "contains" | "not_contains"; values: string[]; group?: number };
 
 export function verifyToken(provided: string | undefined, secret: string): boolean {
   if (!provided) return false;
@@ -203,9 +203,13 @@ export function decideDelivery(opts: {
 function filterFailure(payload: Record<string, unknown>, conds: FilterCondition[]): string | null {
   for (const cond of conds) {
     const found = valuesAtPath(payload, cond.path);
-    const present = found.some((v) => cond.values.includes(v));
-    if (cond.op === "in" ? !present : present) {
-      const verb = cond.op === "in" ? "is not in" : "is excluded by";
+    const substring = cond.op === "contains" || cond.op === "not_contains";
+    const present = found.some((v) =>
+      substring ? cond.values.some((want) => v.includes(want)) : cond.values.includes(v),
+    );
+    const required = cond.op === "in" || cond.op === "contains";
+    if (required ? !present : present) {
+      const verb = required ? "is not in" : "is excluded by";
       const shown = found.length > 0 ? found.join(", ").slice(0, 120) : "(missing)";
       return `${cond.path}=${shown} ${verb} the filter`;
     }

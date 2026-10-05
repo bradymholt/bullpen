@@ -219,6 +219,13 @@ function triggerLabel(a: Agent): string {
   return "manual";
 }
 
+const OP_LABELS: Record<Agent["filters"][number]["op"], string> = {
+  in: "is one of",
+  not_in: "is not one of",
+  contains: "contains",
+  not_contains: "does not contain",
+};
+
 /** The trigger spelled out: what fires the agent, then what it refuses. */
 function triggerLines(a: Agent): string[] {
   const lines = triggersOf(a);
@@ -229,7 +236,7 @@ function triggerLines(a: Agent): string[] {
     if (gi > 0) lines.push("or");
     for (const c of a.filters) {
       if ((c.group ?? 0) !== g || !c.path.trim() || c.values.length === 0) continue;
-      lines.push(`${c.path} ${c.op === "in" ? "is one of" : "is not one of"} ${c.values.join(", ")}`);
+      lines.push(`${c.path} ${OP_LABELS[c.op]} ${c.values.join(", ")}`);
     }
   });
   return lines;

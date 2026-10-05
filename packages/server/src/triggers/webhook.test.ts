@@ -313,6 +313,18 @@ describe("filter conditions", () => {
     expect((d as { reason: string }).reason).toContain("excluded");
   });
 
+  it("matches `not_contains` on a substring", () => {
+    const guard = {
+      filters: [{ path: "head_commit.message", op: "not_contains", values: ["Attempting to fix"] }],
+    };
+    expect(
+      fire(guard, { head_commit: { message: "Update spec\n\nAttempting to fix failing CI." } }),
+    ).toMatchObject({ ok: false, status: 202 });
+    expect(fire(guard, { head_commit: { message: "Add rollover rounding" } })).toMatchObject({
+      ok: true,
+    });
+  });
+
   it("treats a missing path as absent, so `not_in` still passes", () => {
     const only = { filters: [{ path: "sender.login", op: "not_in", values: ["bot"] }] };
     expect(fire(only, { hello: 1 })).toMatchObject({ ok: true });
