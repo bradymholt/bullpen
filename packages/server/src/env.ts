@@ -49,6 +49,17 @@ export function setWorkspaceRetentionHours(hours: number): void {
     .run();
 }
 
+export function claudeAttribution(): boolean {
+  return db.select().from(globalConfig).where(eq(globalConfig.id, 1)).get()?.claudeAttribution ?? false;
+}
+
+export function setClaudeAttribution(enabled: boolean): void {
+  db.insert(globalConfig)
+    .values({ id: 1, claudeAttribution: enabled })
+    .onConflictDoUpdate({ target: globalConfig.id, set: { claudeAttribution: enabled } })
+    .run();
+}
+
 /** Hours between background skills pulls. 0 is off; the column defaults to 24. */
 export function skillsRefreshHours(): number {
   return db.select().from(globalConfig).where(eq(globalConfig.id, 1)).get()?.skillsRefreshHours ?? 24;

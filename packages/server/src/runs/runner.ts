@@ -28,6 +28,8 @@ export type RunnerSpec = {
   mcpServers?: Options["mcpServers"];
   strictMcpConfig: boolean;
   inheritUserSettings: boolean;
+  /** False strips the backend's own credit line from commits and PRs; omitted leaves its default. */
+  attribution?: boolean;
   appendSystemPrompt?: string | undefined;
   env?: Record<string, string>;
   maxTurns?: number | undefined;

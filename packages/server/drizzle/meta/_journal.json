@@ -169,6 +169,13 @@
       "when": 1790711700984,
       "tag": "0023_modern_steve_rogers",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791224975170,
+      "tag": "0024_brown_wallow",
+      "breakpoints": true
     }
   ]
 }

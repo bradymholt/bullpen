@@ -1,0 +1,1 @@
+ALTER TABLE `global_config` ADD `claude_attribution` integer DEFAULT false NOT NULL;

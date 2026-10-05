@@ -88,6 +88,8 @@ export const globalConfig = sqliteTable("global_config", {
   skillsRefreshHours: integer("skills_refresh_hours").notNull().default(24),
   /** How long a completed run's fresh directory outlives it; 0 removes it at the end of the run. */
   workspaceRetentionHours: integer("workspace_retention_hours").notNull().default(24),
+  /** Whether runs keep Claude Code's "Generated with Claude Code" PR footer and Co-Authored-By trailer. */
+  claudeAttribution: integer("claude_attribution", { mode: "boolean" }).notNull().default(false),
   /** The space a cold load opens. Null falls back to whichever was used last. */
   defaultSpace: text("default_space"),
 });
