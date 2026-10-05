@@ -63,18 +63,28 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
       },
     });
 
+    let mcpPending = false;
     try {
       for await (const message of q) {
         events.onMessage(message.type, message);
         if (message.type === "system" && message.subtype === "init") {
           sessionId = message.session_id;
           events.onSession(message.session_id);
-          events.onMcpStatus(summarizeMcpStatus(message));
+          const servers = summarizeMcpStatus(message);
+          mcpPending = servers.some((s) => s.status === "pending");
+          events.onMcpStatus(servers);
         }
         if (message.type === "system" && message.subtype === "background_tasks_changed") {
           gate.backgroundTasks(message.tasks);
         }
         if (message.type === "result") {
+          // Remote servers are usually still connecting at init, and nothing streams
+          // their outcome later, so the init snapshot alone leaves them "pending" forever.
+          if (mcpPending) {
+            mcpPending = false;
+            const servers = await settledMcpStatus(q);
+            if (servers) events.onMcpStatus(servers);
+          }
           gate.result({
             numTurns: message.num_turns,
             costUsd: message.total_cost_usd,
@@ -106,6 +116,21 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
     },
     sessionId: () => sessionId,
   };
+}
+
+async function settledMcpStatus(q: Query) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const servers = await Promise.race([
+      q.mcpServerStatus(),
+      new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), 5000))),
+    ]);
+    return servers && summarizeMcpStatus({ mcp_servers: servers });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const claudeRunner: Runner = { start };
