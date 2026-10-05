@@ -1,5 +1,13 @@
 # Bullpen
 
+<img align="left" src="https://user-images.githubusercontent.com/759811/210273710-b13913e2-0a71-4d9d-94da-1fe538b8a73e.gif"/>
+
+<br/>
+
+ &nbsp;**Would you take a quick second and ⭐️ my repo?**
+
+<br/>
+
 A self-hosted dashboard for a roster of Claude Code agents — code agents that clone a repo and
 open a PR, and non-code agents that fetch data and report back. Run them by hand, on a cron, or
 from a webhook, and watch them work.  **[Using bullpen](docs/README.md)** covers setting agents up: workspaces, permission modes,
