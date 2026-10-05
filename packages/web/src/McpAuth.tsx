@@ -14,18 +14,42 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
+  const tab = useRef<Window | null>(null);
 
   const stop = () => {
     if (timer.current !== null) window.clearInterval(timer.current);
     timer.current = null;
   };
 
+  // A tab opened after an await is a popup the browser blocks, so it is opened
+  // blank inside the click and pointed at the authorization page once the CLI
+  // has printed it.
+  const steer = (l: McpLogin) => {
+    const w = tab.current;
+    if (!w) return;
+    if (w.closed || l.state === "done" || l.state === "failed") {
+      if (l.state === "failed") w.close();
+      tab.current = null;
+    } else if (l.authUrl) {
+      w.location.href = l.authUrl;
+      tab.current = null;
+    }
+  };
+
   const begin = async () => {
     setError(null);
     setRedirect("");
+    const w = window.open("", "_blank");
+    if (w) {
+      w.opener = null;
+      w.document.title = "Authorizing…";
+      w.document.body.textContent = `Starting the sign-in for ${name}…`;
+    }
+    tab.current = w;
     try {
       const l = await api.mcpLoginStart(name);
       setLogin(l);
+      steer(l);
       stop();
       // Poll until the login ends: on a laptop the browser reaches the CLI's
       // callback directly, so it can finish without anything being pasted.
@@ -33,6 +57,7 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
         try {
           const cur = await api.mcpLoginGet(l.id);
           setLogin(cur);
+          steer(cur);
           if (cur.state === "done" || cur.state === "failed") {
             stop();
             if (cur.state === "done") onDone();
@@ -42,6 +67,8 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
         }
       }, 1000);
     } catch (e) {
+      tab.current?.close();
+      tab.current = null;
       setError(e instanceof Error ? e.message : String(e));
     }
   };
@@ -65,6 +92,8 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
 
   const cancel = async () => {
     stop();
+    tab.current?.close();
+    tab.current = null;
     if (login && (login.state === "starting" || login.state === "awaiting_redirect")) {
       await api.mcpLoginCancel(login.id).catch(() => undefined);
     }
@@ -97,8 +126,9 @@ export function McpAuth({ name, onDone }: { name: string; onDone: () => void }) 
             <a href={login.authUrl} target="_blank" rel="noreferrer" className="underline decoration-neutral-600 hover:text-white">
               Open the authorization page
             </a>{" "}
-            and approve.
+            and approve. It should have opened in a new tab; if not, use the link or copy it:
           </p>
+          <p className="select-all break-all rounded bg-neutral-900 px-2 py-1.5 font-mono text-[11px] text-neutral-400">{login.authUrl}</p>
           <p className="text-neutral-300">
             2. If the browser then shows a success page, you&rsquo;re done &mdash; this will update by itself.
             If it lands on a <code>localhost</code> address that fails to load (a headless box), copy that
