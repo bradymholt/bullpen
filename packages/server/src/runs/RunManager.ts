@@ -8,7 +8,7 @@ import { and, asc, eq, inArray, isNull, like, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
-import { resolveEnv, workspaceRetentionHours } from "../env.ts";
+import { claudeAttribution, resolveEnv, workspaceRetentionHours } from "../env.ts";
 import { selectMcp } from "../mcp.ts";
 import { exportMachineMcp } from "../machineMcp.ts";
 import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
@@ -271,6 +271,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
       mcpServers: mcp.mcpServers as never,
       strictMcpConfig: mcp.strictMcpConfig,
       inheritUserSettings: agent.inheritUserSettings,
+      attribution: claudeAttribution(),
       appendSystemPrompt: payloadNote,
       env,
       maxTurns: agent.maxTurns ?? undefined,

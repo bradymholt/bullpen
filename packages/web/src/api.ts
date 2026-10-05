@@ -169,6 +169,12 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ hours }),
     }).then(json<{ workspaceRetentionHours: number }>),
+  setClaudeAttribution: (enabled: boolean) =>
+    fetch("/api/setup/attribution", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).then(json<{ claudeAttribution: boolean }>),
   /** With a passphrase, secrets ride along sealed; without one they are left out. */
   exportAgents: (passphrase?: string) =>
     fetch("/api/export", {

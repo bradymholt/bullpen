@@ -17,7 +17,7 @@ import {
 } from "../triggers/webhook.ts";
 import { config } from "../config.ts";
 import { git } from "../workspaces.ts";
-import { claudeCredential, defaultSpace, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setDefaultSpace, setGlobalEnv, setSkillsRefreshHours, setWorkspaceRetentionHours, spaceEnv, workspaceRetentionHours } from "../env.ts";
+import { claudeAttribution, claudeCredential, defaultSpace, globalEnv, maskEnv, mergeMaskedEnv, resolveEnv, setClaudeAttribution, setDefaultSpace, setGlobalEnv, setSkillsRefreshHours, setWorkspaceRetentionHours, spaceEnv, workspaceRetentionHours } from "../env.ts";
 import { claudeRunner } from "../runs/ClaudeRunner.ts";
 import { open, seal, type SealedBundle, type SecretsBundle } from "../secretsBundle.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
@@ -171,6 +171,7 @@ api.get("/health", (c) => {
     claudeCredential: credential,
     defaultSpace: defaultSpace(),
     workspaceRetentionHours: workspaceRetentionHours(),
+    claudeAttribution: claudeAttribution(),
   });
 });
 
@@ -815,6 +816,13 @@ api.put("/setup/workspace-retention", async (c) => {
   setWorkspaceRetentionHours(hours);
   sweepWorkspaces();
   return c.json({ workspaceRetentionHours: hours });
+});
+
+api.put("/setup/attribution", async (c) => {
+  const body = await c.req.json<{ enabled?: boolean }>().catch(() => null);
+  if (typeof body?.enabled !== "boolean") return c.json({ error: "enabled must be a boolean" }, 400);
+  setClaudeAttribution(body.enabled);
+  return c.json({ claudeAttribution: body.enabled });
 });
 
 api.patch("/agents/:id", async (c) => {

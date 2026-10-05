@@ -67,6 +67,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
           ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.appendSystemPrompt } }
           : {}),
         settingSources: spec.inheritUserSettings ? ["project", "user"] : ["project"],
+        ...(spec.attribution === false ? { settings: { attribution: { commit: "", pr: "" } } } : {}),
         includePartialMessages: true,
         abortController: abort,
         env: { ...process.env, ...spec.env } as Record<string, string>,

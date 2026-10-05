@@ -673,6 +673,7 @@ export function App() {
     dataDir: string;
     claudeCredential: { source: string; detail: string };
     workspaceRetentionHours: number;
+    claudeAttribution: boolean;
   } | null>(null);
   const [retentionNote, setRetentionNote] = useState<string | null>(null);
 
@@ -1891,6 +1892,30 @@ export function App() {
                         <option value={168}>for a week</option>
                       </select>
                       {retentionNote && <span className="text-red-400">{retentionNote}</span>}
+                    </label>
+                  )}
+                  {health && (
+                    <label className="flex items-start gap-2 text-xs text-neutral-500">
+                      <input
+                        type="checkbox"
+                        checked={health.claudeAttribution}
+                        onChange={async (e) => {
+                          const enabled = e.target.checked;
+                          setHealth({ ...health, claudeAttribution: enabled });
+                          setRetentionNote(null);
+                          try {
+                            await api.setClaudeAttribution(enabled);
+                          } catch (err) {
+                            setHealth({ ...health, claudeAttribution: !enabled });
+                            setRetentionNote(String((err as Error).message));
+                          }
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        Credit Claude on commits and PRs &mdash; the &ldquo;Generated with Claude Code&rdquo; footer
+                        and Co-Authored-By trailer. Off overrides any settings.json.
+                      </span>
                     </label>
                   )}
                 </RailSection>

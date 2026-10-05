@@ -163,6 +163,8 @@ export type Health = {
   defaultSpace: string | null;
   /** How long a completed run's fresh directory is kept; 0 removes it when the run ends. */
   workspaceRetentionHours: number;
+  /** Whether runs keep Claude Code's credit line on commits and PRs. */
+  claudeAttribution: boolean;
 };
 
 /** Server-side aggregates; `/runs` is capped, so these can't be derived from it. */
