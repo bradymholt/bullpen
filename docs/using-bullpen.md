@@ -9,6 +9,7 @@ bullpen itself, see the [top-level README](../README.md).
 - [Connect a GitHub webhook](#connect-a-github-webhook)
 - [Environment and secrets](#environment-and-secrets)
 - [MCP servers](#mcp-servers)
+- [Tool guides](#tool-guides)
 
 ## Agents and runs
 
@@ -155,3 +156,10 @@ need no account:
 
 A server that fails to connect doesn't fail the run — the agent just lacks those tools. The run's
 timeline shows each server's status, and Settings shows the last-known state.
+
+## Tool guides
+
+Setup for specific tools agents use, beyond what bullpen itself configures:
+
+- [gog (Gmail)](gog.md) — carrying Google OAuth tokens to a headless box so agents can
+  read and archive mail.

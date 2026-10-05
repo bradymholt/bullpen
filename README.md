@@ -160,13 +160,6 @@ attribute in your tailnet policy, and the tailnet's ACL must let your devices re
 (`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}` if it doesn't). To add it after the
 first deploy, export `TS_AUTHKEY` and run `kamal accessory reboot tailscale`.
 
-## Tool guides
-
-Setup for specific tools agents use, beyond what bullpen itself configures:
-
-- [gog (Gmail)](docs/gog.md) — carrying Google OAuth tokens to a headless box so agents can
-  read and archive mail.
-
 ## Layout
 
 | Path | What |
