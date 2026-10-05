@@ -841,6 +841,21 @@ export function App() {
   };
   useEffect(refresh, []);
 
+  // Polled on its own rather than through `runs`, which would refetch the open agent's history every tick.
+  const [waitingAgents, setWaitingAgents] = useState(0);
+  useEffect(() => {
+    const count = (rs: Run[]) =>
+      new Set(rs.filter((r) => r.status === "awaiting_approval").map((r) => r.agentId)).size;
+    setWaitingAgents(count(runs));
+    const timer = setInterval(() => {
+      api.runs().then((rs) => setWaitingAgents(count(rs))).catch(() => {});
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [runs]);
+  useEffect(() => {
+    document.title = waitingAgents > 0 ? `Bullpen (${waitingAgents})` : "Bullpen";
+  }, [waitingAgents]);
+
   /** Paused means nothing starts it — not a webhook, a cron fire, a poll, or the Run button. */
   async function setPaused(a: Agent, paused: boolean) {
     await api.updateAgent(a.id, { enabled: !paused });
