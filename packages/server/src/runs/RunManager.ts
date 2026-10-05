@@ -198,7 +198,7 @@ export function startRun(opts: RunRequest, existingId?: string): string {
   const prompt = opts.prompt ?? agent.prompt;
   const permissionMode = opts.permissionMode ?? agent.permissionMode;
   // Global, then the space's, then the agent's own — later wins. Resolved here
-  // because the note names only the tools this agent's credentials can reach.
+  // because the note reads the config dir an agent's own env may override.
   const env = resolveEnv(agent);
   // Where the delivery body lives is bullpen's business, not something every
   // prompt should have to restate.

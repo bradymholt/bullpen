@@ -34,14 +34,6 @@ export const SYSTEM_NOTE = {
     `holds the same path. A skill's own files — its scripts, config and data — sit in its ` +
     `directory there, so reach them by absolute path; your working directory is somewhere else ` +
     `entirely, and a shell that cd's out of it is reset on the next command.`,
-  /**
-   * Only when the agent has the keyring password, since gog without it cannot
-   * authenticate and an agent told otherwise spends turns finding that out.
-   */
-  gog:
-    `The \`gog\` CLI is available and signed in to Google: Gmail, Calendar, Drive, Docs and ` +
-    `Sheets, for reading, sending and organising. Run it with Bash — \`gog --help\` lists the ` +
-    `commands, and \`--json\` or \`--plain\` give parseable output.`,
 };
 
 /**
@@ -56,13 +48,11 @@ export function noteworthyConfigDir(env: Record<string, string> = {}): string | 
 }
 
 export function systemNote(trigger: string, env: Record<string, string> = {}): string {
-  const hasGog = Boolean(env.GOG_KEYRING_PASSWORD ?? process.env.GOG_KEYRING_PASSWORD);
   const configDir = noteworthyConfigDir(env);
   return [
     trigger === "webhook" || trigger === "poll" ? SYSTEM_NOTE.delivery(trigger) : null,
     SYSTEM_NOTE.files,
     configDir ? SYSTEM_NOTE.config(configDir) : null,
-    hasGog ? SYSTEM_NOTE.gog : null,
   ]
     .filter(Boolean)
     .join("\n\n");
