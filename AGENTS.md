@@ -1,7 +1,8 @@
 # Bullpen — notes for Claude
 
 A dashboard for a roster of Claude Code agents. Read `README.md` for what it does and how to
-run it. This file covers what the code alone won't teach you.
+run it, and [`docs/using-bullpen.md`](docs/using-bullpen.md) for how agents are set up. This file
+covers what the code alone won't teach you.
 
 ## Working on bullpen
 
