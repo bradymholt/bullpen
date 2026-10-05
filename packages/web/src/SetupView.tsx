@@ -100,8 +100,9 @@ export function SetupView({ onDone }: { onDone: () => void }) {
             </p>
             <input
               className={field}
-              type="password"
               autoComplete="off"
+              spellCheck={false}
+              data-1p-ignore
               placeholder="sk-ant-oat01-…"
               value={claude}
               onChange={(e) => setClaude(e.target.value)}
@@ -137,8 +138,9 @@ export function SetupView({ onDone }: { onDone: () => void }) {
             </p>
             <input
               className={field}
-              type="password"
               autoComplete="off"
+              spellCheck={false}
+              data-1p-ignore
               placeholder="ghp_… or github_pat_…"
               value={github}
               onChange={(e) => setGithub(e.target.value)}
