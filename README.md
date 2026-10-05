@@ -11,7 +11,7 @@
 A self-hosted dashboard for a roster of Claude Code agents — code agents that clone a repo and
 open a PR, and non-code agents that fetch data and report back. Run them by hand, on a cron, or
 from a webhook, and watch them work.  **[Using bullpen](docs/README.md)** covers setting agents up: workspaces, permission modes,
-webhooks, env and secrets, MCP servers, and email.
+webhooks, env and secrets, and MCP servers.
 
 
 Agents run through [`@anthropic-ai/claude-agent-sdk`](https://code.claude.com/docs/en/agent-sdk),
@@ -159,6 +159,13 @@ With Tailscale the dashboard is at `https://<node>.<tailnet>.ts.net`. Funnel nee
 attribute in your tailnet policy, and the tailnet's ACL must let your devices reach each other
 (`{"src": ["autogroup:member"], "dst": ["autogroup:self:*"]}` if it doesn't). To add it after the
 first deploy, export `TS_AUTHKEY` and run `kamal accessory reboot tailscale`.
+
+## Tool guides
+
+Setup for specific tools agents use, beyond what bullpen itself configures:
+
+- [gog (Gmail)](docs/gog.md) — carrying Google OAuth tokens to a headless box so agents can
+  read and archive mail.
 
 ## Layout
 
