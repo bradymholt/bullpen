@@ -7,7 +7,7 @@ const field =
 /**
  * Edits an env map the server has masked. A saved value arrives as the mask and
  * is shown as an empty field with a "saved" placeholder — the value itself never
- * reaches the browser. Leaving it alone sends the mask back, which the server
+ * reaches the browser. What you type is shown in plain text so it can be checked. Leaving it alone sends the mask back, which the server
  * reads as "keep what you have"; typing replaces; removing the row deletes.
  */
 export function EnvEditor({
@@ -53,8 +53,10 @@ export function EnvEditor({
             />
             <input
               className={field}
-              type="password"
               autoComplete="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
               placeholder={saved ? "saved — type to replace" : "value"}
               value={saved ? "" : r.value}
               onChange={(e) =>
