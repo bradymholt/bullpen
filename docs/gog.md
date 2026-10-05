@@ -1,17 +1,20 @@
-# gog (Gmail)
+# gog (Google Workspace)
 
-Agents reach Gmail through [gog](https://gogcli.sh) — the `gmail-archive` skill shells out
-to it, so anything that archives a notification needs it working. Setup is one copy from a
-Mac; there is no OAuth flow to run on the box.
+[gog](https://gogcli.sh) is a command-line client for Gmail, Calendar, Drive, Sheets and Docs.
+An agent with it can read and send mail, check a calendar, or append rows to a spreadsheet,
+by calling `gog` from Bash as its prompt or a skill directs. On a laptop that is whatever gog
+you already have installed and signed in. This guide is for a deployed box, where the setup is
+one copy from a Mac and there is no OAuth flow to run.
 
-**The image ships a wrapper, not the binary.** The first time an agent runs `gog`, the
-wrapper downloads the release into `/data/bin` and execs it. That is on the volume, so it
-happens once per box and survives deploys, and a box whose agents never touch email never
-fetches it. `GOG_VERSION` moves the pin; `GOG_URL` points at your own binary or tarball.
+**bullpen's image has gog support built in.** It ships a `gog` wrapper rather than the binary:
+the first time an agent runs `gog`, the wrapper downloads the release into `/data/bin` and execs
+it. That is on the volume, so it happens once per box and survives deploys, and a box whose
+agents never use gog never fetches it. `GOG_VERSION` moves the pin; `GOG_URL` points at your own
+binary or tarball. `GOG_HOME` is set to `/data/gog`, so credentials live on the volume too.
 
-**No MCP server to configure.** The skill uses the CLI. gog does have a `gog mcp`
-subcommand, but it is the same binary reading the same credentials — nothing is gained by
-adding it, and it would need this same setup anyway.
+**CLI or MCP server, same setup.** Calling the CLI needs no MCP config. gog also has a `gog mcp`
+subcommand if you would rather give an agent tools than shell commands; it is the same binary
+reading the same credentials, so everything below applies either way.
 
 **The box needs the `file` keyring backend.** Not a preference — the others are unavailable
 there. `keychain` fails outright with "Specified keyring backend not available", and `auto`

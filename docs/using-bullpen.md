@@ -161,5 +161,5 @@ timeline shows each server's status, and Settings shows the last-known state.
 
 Setup for specific tools agents use, beyond what bullpen itself configures:
 
-- [gog (Gmail)](gog.md) — carrying Google OAuth tokens to a headless box so agents can
-  read and archive mail.
+- [gog (Google Workspace)](gog.md) — giving agents Gmail, Calendar, Drive and Sheets through
+  the gog CLI, and carrying its sign-in to a headless box.
