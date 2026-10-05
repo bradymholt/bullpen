@@ -4,8 +4,6 @@ services:
     build:
       context: .
       args:
-        # Optional: a gogcli release asset for Linux. See README, "Running headless".
-        GOG_URL: ${GOG_URL:-}
         # On by default: the Playwright MCP server and Chromium's libraries (~470MB); the browser
         # itself downloads on first use. Set WITH_BROWSER=0 to leave it out.
         WITH_BROWSER: ${WITH_BROWSER:-1}
