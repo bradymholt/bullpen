@@ -10,7 +10,7 @@
 
 A self-hosted dashboard for a roster of Claude Code agents — code agents that clone a repo and
 open a PR, and non-code agents that fetch data and report back. Run them by hand, on a cron, or
-from a webhook, and watch them work.  **[Using bullpen](docs/README.md)** covers setting agents up: workspaces, permission modes,
+from a webhook, and watch them work.  **[Using bullpen](docs/using-bullpen.md)** covers setting agents up: workspaces, permission modes,
 webhooks, env and secrets, and MCP servers.
 
 
