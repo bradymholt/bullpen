@@ -104,6 +104,8 @@ export type Approval = {
   description: string | null;
   space: string | null;
   status: string;
+  /** The allow rule "Always allow" would add, or null when none can be derived. */
+  rule: string | null;
 };
 
 export type Delivery = {

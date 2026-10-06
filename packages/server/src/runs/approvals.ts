@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { dirname, relative, isAbsolute } from "node:path";
 import { and, eq } from "drizzle-orm";
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "../config.ts";
 import { db } from "../db/index.ts";
-import { approvals } from "../db/schema.ts";
+import { agents, approvals, runs } from "../db/schema.ts";
 import { hub } from "../hub.ts";
 import { appendEvent } from "./eventLog.ts";
 
@@ -12,11 +13,82 @@ type Pending = { resolve: (r: PermissionResult) => void };
 const pending = new Map<string, Pending>();
 
 export function pendingApprovals(runId: string) {
+  const workspace = db.select({ path: runs.workspacePath }).from(runs).where(eq(runs.id, runId)).get()?.path;
   return db
     .select()
     .from(approvals)
     .where(and(eq(approvals.runId, runId), eq(approvals.status, "pending")))
-    .all();
+    .all()
+    .map((row) => ({ ...row, rule: allowRuleFor(row.toolName, row.input, workspace ?? null) }));
+}
+
+const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "Glob", "Grep"]);
+
+/**
+ * The narrowest allow rule that would have covered this call: a command prefix
+ * for Bash, a directory for file tools, a domain for WebFetch, the bare name for
+ * everything else. Null when nothing sensible can be derived.
+ */
+export function allowRuleFor(toolName: string, input: unknown, workspacePath: string | null): string | null {
+  const fields = (input ?? {}) as Record<string, unknown>;
+  if (toolName === "AskUserQuestion") return null;
+
+  if (toolName === "Bash") {
+    const command = typeof fields.command === "string" ? fields.command : "";
+    const first = command.split(/\s*(?:\|\|?|&&|;)\s*/)[0] ?? "";
+    const words = first.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return null;
+    const prefix = words.length > 1 && /^[a-z][a-z0-9-]*$/i.test(words[1]!) ? `${words[0]} ${words[1]}` : words[0];
+    return `Bash(${prefix}:*)`;
+  }
+
+  if (FILE_TOOLS.has(toolName)) {
+    const target = [fields.file_path, fields.notebook_path, fields.path].find((v) => typeof v === "string") as
+      | string
+      | undefined;
+    if (!target) return null;
+    const dir = toolName === "Glob" || toolName === "Grep" ? target : dirname(target);
+    if (dir.startsWith("~/")) return `${toolName}(${dir}/**)`;
+    if (workspacePath && isAbsolute(dir)) {
+      const rel = relative(workspacePath, dir);
+      if (rel === "") return `${toolName}(**)`;
+      if (!rel.startsWith("..") && !isAbsolute(rel)) return `${toolName}(${rel}/**)`;
+    }
+    return isAbsolute(dir) ? `${toolName}(/${dir}/**)` : `${toolName}(${dir}/**)`;
+  }
+
+  if (toolName === "WebFetch") {
+    try {
+      return `WebFetch(domain:${new URL(String(fields.url)).hostname})`;
+    } catch {
+      return null;
+    }
+  }
+
+  return toolName;
+}
+
+/**
+ * Adds the derived rule to the agent's allow list so later runs skip this
+ * prompt. The live run is unaffected: its permission rules were fixed at launch.
+ */
+export function rememberApproval(id: string): string | null {
+  const row = db
+    .select({ toolName: approvals.toolName, input: approvals.input, agentId: runs.agentId, workspace: runs.workspacePath })
+    .from(approvals)
+    .innerJoin(runs, eq(runs.id, approvals.runId))
+    .where(eq(approvals.id, id))
+    .get();
+  if (!row) return null;
+  const rule = allowRuleFor(row.toolName, row.input, row.workspace);
+  if (!rule) return null;
+  const agent = db.select({ allowedTools: agents.allowedTools }).from(agents).where(eq(agents.id, row.agentId)).get();
+  if (!agent) return null;
+  const current = agent.allowedTools as string[];
+  if (!current.includes(rule)) {
+    db.update(agents).set({ allowedTools: [...current, rule] }).where(eq(agents.id, row.agentId)).run();
+  }
+  return rule;
 }
 
 /**

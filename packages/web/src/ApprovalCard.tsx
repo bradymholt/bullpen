@@ -47,10 +47,10 @@ export function ApprovalCard({ approval, onDecided }: { approval: Approval; onDe
     return Array.isArray(value) ? value.includes(label) : value === label;
   };
 
-  const decide = async (allow: boolean) => {
+  const decide = async (allow: boolean, remember = false) => {
     setBusy(true);
     try {
-      await api.decide(approval.id, allow, undefined, allow && answered ? picked : undefined);
+      await api.decide(approval.id, allow, undefined, allow && answered ? picked : undefined, remember);
       onDecided();
     } finally {
       setBusy(false);
@@ -119,6 +119,16 @@ export function ApprovalCard({ approval, onDecided }: { approval: Approval; onDe
         >
           {questions.length > 0 ? "Send answers" : "Allow"}
         </button>
+        {questions.length === 0 && approval.rule && (
+          <button
+            onClick={() => decide(true, true)}
+            disabled={busy}
+            title={`Allow, and add ${approval.rule} to this agent's allowed tools so later runs skip this prompt`}
+            className="rounded border border-amber-600 px-3 py-1.5 text-sm text-amber-400 hover:bg-amber-500/10 disabled:opacity-40"
+          >
+            Always allow <code className="text-xs text-amber-500/80">{approval.rule}</code>
+          </button>
+        )}
       </div>
     </div>
   );

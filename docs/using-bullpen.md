@@ -64,6 +64,11 @@ Tool calls route through the SDK's `canUseTool`. The modes are:
 An approval nobody answers is denied after 15 minutes, so a forgotten prompt can't wedge an
 agent.
 
+**Always allow** on a prompt approves it and adds the narrowest matching rule to the agent's
+allowed tools — `Bash(gh pr:*)` for a `gh pr view`, `Edit(src/**)` for an edit under `src/`,
+`WebFetch(domain:api.github.com)` for a fetch — so later runs skip that prompt. The run that
+asked is unchanged; its rules were fixed at launch.
+
 **Use the shared skills and global CLAUDE.md** is on by default, since that is what makes your
 skills invokable. It also brings along the `permissions.allow` rules in that config's
 `settings.json`, which run without asking even on a Manual agent. Turn it off for an agent whose
