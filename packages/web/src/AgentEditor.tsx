@@ -7,12 +7,12 @@ import { DEFAULT_SPACE, type Agent, type AgentInput, type MachineMcp, type Repo,
 
 const MODELS = [
   ["opus", "Opus — alias, tracks the current Opus"],
-  ["sonnet", "Sonnet — alias, cheaper and faster"],
-  ["haiku", "Haiku — alias, cheapest"],
+  ["sonnet", "Sonnet — alias, smaller and faster"],
+  ["haiku", "Haiku — alias, smallest and fastest"],
   ["claude-opus-5", "claude-opus-5"],
   ["claude-sonnet-5", "claude-sonnet-5"],
   ["claude-haiku-4-5", "claude-haiku-4-5"],
-  ["claude-fable-5-1", "claude-fable-5-1 — most capable, priced above Opus"],
+  ["claude-fable-5-1", "claude-fable-5-1 — most capable"],
 ] as const;
 
 const field =
