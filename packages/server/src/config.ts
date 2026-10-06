@@ -83,6 +83,11 @@ export const config = {
    * whole claude process.
    */
   backgroundWaitMs: Number(process.env.BULLPEN_BACKGROUND_WAIT_MS ?? 30 * 60_000),
+  /**
+   * A run that did not complete keeps its fresh directory as evidence, but not
+   * forever. Never shorter than the completed-run window.
+   */
+  failedWorkspaceRetentionHours: Number(process.env.BULLPEN_FAILED_WORKSPACE_RETENTION_HOURS ?? 7 * 24),
 };
 
 /**

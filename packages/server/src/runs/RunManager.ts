@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { config } from "../config.ts";
 import { writePayload } from "../triggers/webhook.ts";
 import { startTelegramTyping } from "../triggers/telegram.ts";
-import { and, asc, eq, inArray, isNull, like, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
@@ -473,20 +473,26 @@ export function recoverOrphanedRuns(): number {
 
 /**
  * A completed run's fresh directory is kept for the retention window so it can
- * still be looked into, then removed here. Clones and runs that did not
- * complete are left alone, the same as at run end.
+ * still be looked into, then removed here. One that ended any other way is the
+ * only evidence of the failure, so it gets the longer failed-run window.
+ * Clones are left alone: they are kept for their diff.
  */
 export function sweepWorkspaces(): number {
-  const cutoff = Math.floor(Date.now() / 1000) - workspaceRetentionHours() * 3600;
+  const now = Math.floor(Date.now() / 1000);
+  const retention = workspaceRetentionHours();
+  const completedCutoff = now - retention * 3600;
+  const failedCutoff = now - Math.max(retention, config.failedWorkspaceRetentionHours) * 3600;
   const due = db
     .select({ id: runs.id, path: runs.workspacePath })
     .from(runs)
     .where(
       and(
-        eq(runs.status, "completed"),
         isNull(runs.branch),
-        lte(runs.endedAt, cutoff),
         like(runs.workspacePath, `${config.workspacesDir}/%`),
+        or(
+          and(eq(runs.status, "completed"), lte(runs.endedAt, completedCutoff)),
+          and(inArray(runs.status, ["failed", "cancelled", "interrupted"]), lte(runs.endedAt, failedCutoff)),
+        ),
       ),
     )
     .all();

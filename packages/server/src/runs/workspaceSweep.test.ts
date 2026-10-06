@@ -40,18 +40,43 @@ describe("sweepWorkspaces", () => {
     expect(existsSync(recent)).toBe(true);
   });
 
-  it("keeps failed runs and clones regardless of age", () => {
-    const failed = run("failed", { status: "failed", endedAt: now - 99 * 3600 });
-    const clone = run("clone", { endedAt: now - 99 * 3600, branch: "bullpen/x/clone" });
+  it("keeps clones regardless of age", () => {
+    const clone = run("clone", { endedAt: now - 999 * 3600, branch: "bullpen/x/clone" });
     expect(sweepWorkspaces()).toBe(0);
-    expect(existsSync(failed)).toBe(true);
     expect(existsSync(clone)).toBe(true);
   });
 
-  it("with retention 0, anything completed is due", () => {
+  it("keeps runs that did not complete for the longer failed-run window", () => {
+    const recent = run("failed-recent", { status: "failed", endedAt: now - 99 * 3600 });
+    const old = run("failed-old", { status: "failed", endedAt: now - 8 * 24 * 3600 });
+    const interrupted = run("interrupted-old", { status: "interrupted", endedAt: now - 8 * 24 * 3600 });
+    expect(sweepWorkspaces()).toBe(2);
+    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(interrupted)).toBe(false);
+  });
+
+  it("never sweeps a failure sooner than a success", () => {
+    setWorkspaceRetentionHours(10 * 24);
+    const failed = run("failed-9d", { status: "failed", endedAt: now - 9 * 24 * 3600 });
+    expect(sweepWorkspaces()).toBe(0);
+    expect(existsSync(failed)).toBe(true);
+  });
+
+  it("leaves active and queued runs alone", () => {
+    const active = run("running", { status: "running", endedAt: now - 99 * 24 * 3600 });
+    const queued = run("queued", { status: "queued" });
+    expect(sweepWorkspaces()).toBe(0);
+    expect(existsSync(active)).toBe(true);
+    expect(existsSync(queued)).toBe(true);
+  });
+
+  it("with retention 0, anything completed is due but failures still wait", () => {
     setWorkspaceRetentionHours(0);
     const path = run("zero", { endedAt: now });
+    const failed = run("zero-failed", { status: "failed", endedAt: now });
     expect(sweepWorkspaces()).toBe(1);
     expect(existsSync(path)).toBe(false);
+    expect(existsSync(failed)).toBe(true);
   });
 });
