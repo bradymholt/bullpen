@@ -20,8 +20,9 @@ always there, and a space can share a webhook URL and env across its agents.
 Each agent has a **workspace**, one of:
 
 - **Fresh directory** (the default) — a new empty folder per run, removed a while after the run
-  completes (Settings sets how long) and kept if it fails. Nothing carries over, which is what
-  lets several runs of one agent work at once.
+  completes (Settings sets how long). A failed or stopped run's folder is kept for 7 days, since
+  it is the only evidence the failure leaves. Nothing carries over, which is what lets several
+  runs of one agent work at once.
 - **Scratch directory** — one folder the agent reuses every run, so it can keep notes or caches.
   The answer for agents that never touch code.
 - **Existing directory** — a folder you name, such as your real checkout, edited in place and
@@ -29,14 +30,23 @@ Each agent has a **workspace**, one of:
 - **Git clone** — a fresh clone on its own branch per run. Review the diff a run produced, then
   commit, push, and open a PR from the run page.
 
-Runs of one agent can overlap by default. On a scratch or existing directory, that means they
-overwrite each other's files — the editor warns about it.
+**Overlapping runs** decides what happens when a trigger arrives while a run is active:
+
+- **Allow** (the default) starts it anyway, in parallel. On a scratch or existing directory that
+  means the runs overwrite each other's files — the editor warns about it.
+- **Queue** holds it and runs one at a time, in order. Up to 20 can wait; beyond that a trigger
+  is refused. This is the safe choice for a shared directory.
+- **Skip** refuses it. A trigger that arrives mid-run is lost for good.
 
 Files an agent hands back go in `.bullpen/out/` in its workspace. When the run ends they are
 listed on the run page to download, and web types such as `report.html` can be previewed in place.
 
 Every run streams live. Reconnecting replays from the event log, so a closed tab or a server
-restart loses nothing.
+restart loses nothing. A run cut off by a restart is marked interrupted, with a **Restart**
+button that picks it back up.
+
+Commits and PRs an agent makes leave out Claude Code's "Generated with Claude Code" footer. Turn
+it back on under Settings.
 
 ## Permissions
 
@@ -64,7 +74,15 @@ with a warning and grants nothing.
 
 ## Triggers
 
-Run an agent by hand, on a cron with its own timezone, or from a webhook.
+Pick one in the agent editor:
+
+- **Manual** — you start each run from the dashboard.
+- **Schedule** — a cron expression with its own timezone.
+- **Poll** — fetch a URL on a cron and run only when the response changes. Narrow it to a dot
+  path such as `data.status` so fields that change on every request don't trigger it. The first
+  check only records what is there, request headers can read `${NAME}` from the agent's env, and
+  nothing needs to reach bullpen.
+- **Webhook** — run when a sender calls the agent's URL.
 
 **Cron doesn't catch up.** A fire missed while bullpen was down is skipped, not replayed.
 
@@ -74,10 +92,24 @@ else. Every request lands in the agent's **Recent webhook deliveries**, includin
 dropped and why. **Test fire** in the agent editor sends a request signed exactly as the
 configured sender would, using the saved settings.
 
+Under **Which deliveries run**, a delivery has to pass filters before anything starts:
+
+- **Only these events** — the event names to accept (GitHub only, since it is the one sender
+  that names its event in a header).
+- **Only run when** — conditions on dot paths into the body: *is one of*, *is not one of*,
+  *contains*, or *does not contain*. All conditions in a set must hold. Split them into several
+  sets when different kinds of delivery need different rules; the agent runs when any one set
+  holds. Nothing is spent on a delivery that doesn't match.
+
+Under **Each run**, **Merge deliveries** folds bursts into one run. Give it a key such as
+`{{payload.pull_request.html_url}}` and a wait in seconds: a delivery waits that long, and any
+with the same key that arrive meanwhile join its run. GitHub, for one, sends two
+`review_requested` deliveries when you request a person and a team together.
+
 The sender has to be able to reach bullpen, so `/api/hooks` needs a public route — on a deployed
 server, whatever exposes it (see [Deploying to a server](../README.md#deploying-to-a-server)); on
 a laptop, a tunnel such as `tailscale funnel --set-path=/api/hooks 4322`. Or skip webhooks
-and have a cron agent poll the sender's API instead, which needs no public surface at all. The URL
+and use a **Poll** trigger on the sender's API instead, which needs no public surface at all. The URL
 bullpen shows is built from your browser's address, so substitute the public hostname when
 pasting it elsewhere.
 
@@ -87,10 +119,10 @@ pasting it elsewhere.
 
 ## Connect a GitHub webhook
 
-**In bullpen** — open the agent, set **Trigger** to Webhook, and set **Sender** to
-`GitHub — X-Hub-Signature-256`. Copy the **Webhook URL** and reveal the **Secret**; you need
-both in a moment. Fill in **Only these events** with the events you want (`issues`,
-`pull_request`) — leaving it empty means every event fires the agent.
+**In bullpen** — open the agent, pick the **Webhook** trigger, and set **Sender** to
+**GitHub**. Copy the **Webhook URL** and **Reveal** the **Secret**; you need both in a moment.
+Fill in **Only these events** with the events you want (`issues`, `pull_request`) — leaving it
+empty means every event fires the agent.
 
 **In the repo** — Settings → Webhooks → Add webhook, then:
 
