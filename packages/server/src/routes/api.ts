@@ -1271,10 +1271,20 @@ api.get("/deliveries", (c) => {
   return c.json(rows.filter((r) => !isByDesign(r)).slice(0, 20));
 });
 
+/** `status` takes a comma list; `since`/`until` are unix seconds; `limit` caps at 200. */
 api.get("/runs", (c) => {
-  const agentId = c.req.query("agentId");
-  const base = db.select().from(runs).orderBy(desc(runs.startedAt)).limit(50);
-  return c.json(agentId ? base.where(eq(runs.agentId, agentId)).all() : base.all());
+  const q = c.req.query();
+  const statuses = q.status?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+  const since = Number(q.since);
+  const until = Number(q.until);
+  const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
+  const conds = [
+    q.agentId ? eq(runs.agentId, q.agentId) : undefined,
+    statuses.length > 0 ? inArray(runs.status, statuses) : undefined,
+    since > 0 ? gte(runs.startedAt, since) : undefined,
+    until > 0 ? lt(runs.startedAt, until) : undefined,
+  ].filter((x): x is SQL => x !== undefined);
+  return c.json(db.select().from(runs).where(and(...conds)).orderBy(desc(runs.startedAt)).limit(limit).all());
 });
 
 api.get("/runs/:id", (c) => {

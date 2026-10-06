@@ -42,3 +42,17 @@ describe("GET /stats", () => {
     expect(s.last24h).toBe(60);
   });
 });
+
+describe("GET /runs", () => {
+  const ids = async (query: string) =>
+    ((await (await api.request(`/runs${query}`)).json()) as { id: string }[]).map((r) => r.id);
+
+  it("filters by status list and window, and caps the page", async () => {
+    expect(await ids("?status=failed")).toEqual(["q1"]);
+    expect(await ids("?status=running,failed")).toEqual(["b0", "q1"]);
+    expect(await ids(`?agentId=busy&since=${now - 150}`)).toEqual(["b0", "b1", "b2"]);
+    expect(await ids(`?until=${now - 100_000}`)).toEqual(["q1"]);
+    expect(await ids("?limit=5")).toHaveLength(5);
+    expect(await ids("?limit=999")).toHaveLength(61);
+  });
+});
