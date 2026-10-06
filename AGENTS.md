@@ -165,7 +165,7 @@ evidence a failure leaves. A completed one is kept for `workspaceRetentionHours`
 removed by `sweepWorkspaces()` at boot and hourly; 0 restores removal at run end. A `failed`,
 `cancelled` or `interrupted` one goes in the same sweep after `failedWorkspaceRetentionHours`
 (7 days, `BULLPEN_FAILED_WORKSPACE_RETENTION_HOURS`), never sooner than a completed one. Clones are
-never swept — they are kept for their diff.
+kept for their diff until GitHub reports their branch's pull request closed (`sweepMergedClones`).
 
 **Files an agent hands back live in `.bullpen/out/`, and only there.** Every run's system prompt
 says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under
@@ -380,8 +380,10 @@ carry the `.ts` extension.
 - **PR creation's happy path is unverified** — it needs a real token and repo. Error paths work.
 - **No failure notification.** A nightly agent that starts failing produces nothing, which looks
   like nothing to report. Status is visible in the UI and nowhere else.
-- **Clone workspaces accumulate.** The sweep skips them so their diff stays reviewable, and
-  nothing else removes them.
+- **Clones without a pull request accumulate.** `sweepMergedClones()` removes an aged clone once
+  GitHub says every PR for its branch is closed, but one that never got a PR is kept for its diff,
+  and nothing else removes it. Needs `GITHUB_TOKEN`; a clone found to have no PR is not asked
+  about again until the next boot, so the hourly sweep does not re-query every old clone.
 - **claude.ai connectors don't reach runs in a fresh standalone config dir.** Measured: after
   `claude login` into the sandbox dir, `claude mcp list` there shows every connector, but a `-p`/SDK
   run in that same dir reports `mcp_servers: []`, while the identical run against `~/.claude` lists

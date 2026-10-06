@@ -10,7 +10,7 @@ const { agents, runs } = await import("../db/schema.ts");
 const { runMigrations } = await import("../db/migrate.ts");
 const { config } = await import("../config.ts");
 const { setWorkspaceRetentionHours } = await import("../env.ts");
-const { sweepWorkspaces } = await import("./RunManager.ts");
+const { sweepMergedClones, sweepWorkspaces } = await import("./RunManager.ts");
 
 runMigrations();
 const now = Math.floor(Date.now() / 1000);
@@ -78,5 +78,40 @@ describe("sweepWorkspaces", () => {
     expect(sweepWorkspaces()).toBe(1);
     expect(existsSync(path)).toBe(false);
     expect(existsSync(failed)).toBe(true);
+  });
+});
+
+describe("sweepMergedClones", () => {
+  it("removes an aged clone only once its pull request is closed", async () => {
+    const merged = run("merged", { endedAt: now - 25 * 3600, branch: "bullpen/x/merged" });
+    const open = run("open", { endedAt: now - 25 * 3600, branch: "bullpen/x/open" });
+    const unpulled = run("unpulled", { endedAt: now - 25 * 3600, branch: "bullpen/x/unpulled" });
+    const recent = run("recent-merged", { endedAt: now - 3600, branch: "bullpen/x/recent" });
+    const states: Record<string, "open" | "closed" | "none"> = {
+      "bullpen/x/merged": "closed",
+      "bullpen/x/open": "open",
+      "bullpen/x/unpulled": "none",
+      "bullpen/x/recent": "closed",
+    };
+    const asked: string[] = [];
+    const lookup = async (_cwd: string, branch: string) => {
+      asked.push(branch);
+      return states[branch]!;
+    };
+    expect(await sweepMergedClones(lookup)).toBe(1);
+    expect(existsSync(merged)).toBe(false);
+    expect(existsSync(open)).toBe(true);
+    expect(existsSync(unpulled)).toBe(true);
+    expect(existsSync(recent)).toBe(true);
+
+    asked.length = 0;
+    expect(await sweepMergedClones(lookup)).toBe(0);
+    expect(asked).toEqual(["bullpen/x/open"]);
+  });
+
+  it("keeps a clone when the lookup fails", async () => {
+    const clone = run("lookup-fails", { endedAt: now - 25 * 3600, branch: "bullpen/x/fails" });
+    expect(await sweepMergedClones(async () => { throw new Error("no token"); })).toBe(0);
+    expect(existsSync(clone)).toBe(true);
   });
 });
