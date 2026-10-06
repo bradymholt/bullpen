@@ -153,7 +153,10 @@ the workspace default moved with it. `allow` on a `scratch` or `existing` worksp
 runs overwrite each other's files, `.bullpen/payload.json` included; the editor warns on that pair.
 An ephemeral directory is now kept when a run does not reach `completed`, since it is the only
 evidence a failure leaves. A completed one is kept for `workspaceRetentionHours` (global, default 24) and
-removed by `sweepWorkspaces()` at boot and hourly; 0 restores removal at run end.
+removed by `sweepWorkspaces()` at boot and hourly; 0 restores removal at run end. A `failed`,
+`cancelled` or `interrupted` one goes in the same sweep after `failedWorkspaceRetentionHours`
+(7 days, `BULLPEN_FAILED_WORKSPACE_RETENTION_HOURS`), never sooner than a completed one. Clones are
+never swept — they are kept for their diff.
 
 **Files an agent hands back live in `.bullpen/out/`, and only there.** Every run's system prompt
 says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under
@@ -368,8 +371,8 @@ carry the `.ts` extension.
 - **PR creation's happy path is unverified** — it needs a real token and repo. Error paths work.
 - **No failure notification.** A nightly agent that starts failing produces nothing, which looks
   like nothing to report. Status is visible in the UI and nowhere else.
-- **Nothing sweeps `workspacesDir`.** A failed ephemeral run keeps its directory on purpose, and
-  no boot-time or age-based cleanup removes it, so failures accumulate on disk.
+- **Clone workspaces accumulate.** The sweep skips them so their diff stays reviewable, and
+  nothing else removes them.
 - **claude.ai connectors don't reach runs in a fresh standalone config dir.** Measured: after
   `claude login` into the sandbox dir, `claude mcp list` there shows every connector, but a `-p`/SDK
   run in that same dir reports `mcp_servers: []`, while the identical run against `~/.claude` lists
