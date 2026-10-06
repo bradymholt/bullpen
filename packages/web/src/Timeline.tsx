@@ -104,12 +104,13 @@ const MD_COMPONENTS = {
   hr: () => <hr className="my-3 border-neutral-800" />,
 };
 
-type Item = { key: string; kind: string; label?: string; body: string };
+type Item = { key: string; kind: string; label?: string; body: string; ts?: number };
 
 /** Flattens raw SDKMessage events into things worth showing. */
 function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
   const items: Item[] = [];
   for (const e of events) {
+    const start = items.length;
     const k = String(e.seq);
     if (e.type === "run.started") {
       // The prompt this run actually got — a typed one, or the agent's own with
@@ -178,6 +179,7 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
         body: `Finished — ${e.payload.num_turns} turns${money}`,
       });
     }
+    for (let i = start; i < items.length; i++) items[i]!.ts = e.ts;
   }
   return items;
 }
@@ -245,7 +247,11 @@ export function Timeline({
   return (
     <div className="space-y-2">
       {items.map((it) => it.kind === "mcp" ? <McpStatusItem key={it.key} body={it.body} /> : (
-        <div key={it.key} className={`rounded border px-3 py-2 ${STYLES[it.kind] ?? STYLES.text}`}>
+        <div
+          key={it.key}
+          title={it.ts ? new Date(it.ts * 1000).toLocaleString() : undefined}
+          className={`rounded border px-3 py-2 ${STYLES[it.kind] ?? STYLES.text}`}
+        >
           {it.label && (
             <div
               className={`mb-1 font-mono text-xs uppercase tracking-wide ${
