@@ -543,9 +543,7 @@ export function TriggerSettings({
     activeCond !== null && activeCond < conditions.length ? activeCond : conditions.length - 1;
 
   return (
-    <div className="space-y-3 border-y border-neutral-800 py-4">
-      <span className={label}>Trigger</span>
-
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {KINDS.map((k) => {
           const selected = kind === k.kind;
@@ -1108,6 +1106,37 @@ export function TriggerSettings({
                 </button>
               )}
             </div>
+          </div>
+
+          <div>
+            <span className={label}>Merge deliveries</span>
+            <div className="flex gap-2">
+              <label className="min-w-0 flex-1">
+                <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
+                <input
+                  className={field}
+                  placeholder="{{payload.pull_request.html_url}}"
+                  value={draft.mergeKey ?? ""}
+                  onChange={(e) => set("mergeKey", e.target.value || null)}
+                />
+              </label>
+              <label className="w-28 shrink-0">
+                <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  className={field}
+                  value={draft.mergeWaitSeconds ?? ""}
+                  onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+              Optional. Each delivery waits this long before it runs, and another one about the same thing arriving
+              meanwhile joins it instead of starting a second run. Uses the same <code>{"{{payload.a.b}}"}</code> syntax as
+              the prompt.
+            </p>
           </div>
 
           <div>

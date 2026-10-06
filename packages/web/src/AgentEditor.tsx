@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api.ts";
 import { EnvEditor } from "./EnvEditor.tsx";
 import { MODES } from "./modes.ts";
@@ -36,6 +36,28 @@ function Row({ title, hint, children }: { title: string; hint?: string; children
       {children}
       {hint && <p className="mt-1 text-xs text-neutral-600">{hint}</p>}
     </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4 border-t border-neutral-800 pt-4">
+      <h2 className="text-sm font-semibold text-neutral-200">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/** Tracks Tailwind's `xl` breakpoint, where the editor splits into two columns. */
+const WIDE = "(min-width: 80rem)";
+function useWide(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = matchMedia(WIDE);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => matchMedia(WIDE).matches,
   );
 }
 
@@ -90,6 +112,7 @@ export function AgentEditor({
   const [repoList, setRepoList] = useState<RepoList | null>(null);
   const [repoError, setRepoError] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
+  const wide = useWide();
   const [sharedSkills, setSharedSkills] = useState<Skill[]>([]);
   const [claudeMdInfo, setClaudeMdInfo] = useState<{ exists: boolean; size: number } | null>(null);
   const [preapproved, setPreapproved] = useState<{ count: number; bare: string[] } | null>(null);
@@ -209,262 +232,15 @@ export function AgentEditor({
     }
   };
 
-  return (
-    <div className="space-y-4 px-4 py-5 md:px-6">
-      {droppedEnv.length > 0 && (
-        <p className="text-xs text-amber-500/80">
-          {droppedEnv.join(", ")} {droppedEnv.length === 1 ? "was" : "were"} not copied &mdash;
-          secret values never leave the server.
-        </p>
-      )}
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-4">
-      <div className="grid grid-cols-[1fr_12rem] gap-3">
-        <Row title="Name">
-          <input
-            className={field}
-            autoFocus={!agent}
-            value={draft.name ?? ""}
-            onChange={(e) => set("name", e.target.value)}
-          />
-        </Row>
-        <Row title="Space" hint="Groups your agents.">
-          {naming ? (
-            <input
-              className={field}
-              autoFocus
-              placeholder="work"
-              value={draft.space ?? ""}
-              onChange={(e) => set("space", e.target.value)}
-              onBlur={() => {
-                const trimmed = (draft.space ?? "").trim();
-                set("space", trimmed || DEFAULT_SPACE);
-                if (!trimmed) setNaming(false);
-              }}
-            />
-          ) : (
-            <select
-              className={field}
-              value={draft.space ?? DEFAULT_SPACE}
-              onChange={(e) => {
-                setNaming(e.target.value === "__new__");
-                set("space", e.target.value === "__new__" ? "" : e.target.value);
-              }}
-            >
-              {spaceOptions.map((sp) => (
-                <option key={sp} value={sp}>
-                  {sp}
-                </option>
-              ))}
-              <option value="__new__">New space…</option>
-            </select>
-          )}
-        </Row>
-      </div>
-
-      <TriggerSettings agent={agent} draft={draft} set={set} hookBase={hookBase} />
-
-      <Row title="Workspace" hint="The directory each run works in — its cwd, and where the webhook payload is written.">
-        <select
-          className={field}
-          value={wsKind}
-          onChange={(e) => {
-            const kind = e.target.value;
-            set(
-              "workspaceConfig",
-              kind === "clone"
-                ? { kind: "clone", repoUrl: "" }
-                : kind === "existing"
-                  ? { kind: "existing", path: "" }
-                  : kind === "ephemeral"
-                    ? { kind: "ephemeral" }
-                    : { kind: "scratch" },
-            );
-          }}
-        >
-          <option value="ephemeral">Fresh directory — a new empty folder per run, cleaned up later</option>
-          <option value="scratch">Scratch directory — one folder this agent reuses every run</option>
-          <option value="existing">Existing directory — works in place in a folder you name</option>
-          <option value="clone">Git clone — new clone and branch per run, kept for review</option>
-        </select>
-        <p className="mt-1 text-xs text-neutral-600">
-          {wsKind === "scratch"
-            ? "One directory per agent, reused by every run of it and shared with no other agent. Files left behind are still there next time, so an agent can keep notes, caches, or a checkout it manages itself."
-            : wsKind === "ephemeral"
-              ? "A new directory per run, removed a while after the run completes — how long is under Settings. Nothing carries over, which is what lets several runs of this agent work at once."
-              : wsKind === "existing"
-                ? "The agent edits that directory directly, on whatever branch is checked out. Nothing isolates it and nothing cleans it up."
-                : "Isolated per run. The clone stays on disk so you can review the diff and open a PR from the run view."}
-        </p>
+  const promptBlock = (
+    <>
+      <Row title="Prompt" hint="What this agent does every time you run it.">
+        <textarea
+          className={`${field} field-sizing-content min-h-52 max-h-[70vh] resize-y font-mono text-xs leading-relaxed`}
+          value={draft.prompt ?? ""}
+          onChange={(e) => set("prompt", e.target.value)}
+        />
       </Row>
-
-      {wsKind === "existing" && (
-        <>
-          <Row title="Directory">
-            <input
-              className={field}
-              placeholder="~/dev/my-project"
-              value={(ws as { path?: string }).path ?? ""}
-              onChange={(e) =>
-                set("workspaceConfig", {
-                  kind: "existing",
-                  path: e.target.value,
-                })
-              }
-            />
-          </Row>
-          <p className="-mt-2 text-xs text-amber-500/80">
-            Edits land in your working tree immediately — uncommitted changes are real, and the
-            agent shares this directory with whatever else you&rsquo;re doing in it. A CLAUDE.md
-            above this path applies to the run.
-          </p>
-        </>
-      )}
-
-      {wsKind === "clone" && (
-        <>
-          <Row title="Repository">
-            {repoList?.configured && (
-              <select
-                className={field}
-                value={known ? repo.repoUrl : "__other__"}
-                onChange={(e) =>
-                  set("workspaceConfig", {
-                    kind: "clone",
-                    ...repo,
-                    repoUrl: e.target.value === "__other__" ? "" : e.target.value,
-                  })
-                }
-              >
-                <option value="__other__">Another repository — paste a URL</option>
-                {repoGroups.map(([owner, repos]) => (
-                  <optgroup key={owner} label={owner}>
-                    {repos.map((r) => (
-                      <option key={r.cloneUrl} value={r.cloneUrl}>
-                        {r.fullName}
-                        {r.private ? " (private)" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            )}
-            {(!repoList?.configured || !known) && (
-              <input
-                className={`${field} ${repoList?.configured ? "mt-2" : ""}`}
-                placeholder="https://github.com/you/repo.git"
-                value={repo.repoUrl ?? ""}
-                onChange={(e) =>
-                  set("workspaceConfig", {
-                    kind: "clone",
-                    ...repo,
-                    repoUrl: e.target.value,
-                  })
-                }
-              />
-            )}
-            <p className="mt-1 text-xs text-neutral-600">
-              {repoError
-                ? `Couldn't reach GitHub: ${repoError}`
-                : repoList?.configured
-                  ? `${repoList.repos.length} repositories this GITHUB_TOKEN can reach, as ${repoList.viewer}. Anything public works by URL too.`
-                  : "Set GITHUB_TOKEN to pick from your repositories. Public repos clone by URL without one."}
-            </p>
-          </Row>
-          <Row title="Base branch">
-            <input
-              className={field}
-              placeholder="main"
-              value={repo.baseBranch ?? ""}
-              onChange={(e) =>
-                set("workspaceConfig", {
-                  kind: "clone",
-                  repoUrl: repo.repoUrl ?? "",
-                  ...(e.target.value ? { baseBranch: e.target.value } : {}),
-                })
-              }
-            />
-          </Row>
-        </>
-      )}
-
-      <Row title="Overlapping runs">
-        <select
-          className={field}
-          value={draft.concurrency ?? "allow"}
-          onChange={(e) => set("concurrency", e.target.value)}
-        >
-          <option value="allow">Allow — start it anyway, in parallel</option>
-          <option value="queue">Queue — hold it and run one at a time, in order</option>
-          <option value="skip">Skip — refuse a trigger while a run is active</option>
-        </select>
-        {(draft.concurrency ?? "allow") === "allow" &&
-        (wsKind === "scratch" || wsKind === "existing") ? (
-          <p className="mt-1 rounded border border-amber-900 bg-amber-950/40 px-2 py-1.5 text-xs leading-relaxed text-amber-300">
-            Parallel runs share one directory and will overwrite each other&rsquo;s files, including
-            the webhook payload. Two ways out: set <strong>Workspace</strong> above to{" "}
-            <strong>Fresh directory</strong> if runs don&rsquo;t need what earlier runs left behind, or
-            choose <strong>Queue</strong> here if they do &mdash; one run at a time keeps the shared
-            directory safe.
-          </p>
-        ) : (
-          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-            {(draft.concurrency ?? "allow") === "skip"
-              ? "A trigger that arrives mid-run is dropped for good — two webhooks in quick succession means the second is never handled. A run waiting on an approval counts as active. If every trigger must be handled, choose Queue instead."
-              : (draft.concurrency ?? "allow") === "queue"
-                ? wsKind === "scratch" || wsKind === "existing"
-                  ? "A trigger that arrives mid-run waits and starts when the current run ends, oldest first — which is what keeps this shared directory safe. Up to 20 can wait; beyond that a trigger is dropped and shows as a refused delivery."
-                  : "A trigger that arrives mid-run waits and starts when the current run ends, oldest first. With a fresh directory per run nothing is shared, so Allow would run these in parallel with no downside — Queue only makes sense here if the runs must not overlap for some other reason. Up to 20 can wait."
-                : "Runs happen in parallel, each in its own directory."}
-          </p>
-        )}
-      </Row>
-
-      {draft.trigger === "webhook" && (
-        <Row title="Merge deliveries">
-          <div className="flex gap-2">
-            <label className="min-w-0 flex-1">
-              <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
-              <input
-                className={field}
-                placeholder="{{payload.pull_request.html_url}}"
-                value={draft.mergeKey ?? ""}
-                onChange={(e) => set("mergeKey", e.target.value || null)}
-              />
-            </label>
-            <label className="w-28 shrink-0">
-              <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
-              <input
-                type="number"
-                min={0}
-                max={3600}
-                className={field}
-                value={draft.mergeWaitSeconds ?? ""}
-                onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
-              />
-            </label>
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-            Optional. Each delivery waits this long before it runs, and another one about the same thing arriving
-            meanwhile joins it instead of starting a second run. Uses the same <code>{"{{payload.a.b}}"}</code> syntax as
-            the prompt.
-          </p>
-        </Row>
-      )}
-
-        </div>
-
-        {/* The prompt is the agent; give it a column rather than a slot in the form. */}
-        <div className="min-w-0">
-          <div className="space-y-4">
-            <Row title="Prompt" hint="What this agent does every time you run it.">
-              <textarea
-                className={`${field} h-[32rem] resize-y font-mono text-xs leading-relaxed`}
-                value={draft.prompt ?? ""}
-                onChange={(e) => set("prompt", e.target.value)}
-              />
-            </Row>
 
       <Row
         title="Model"
@@ -498,207 +274,436 @@ export function AgentEditor({
           />
         )}
       </Row>
+    </>
+  );
 
-      <Row title="Permission mode">
-        <select
-          className={field}
-          value={draft.permissionMode ?? "auto"}
-          onChange={(e) => set("permissionMode", e.target.value)}
-        >
-          {MODES.map(([v, label, desc]) => (
-            <option key={v} value={v}>
-              {label} — {desc}
-            </option>
-          ))}
-        </select>
-      </Row>
-
-      <div>
-        <label className="flex items-center gap-2 text-sm text-neutral-300">
-          <input
-            type="checkbox"
-            checked={canAsk}
-            onChange={(e) =>
-              set(
-                "disallowedTools",
-                e.target.checked
-                  ? (draft.disallowedTools ?? []).filter((t) => t !== ASK_TOOL)
-                  : [...(draft.disallowedTools ?? []), ASK_TOOL],
-              )
-            }
-          />
-          Let this agent ask me questions
-        </label>
-        <p className="mt-1 text-xs text-neutral-600">
-          {canAsk
-            ? "It can stop mid-run to ask. Nobody answering holds the run for 15 minutes before the question is denied — and on a queue or skip agent, that blocks every trigger behind it."
-            : "It must decide for itself or stop and explain, which is what an unattended run wants."}
+  return (
+    <div className="space-y-4 px-4 py-5 md:px-6">
+      {droppedEnv.length > 0 && (
+        <p className="text-xs text-amber-500/80">
+          {droppedEnv.join(", ")} {droppedEnv.length === 1 ? "was" : "were"} not copied &mdash;
+          secret values never leave the server.
         </p>
-      </div>
-
-      {/* Nothing to allow in a mode that never asks. */}
-      {toolRulesApply && (
-        <Row
-          title="Allowed tools"
-          hint={
-            mode === "locked"
-              ? "Comma separated, and the whole allowance — anything unlisted is denied. MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
-              : "Comma separated. Anything listed is auto-approved and never reaches the approval prompt, so prefer scoped rules like Bash(ls *). MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
-          }
-        >
-          <ListInput
-            key={`tools-${agent?.id ?? "new"}`}
-            placeholder="Read, Grep, mcp__linear__*"
-            value={draft.allowedTools ?? []}
-            onChange={(next) => set("allowedTools", next)}
-          />
-        </Row>
       )}
 
-      <div className="space-y-2 border-t border-neutral-800 pt-4">
-        <span className={label}>MCP servers</span>
-
-        <label className="flex items-center gap-2 text-sm text-neutral-300">
-          <input
-            type="checkbox"
-            checked={draft.inheritMachineMcp ?? true}
-            onChange={(e) => set("inheritMachineMcp", e.target.checked)}
-          />
-          Use the shared MCP servers
-        </label>
-        <p className="-mt-1 text-xs text-neutral-600">
-          The list is managed under Settings &rarr; MCP servers; this decides whether this agent gets
-          any of it. Off means none &mdash; the safe choice for an agent that doesn&rsquo;t need a browser
-          or Datadog, since a server&rsquo;s credentials go to every agent that can reach it.
-        </p>
-
-        {(draft.inheritMachineMcp ?? true) && machineMcp && (
-          <div className="space-y-1.5 pl-5">
-            <label className="flex items-start gap-2 text-sm text-neutral-300">
+      {/* The prompt is the agent: a column of its own when there is room, otherwise right under the name. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-4">
+          <div className="grid grid-cols-[1fr_12rem] gap-3">
+            <Row title="Name">
               <input
-                type="radio"
-                name="shared-mcp-pick"
-                className="mt-1"
-                checked={draft.sharedMcpPick == null}
-                onChange={() => set("sharedMcpPick", null)}
+                className={field}
+                autoFocus={!agent}
+                value={draft.name ?? ""}
+                onChange={(e) => set("name", e.target.value)}
               />
-              <span>
-                All of them
-                <span className="block text-xs text-neutral-600">
-                  {machineMcp.global.length} server{machineMcp.global.length === 1 ? "" : "s"}
-                  {machineMcp.connectors.length > 0 ? `, ${machineMcp.connectors.length} claude.ai connectors` : ", any claude.ai connectors"}
-                  , and the repo&rsquo;s .mcp.json. The only way to get connectors.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm text-neutral-300">
-              <input
-                type="radio"
-                name="shared-mcp-pick"
-                className="mt-1"
-                checked={draft.sharedMcpPick != null}
-                onChange={() => set("sharedMcpPick", draft.sharedMcpPick ?? [])}
-                disabled={machineMcp.global.length === 0}
-              />
-              <span>
-                Only these
-                <span className="block text-xs text-neutral-600">
-                  Passed to the run by name, with everything else &mdash; connectors included &mdash; kept out.
-                  {machineMcp.global.length === 0 ? " No shared servers are configured yet." : ""}
-                </span>
-              </span>
-            </label>
-            {draft.sharedMcpPick != null && (
-              <div className="flex flex-wrap gap-1.5 pl-6">
-                {machineMcp.global.map((srv) => {
-                  const on = draft.sharedMcpPick!.includes(srv.name);
-                  const h = machineMcp.health[srv.name];
-                  return (
-                    <label
-                      key={srv.name}
-                      className={`flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs ${
-                        on ? "border-neutral-500 text-neutral-100" : "border-neutral-800 text-neutral-400"
-                      }`}
-                      title={srv.detail}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={(e) =>
-                          set(
-                            "sharedMcpPick",
-                            e.target.checked
-                              ? [...draft.sharedMcpPick!, srv.name]
-                              : draft.sharedMcpPick!.filter((n) => n !== srv.name),
-                          )
-                        }
-                      />
-                      <span className="font-mono">{srv.name}</span>
-                      {h && <McpHealthDot status={h.status} />}
-                    </label>
-                  );
-                })}
-                {draft.sharedMcpPick!.filter((n) => !machineMcp.global.some((g) => g.name === n)).map((n) => (
-                  <span key={n} className="rounded border border-amber-900 px-2 py-1 font-mono text-xs text-amber-500" title="Picked, but no shared server has this name any more">
-                    {n}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <label className="flex items-center gap-2 pt-1 text-sm text-neutral-300">
-          <input
-            type="checkbox"
-            checked={draft.inheritUserSettings ?? true}
-            onChange={(e) => set("inheritUserSettings", e.target.checked)}
-          />
-          Use the shared skills and global CLAUDE.md
-        </label>
-        <p className="-mt-1 text-xs text-neutral-600">
-          Needed for the skills under Settings &rarr; Skills to be invokable. It also brings that
-          directory&rsquo;s settings.json along, including its list of pre-approved tools.
-          {preapproved && preapproved.count > 0 ? (
-            <>
-              {" "}Yours pre-approves <strong>{preapproved.count}</strong> tool rule
-              {preapproved.count === 1 ? "" : "s"}
-              {preapproved.bare.includes("Bash") ? (
-                <>
-                  {" "}&mdash; including <code>Bash</code> with no pattern, which is <strong>every shell
-                  command</strong>. An agent with this on will run those without asking, even if its
-                  permission mode is Manual.
-                </>
+            </Row>
+            <Row title="Space" hint="Groups your agents.">
+              {naming ? (
+                <input
+                  className={field}
+                  autoFocus
+                  placeholder="work"
+                  value={draft.space ?? ""}
+                  onChange={(e) => set("space", e.target.value)}
+                  onBlur={() => {
+                    const trimmed = (draft.space ?? "").trim();
+                    set("space", trimmed || DEFAULT_SPACE);
+                    if (!trimmed) setNaming(false);
+                  }}
+                />
               ) : (
-                <> that will run without asking, even if this agent&rsquo;s permission mode is Manual.</>
+                <select
+                  className={field}
+                  value={draft.space ?? DEFAULT_SPACE}
+                  onChange={(e) => {
+                    setNaming(e.target.value === "__new__");
+                    set("space", e.target.value === "__new__" ? "" : e.target.value);
+                  }}
+                >
+                  {spaceOptions.map((sp) => (
+                    <option key={sp} value={sp}>
+                      {sp}
+                    </option>
+                  ))}
+                  <option value="__new__">New space…</option>
+                </select>
               )}
-            </>
-          ) : (
-            <> Anything on that list runs without asking, even on a Manual agent.</>
-          )}
-        </p>
-
-        {(draft.inheritUserSettings ?? true) && (
-          <p className="text-xs text-neutral-500">
-            Currently {sharedSkills.length} skill{sharedSkills.length === 1 ? "" : "s"}
-            {claudeMdInfo?.exists ? ` and a ${(claudeMdInfo.size / 1024).toFixed(1)} KB global CLAUDE.md` : ""}
-            {" "}&mdash; listed under Settings &rarr; Skills.
-          </p>
-        )}
-      </div>
-
-      <Row
-        title="Environment"
-        hint="This agent's own variables. It also inherits global and space env; on a clash, these win."
-      >
-        <EnvEditor
-          key={seedRev}
-          value={draft.env ?? {}}
-          onChange={(env) => set("env", env)}
-          inherited={inheritedEnv}
-        />
-      </Row>
+            </Row>
           </div>
+
+          {!wide && promptBlock}
+
+          <Section title="Trigger">
+            <TriggerSettings agent={agent} draft={draft} set={set} hookBase={hookBase} />
+          </Section>
+
+          <Section title="Runs">
+            <Row title="Workspace" hint="The directory each run works in — its cwd, and where the webhook payload is written.">
+              <select
+                className={field}
+                value={wsKind}
+                onChange={(e) => {
+                  const kind = e.target.value;
+                  set(
+                    "workspaceConfig",
+                    kind === "clone"
+                      ? { kind: "clone", repoUrl: "" }
+                      : kind === "existing"
+                        ? { kind: "existing", path: "" }
+                        : kind === "ephemeral"
+                          ? { kind: "ephemeral" }
+                          : { kind: "scratch" },
+                  );
+                }}
+              >
+                <option value="ephemeral">Fresh directory — a new empty folder per run, cleaned up later</option>
+                <option value="scratch">Scratch directory — one folder this agent reuses every run</option>
+                <option value="existing">Existing directory — works in place in a folder you name</option>
+                <option value="clone">Git clone — new clone and branch per run, kept for review</option>
+              </select>
+              <p className="mt-1 text-xs text-neutral-600">
+                {wsKind === "scratch"
+                  ? "One directory per agent, reused by every run of it and shared with no other agent. Files left behind are still there next time, so an agent can keep notes, caches, or a checkout it manages itself."
+                  : wsKind === "ephemeral"
+                    ? "A new directory per run, removed a while after the run completes — how long is under Settings. Nothing carries over, which is what lets several runs of this agent work at once."
+                    : wsKind === "existing"
+                      ? "The agent edits that directory directly, on whatever branch is checked out. Nothing isolates it and nothing cleans it up."
+                      : "Isolated per run. The clone stays on disk so you can review the diff and open a PR from the run view."}
+              </p>
+            </Row>
+
+            {wsKind === "existing" && (
+              <>
+                <Row title="Directory">
+                  <input
+                    className={field}
+                    placeholder="~/dev/my-project"
+                    value={(ws as { path?: string }).path ?? ""}
+                    onChange={(e) =>
+                      set("workspaceConfig", {
+                        kind: "existing",
+                        path: e.target.value,
+                      })
+                    }
+                  />
+                </Row>
+                <p className="-mt-2 text-xs text-amber-500/80">
+                  Edits land in your working tree immediately — uncommitted changes are real, and the
+                  agent shares this directory with whatever else you&rsquo;re doing in it. A CLAUDE.md
+                  above this path applies to the run.
+                </p>
+              </>
+            )}
+
+            {wsKind === "clone" && (
+              <>
+                <Row title="Repository">
+                  {repoList?.configured && (
+                    <select
+                      className={field}
+                      value={known ? repo.repoUrl : "__other__"}
+                      onChange={(e) =>
+                        set("workspaceConfig", {
+                          kind: "clone",
+                          ...repo,
+                          repoUrl: e.target.value === "__other__" ? "" : e.target.value,
+                        })
+                      }
+                    >
+                      <option value="__other__">Another repository — paste a URL</option>
+                      {repoGroups.map(([owner, repos]) => (
+                        <optgroup key={owner} label={owner}>
+                          {repos.map((r) => (
+                            <option key={r.cloneUrl} value={r.cloneUrl}>
+                              {r.fullName}
+                              {r.private ? " (private)" : ""}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  )}
+                  {(!repoList?.configured || !known) && (
+                    <input
+                      className={`${field} ${repoList?.configured ? "mt-2" : ""}`}
+                      placeholder="https://github.com/you/repo.git"
+                      value={repo.repoUrl ?? ""}
+                      onChange={(e) =>
+                        set("workspaceConfig", {
+                          kind: "clone",
+                          ...repo,
+                          repoUrl: e.target.value,
+                        })
+                      }
+                    />
+                  )}
+                  <p className="mt-1 text-xs text-neutral-600">
+                    {repoError
+                      ? `Couldn't reach GitHub: ${repoError}`
+                      : repoList?.configured
+                        ? `${repoList.repos.length} repositories this GITHUB_TOKEN can reach, as ${repoList.viewer}. Anything public works by URL too.`
+                        : "Set GITHUB_TOKEN to pick from your repositories. Public repos clone by URL without one."}
+                  </p>
+                </Row>
+                <Row title="Base branch">
+                  <input
+                    className={field}
+                    placeholder="main"
+                    value={repo.baseBranch ?? ""}
+                    onChange={(e) =>
+                      set("workspaceConfig", {
+                        kind: "clone",
+                        repoUrl: repo.repoUrl ?? "",
+                        ...(e.target.value ? { baseBranch: e.target.value } : {}),
+                      })
+                    }
+                  />
+                </Row>
+              </>
+            )}
+
+            <Row title="Overlapping runs">
+              <select
+                className={field}
+                value={draft.concurrency ?? "allow"}
+                onChange={(e) => set("concurrency", e.target.value)}
+              >
+                <option value="allow">Allow — start it anyway, in parallel</option>
+                <option value="queue">Queue — hold it and run one at a time, in order</option>
+                <option value="skip">Skip — refuse a trigger while a run is active</option>
+              </select>
+              {(draft.concurrency ?? "allow") === "allow" &&
+              (wsKind === "scratch" || wsKind === "existing") ? (
+                <p className="mt-1 rounded border border-amber-900 bg-amber-950/40 px-2 py-1.5 text-xs leading-relaxed text-amber-300">
+                  Parallel runs share one directory and will overwrite each other&rsquo;s files, including
+                  the webhook payload. Two ways out: set <strong>Workspace</strong> above to{" "}
+                  <strong>Fresh directory</strong> if runs don&rsquo;t need what earlier runs left behind, or
+                  choose <strong>Queue</strong> here if they do &mdash; one run at a time keeps the shared
+                  directory safe.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                  {(draft.concurrency ?? "allow") === "skip"
+                    ? "A trigger that arrives mid-run is dropped for good — two webhooks in quick succession means the second is never handled. A run waiting on an approval counts as active. If every trigger must be handled, choose Queue instead."
+                    : (draft.concurrency ?? "allow") === "queue"
+                      ? wsKind === "scratch" || wsKind === "existing"
+                        ? "A trigger that arrives mid-run waits and starts when the current run ends, oldest first — which is what keeps this shared directory safe. Up to 20 can wait; beyond that a trigger is dropped and shows as a refused delivery."
+                        : "A trigger that arrives mid-run waits and starts when the current run ends, oldest first. With a fresh directory per run nothing is shared, so Allow would run these in parallel with no downside — Queue only makes sense here if the runs must not overlap for some other reason. Up to 20 can wait."
+                      : "Runs happen in parallel, each in its own directory."}
+                </p>
+              )}
+            </Row>
+          </Section>
+        </div>
+
+        <div className="min-w-0 space-y-4">
+          {wide && promptBlock}
+
+          <Section title="Permissions">
+            <Row title="Permission mode">
+              <select
+                className={field}
+                value={draft.permissionMode ?? "auto"}
+                onChange={(e) => set("permissionMode", e.target.value)}
+              >
+                {MODES.map(([v, label, desc]) => (
+                  <option key={v} value={v}>
+                    {label} — {desc}
+                  </option>
+                ))}
+              </select>
+            </Row>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={canAsk}
+                  onChange={(e) =>
+                    set(
+                      "disallowedTools",
+                      e.target.checked
+                        ? (draft.disallowedTools ?? []).filter((t) => t !== ASK_TOOL)
+                        : [...(draft.disallowedTools ?? []), ASK_TOOL],
+                    )
+                  }
+                />
+                Let this agent ask me questions
+              </label>
+              <p className="mt-1 text-xs text-neutral-600">
+                {canAsk
+                  ? "It can stop mid-run to ask. Nobody answering holds the run for 15 minutes before the question is denied — and on a queue or skip agent, that blocks every trigger behind it."
+                  : "It must decide for itself or stop and explain, which is what an unattended run wants."}
+              </p>
+            </div>
+
+            {/* Nothing to allow in a mode that never asks. */}
+            {toolRulesApply && (
+              <Row
+                title="Allowed tools"
+                hint={
+                  mode === "locked"
+                    ? "Comma separated, and the whole allowance — anything unlisted is denied. MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
+                    : "Comma separated. Anything listed is auto-approved and never reaches the approval prompt, so prefer scoped rules like Bash(ls *). MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
+                }
+              >
+                <ListInput
+                  key={`tools-${agent?.id ?? "new"}`}
+                  placeholder="Read, Grep, mcp__linear__*"
+                  value={draft.allowedTools ?? []}
+                  onChange={(next) => set("allowedTools", next)}
+                />
+              </Row>
+            )}
+          </Section>
+
+          <Section title="Shared from Settings">
+            <div className="space-y-2">
+
+              <label className="flex items-center gap-2 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={draft.inheritMachineMcp ?? true}
+                  onChange={(e) => set("inheritMachineMcp", e.target.checked)}
+                />
+                Use the shared MCP servers
+              </label>
+              <p className="-mt-1 text-xs text-neutral-600">
+                The list is managed under Settings &rarr; MCP servers; this decides whether this agent gets
+                any of it. Off means none &mdash; the safe choice for an agent that doesn&rsquo;t need a browser
+                or Datadog, since a server&rsquo;s credentials go to every agent that can reach it.
+              </p>
+
+              {(draft.inheritMachineMcp ?? true) && machineMcp && (
+                <div className="space-y-1.5 pl-5">
+                  <label className="flex items-start gap-2 text-sm text-neutral-300">
+                    <input
+                      type="radio"
+                      name="shared-mcp-pick"
+                      className="mt-1"
+                      checked={draft.sharedMcpPick == null}
+                      onChange={() => set("sharedMcpPick", null)}
+                    />
+                    <span>
+                      All of them
+                      <span className="block text-xs text-neutral-600">
+                        {machineMcp.global.length} server{machineMcp.global.length === 1 ? "" : "s"}
+                        {machineMcp.connectors.length > 0 ? `, ${machineMcp.connectors.length} claude.ai connectors` : ", any claude.ai connectors"}
+                        , and the repo&rsquo;s .mcp.json. The only way to get connectors.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-neutral-300">
+                    <input
+                      type="radio"
+                      name="shared-mcp-pick"
+                      className="mt-1"
+                      checked={draft.sharedMcpPick != null}
+                      onChange={() => set("sharedMcpPick", draft.sharedMcpPick ?? [])}
+                      disabled={machineMcp.global.length === 0}
+                    />
+                    <span>
+                      Only these
+                      <span className="block text-xs text-neutral-600">
+                        Passed to the run by name, with everything else &mdash; connectors included &mdash; kept out.
+                        {machineMcp.global.length === 0 ? " No shared servers are configured yet." : ""}
+                      </span>
+                    </span>
+                  </label>
+                  {draft.sharedMcpPick != null && (
+                    <div className="flex flex-wrap gap-1.5 pl-6">
+                      {machineMcp.global.map((srv) => {
+                        const on = draft.sharedMcpPick!.includes(srv.name);
+                        const h = machineMcp.health[srv.name];
+                        return (
+                          <label
+                            key={srv.name}
+                            className={`flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs ${
+                              on ? "border-neutral-500 text-neutral-100" : "border-neutral-800 text-neutral-400"
+                            }`}
+                            title={srv.detail}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={(e) =>
+                                set(
+                                  "sharedMcpPick",
+                                  e.target.checked
+                                    ? [...draft.sharedMcpPick!, srv.name]
+                                    : draft.sharedMcpPick!.filter((n) => n !== srv.name),
+                                )
+                              }
+                            />
+                            <span className="font-mono">{srv.name}</span>
+                            {h && <McpHealthDot status={h.status} />}
+                          </label>
+                        );
+                      })}
+                      {draft.sharedMcpPick!.filter((n) => !machineMcp.global.some((g) => g.name === n)).map((n) => (
+                        <span key={n} className="rounded border border-amber-900 px-2 py-1 font-mono text-xs text-amber-500" title="Picked, but no shared server has this name any more">
+                          {n}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 pt-1 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={draft.inheritUserSettings ?? true}
+                  onChange={(e) => set("inheritUserSettings", e.target.checked)}
+                />
+                Use the shared skills and global CLAUDE.md
+              </label>
+              <p className="-mt-1 text-xs text-neutral-600">
+                Needed for the skills under Settings &rarr; Skills to be invokable. It also brings that
+                directory&rsquo;s settings.json along, including its list of pre-approved tools.
+                {preapproved && preapproved.count > 0 ? (
+                  <>
+                    {" "}Yours pre-approves <strong>{preapproved.count}</strong> tool rule
+                    {preapproved.count === 1 ? "" : "s"}
+                    {preapproved.bare.includes("Bash") ? (
+                      <>
+                        {" "}&mdash; including <code>Bash</code> with no pattern, which is <strong>every shell
+                        command</strong>. An agent with this on will run those without asking, even if its
+                        permission mode is Manual.
+                      </>
+                    ) : (
+                      <> that will run without asking, even if this agent&rsquo;s permission mode is Manual.</>
+                    )}
+                  </>
+                ) : (
+                  <> Anything on that list runs without asking, even on a Manual agent.</>
+                )}
+              </p>
+
+              {(draft.inheritUserSettings ?? true) && (
+                <p className="text-xs text-neutral-500">
+                  Currently {sharedSkills.length} skill{sharedSkills.length === 1 ? "" : "s"}
+                  {claudeMdInfo?.exists ? ` and a ${(claudeMdInfo.size / 1024).toFixed(1)} KB global CLAUDE.md` : ""}
+                  {" "}&mdash; listed under Settings &rarr; Skills.
+                </p>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Environment">
+            <div>
+              <EnvEditor
+                key={seedRev}
+                value={draft.env ?? {}}
+                onChange={(env) => set("env", env)}
+                inherited={inheritedEnv}
+              />
+              <p className="mt-1 text-xs text-neutral-600">
+                This agent's own variables. It also inherits global and space env; on a clash, these win.
+              </p>
+            </div>
+          </Section>
         </div>
       </div>
 
