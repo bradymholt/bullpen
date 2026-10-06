@@ -879,6 +879,12 @@ export function App() {
   useEffect(() => {
     document.title = waitingAgents > 0 ? `Bullpen (${waitingAgents})` : "Bullpen";
   }, [waitingAgents]);
+  // The agent cards read `stats.awaiting`, which otherwise only moves when a run starts or ends.
+  const waitingSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (waitingSeen.current !== null && waitingSeen.current !== waitingAgents) setRefreshTick((t) => t + 1);
+    waitingSeen.current = waitingAgents;
+  }, [waitingAgents]);
 
   /** Paused means nothing starts it — not a webhook, a cron fire, a poll, or the Run button. */
   async function setPaused(a: Agent, paused: boolean) {
@@ -1185,6 +1191,7 @@ export function App() {
         >
         {visibleAgents.map((a, i) => {
           const live = stats?.active[a.id] ?? 0;
+          const waiting = stats?.awaiting[a.id] ?? 0;
           const last = stats?.latest[a.id];
           const dropLine = dragId !== null && dropAt === i;
           return (
@@ -1206,9 +1213,11 @@ export function App() {
               onDragEnd={endDrag}
               onClick={() => setView({ kind: "detail", id: a.id })}
               className={`relative mt-2 block w-full shrink-0 rounded border p-3 text-left transition ${
-                selectedAgentId === a.id
-                  ? "border-neutral-600 bg-neutral-900"
-                  : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700"
+                waiting > 0
+                  ? "border-amber-500/70 bg-amber-500/5 hover:border-amber-400"
+                  : selectedAgentId === a.id
+                    ? "border-neutral-600 bg-neutral-900"
+                    : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700"
               } ${a.enabled ? "" : "opacity-60"} ${dragId === a.id ? "opacity-30" : ""} ${
                 dropLine ? "before:absolute before:-top-1.5 before:left-0 before:right-0 before:h-0.5 before:rounded before:bg-sky-400" : ""
               }`}
@@ -1226,7 +1235,12 @@ export function App() {
                       <span className="truncate">{triggerLabel(a)}</span>
                     </span>
                     <span className="shrink-0 text-neutral-700">·</span>
-                    {!a.enabled && live === 0 ? (
+                    {waiting > 0 ? (
+                      <span className="shrink-0 font-medium text-amber-400">
+                        <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400 align-middle" />
+                        {waiting > 1 ? `${waiting} need approval` : "needs approval"}
+                      </span>
+                    ) : !a.enabled && live === 0 ? (
                       <span className="shrink-0 text-amber-500">paused</span>
                     ) : live > 0 ? (
                       <span className="shrink-0 text-sky-400">
