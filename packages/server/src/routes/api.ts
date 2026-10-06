@@ -68,6 +68,7 @@ import {
   setRunPermissionMode,
   QueueFullError,
   requestRun,
+  type RunRequest,
   stopRun,
   sweepWorkspaces,
 } from "../runs/RunManager.ts";
@@ -352,6 +353,14 @@ function renderRunLabel(agent: Agent, payload: unknown): string | undefined {
   return rendered.length > 0 ? rendered.slice(0, 200) : undefined;
 }
 
+/** A key that renders blank can't be matched against anything, so that delivery runs on its own. */
+function mergeFor(agent: Agent, payload: unknown): RunRequest["merge"] {
+  const template = agent.mergeKey?.trim();
+  if (!template || !agent.mergeWaitSeconds) return undefined;
+  const key = renderPrompt(template, payload).trim();
+  return key ? { key, waitSeconds: agent.mergeWaitSeconds } : undefined;
+}
+
 type DeliveryOutcome =
   | { ok: true; agentId: string; runId: string; duplicate?: boolean; queued?: boolean }
   | { ok: false; agentId: string; status: number; reason: string };
@@ -395,9 +404,14 @@ function deliverToAgent(opts: {
     return { ok: false, agentId, status: 409, reason: "agent already has an active run" };
   }
 
-  let started: { runId: string; queued: boolean };
+  let started: ReturnType<typeof requestRun>;
+  const merge = mergeFor(agent, payload);
   try {
-    started = requestRun({ agent, trigger: "webhook", prompt: decision.prompt, rawPayload: rawBody, ...(label ? { label } : {}) });
+    started = requestRun({
+      agent, trigger: "webhook", prompt: decision.prompt, rawPayload: rawBody,
+      ...(label ? { label } : {}),
+      ...(merge ? { merge } : {}),
+    });
   } catch (e) {
     if (!(e instanceof QueueFullError)) throw e;
     recordDelivery({ agentId, sourceIp, deliveryKey, event: shownEvent, label, viaSpace, accepted: false, reason: "queue full" });
@@ -405,7 +419,7 @@ function deliverToAgent(opts: {
   }
   recordDelivery({
     agentId, sourceIp, deliveryKey, event: shownEvent, label, viaSpace, accepted: true, runId: started.runId,
-    ...(started.queued ? { reason: "queued" } : {}),
+    ...(started.merged ? { reason: "merged" } : started.queued ? { reason: merge ? "waiting to merge" : "queued" } : {}),
   });
   return { ok: true, agentId, runId: started.runId, queued: started.queued };
 }

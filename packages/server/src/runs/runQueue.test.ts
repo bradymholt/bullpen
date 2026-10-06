@@ -9,7 +9,8 @@ process.env.BULLPEN_DATA = mkdtempSync(join(tmpdir(), "bullpen-test-"));
 const { db } = await import("../db/index.ts");
 const { agents, runs } = await import("../db/schema.ts");
 const { runMigrations } = await import("../db/migrate.ts");
-const { QUEUE_DEPTH, QueueFullError, cancelQueued, drainQueue, requestRun } = await import("./RunManager.ts");
+const { QUEUE_DEPTH, QueueFullError, cancelQueued, drainQueue, releaseWaiting, requestRun } = await import("./RunManager.ts");
+const { readFileSync } = await import("node:fs");
 
 runMigrations();
 const agent = () => db.select().from(agents).all()[0]!;
@@ -61,5 +62,34 @@ describe("queue concurrency", () => {
     expect(cancelQueued(runId)).toBe(true);
     expect(db.select().from(runs).all().some((r) => r.id === runId)).toBe(false);
     expect(cancelQueued("active")).toBe(false);
+  });
+});
+
+describe("merging deliveries", () => {
+  const merge = (key: string) => ({ key, waitSeconds: 60 });
+  const spooled = (id: string) => JSON.parse(readFileSync(join(process.env.BULLPEN_DATA!, "queue", `${id}.json`), "utf8")).rawPayload;
+
+  it("folds a second delivery with the same key into the waiting run, keeping the latest payload", () => {
+    const first = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "one", rawPayload: "P1", merge: merge("pr/1") });
+    const second = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "two", rawPayload: "P2", merge: merge("pr/1") });
+    const other = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "three", rawPayload: "P3", merge: merge("pr/2") });
+
+    expect(second).toEqual({ runId: first.runId, queued: true, merged: true });
+    expect(other.runId).not.toBe(first.runId);
+    expect(spooled(first.runId)).toBe("P2");
+    expect(db.select().from(runs).all().find((r) => r.id === first.runId)?.prompt).toBe("two");
+  });
+
+  it("leaves a waiting run alone until its window ends, then hands it to the queue", () => {
+    const { runId } = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", merge: merge("pr/1") });
+    db.delete(runs).where(eq(runs.id, "active")).run();
+    const started: string[] = [];
+    const start = (_: unknown, id: string) => (started.push(id), id);
+
+    drainQueue("q1", start);
+    expect(started).toEqual([]);
+
+    releaseWaiting(runId, start);
+    expect(started).toEqual([runId]);
   });
 });

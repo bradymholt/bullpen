@@ -51,6 +51,10 @@ export const agents = sqliteTable("agents", {
   filters: text("filters", { mode: "json" }).notNull().default(sql`'[]'`),
   /** Template rendered per run to name it in lists, e.g. "{{payload.repository.full_name}} #{{payload.number}}". */
   labelTemplate: text("label_template"),
+  /** Template naming what a delivery is about; deliveries that render the same key while one waits become one run. */
+  mergeKey: text("merge_key"),
+  /** How long a delivery waits before starting, so later ones with the same mergeKey can join it. */
+  mergeWaitSeconds: integer("merge_wait_seconds"),
   webhookSignatureHeader: text("webhook_signature_header"),
   webhookSignaturePrefix: text("webhook_signature_prefix"),
   concurrency: text("concurrency").notNull().default("skip"),
@@ -111,6 +115,10 @@ export const runs = sqliteTable(
     costUsd: integer("cost_usd"),
     /** What this run is about, from the agent's labelTemplate. Null when unset. */
     label: text("label"),
+    /** The rendered mergeKey of a run still waiting out its window. */
+    mergeKey: text("merge_key"),
+    /** Set while a queued run waits out its merge window; drainQueue leaves it alone until then. */
+    startAfter: integer("start_after"),
     numTurns: integer("num_turns"),
     error: text("error"),
     startedAt: integer("started_at").notNull().default(now),

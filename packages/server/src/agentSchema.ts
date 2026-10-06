@@ -90,6 +90,8 @@ const fields = {
   filterValues: z.array(z.string().max(200)).max(100),
   filters: z.array(filterConditionSchema).max(30),
   labelTemplate: z.string().max(300).nullish(),
+  mergeKey: z.string().max(300).nullish(),
+  mergeWaitSeconds: z.number().int().min(0).max(3600).nullish(),
   webhookSignatureHeader: z.string().max(120).nullish(),
   webhookSignaturePrefix: z.string().max(40).nullish(),
   webhookEvents: z.array(z.string()),
@@ -134,6 +136,8 @@ export const AGENT_DEFAULTS = {
   filterValues: [],
   filters: [],
   labelTemplate: null,
+  mergeKey: null,
+  mergeWaitSeconds: null,
   concurrency: "allow",
   enabled: true,
 } as const;

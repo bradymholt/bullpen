@@ -146,6 +146,14 @@ a webhook delivery recorded is the id that eventually runs. Depth is capped at `
 beyond it a trigger is refused and recorded as a `queue full` delivery drop. `queued` is not an
 active status: it must never count toward `agentHasActiveRun`, or the queue would block itself.
 
+**Merged deliveries are queued rows with a `startAfter`.** An agent with `mergeKey` and
+`mergeWaitSeconds` parks each webhook delivery as a `queued` row carrying the rendered key; a
+later one with the same key overwrites that row's spool and prompt rather than adding a run —
+GitHub sends two `review_requested` for one person-plus-team request, and each used to be its own
+run. `drainQueue()` skips a row while `startAfter` is set; a timer clears it (rescheduled at boot),
+then a `queue` agent's run waits its turn and any other starts at once. A key that renders blank
+runs unmerged.
+
 **New agents default to `allow` + `ephemeral`, and the two go together.** A dropped trigger is
 lost for good — there is no queue — so `skip` silently loses the second of two webhooks that land
 close together. Running in parallel is only safe when runs do not share a directory, which is why

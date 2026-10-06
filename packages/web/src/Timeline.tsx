@@ -131,6 +131,8 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
       });
     } else if (e.type === "run.interrupted") {
       items.push({ key: k, kind: "error", body: `Interrupted — ${e.payload.reason}` });
+    } else if (e.type === "run.merged") {
+      items.push({ key: k, kind: "meta", body: "Another delivery for the same thing arrived — running on the latest one" });
     } else if (e.type === "run.restarted") {
       items.push({
         key: k,

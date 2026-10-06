@@ -2613,7 +2613,11 @@ export function App() {
               {run.branch && <span className="font-mono text-xs text-neutral-500">{run.branch}</span>}
               {run.numTurns != null && <span className="text-xs text-neutral-500">{run.numTurns} turns</span>}
               {run.status === "queued" && (
-                <span className="text-xs text-neutral-500">starts when the current run ends</span>
+                <span className="text-xs text-neutral-500">
+                  {run.startAfter != null
+                    ? `waiting for more deliveries until ${new Date(run.startAfter * 1000).toLocaleTimeString()}`
+                    : "starts when the current run ends"}
+                </span>
               )}
               {took(run) && <span className="text-xs text-neutral-500">{took(run)}</span>}
               {metered && run.costUsd != null && run.costUsd > 0 && (

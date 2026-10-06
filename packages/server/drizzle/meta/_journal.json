@@ -176,6 +176,13 @@
       "when": 1791224975170,
       "tag": "0024_brown_wallow",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791312180542,
+      "tag": "0025_loud_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }
