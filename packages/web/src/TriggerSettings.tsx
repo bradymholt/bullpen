@@ -109,7 +109,7 @@ const KINDS: { kind: TriggerKind; title: string; hint: string; icon: React.React
   {
     kind: "webhook",
     title: "Webhook",
-    hint: "Run when GitHub, Slack, a bot or your own code POSTs",
+    hint: "Run when GitHub, Slack or your own code calls it",
     icon: (
       <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M6 4 2.5 8 6 12M10 4l3.5 4-3.5 4" strokeLinecap="round" strokeLinejoin="round" />
@@ -560,7 +560,7 @@ export function TriggerSettings({
               type="button"
               onClick={() => pick(k.kind)}
               aria-pressed={selected}
-              className={`rounded-lg border px-3 py-2.5 text-left transition ${
+              className={`flex flex-col rounded-lg border px-3 py-2.5 text-left transition ${
                 selected
                   ? "border-neutral-400 bg-neutral-900"
                   : "border-neutral-800 bg-neutral-950 hover:border-neutral-700 hover:bg-neutral-900/50"

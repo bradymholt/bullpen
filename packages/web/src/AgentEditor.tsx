@@ -567,7 +567,14 @@ export function AgentEditor({
                 so leave this off unless the agent needs one.
               </p>
 
-              {(draft.inheritMachineMcp ?? true) && machineMcp && (
+              {(draft.inheritMachineMcp ?? true) && machineMcp && machineMcp.global.length === 0 && draft.sharedMcpPick == null && (
+                <p className="pl-5 text-xs text-neutral-600">
+                  No shared servers yet, so this brings only{" "}
+                  {machineMcp.connectors.length > 0 ? `${machineMcp.connectors.length} claude.ai connectors` : "any claude.ai connectors"}
+                  {" "}and the repo&rsquo;s .mcp.json.
+                </p>
+              )}
+              {(draft.inheritMachineMcp ?? true) && machineMcp && (machineMcp.global.length > 0 || draft.sharedMcpPick != null) && (
                 <div className="space-y-1.5 pl-5">
                   <label className="flex items-start gap-2 text-sm text-neutral-300">
                     <input
