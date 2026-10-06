@@ -256,7 +256,12 @@ export const api = {
   cronPreview: (cron: string, tz: string | null) =>
     fetch(`/api/cron/preview?cron=${encodeURIComponent(cron)}${tz ? `&tz=${encodeURIComponent(tz)}` : ""}`).then(json<{ next: string[] }>),
   runArtifacts: (runId: string) => fetch(`/api/runs/${runId}/artifacts`).then(json<Artifact[]>),
-  runsFor: (agentId: string) => fetch(`/api/runs?agentId=${agentId}`).then(json<Run[]>),
+  runsFor: (agentId: string, filter: { status?: string; since?: number } = {}) => {
+    const q = new URLSearchParams({ agentId });
+    if (filter.status) q.set("status", filter.status);
+    if (filter.since) q.set("since", String(filter.since));
+    return fetch(`/api/runs?${q}`).then(json<Run[]>);
+  },
   runs: () => fetch("/api/runs").then(json<Run[]>),
   stats: (space?: string | null) => fetch(space ? `/api/stats?space=${encodeURIComponent(space)}` : "/api/stats").then(json<Stats>),
   spaceDeliveries: (space: string) =>

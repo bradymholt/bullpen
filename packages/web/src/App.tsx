@@ -641,6 +641,7 @@ export function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   // null until fetched: an empty list would flash "nothing has run" before the answer arrives.
   const [agentRuns, setAgentRuns] = useState<Run[] | null>(null);
+  const [runFilter, setRunFilter] = useState<{ status: string; days: number }>({ status: "", days: 0 });
   const [drops, setDrops] = useState<Delivery[]>([]);
   const [spaceDeliveries, setSpaceDeliveries] = useState<Delivery[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -761,8 +762,12 @@ export function App() {
   useEffect(() => {
     setAgentRuns(null);
     if (detailId === null) return;
-    void api.runsFor(detailId).then(setAgentRuns).catch(() => setAgentRuns([]));
-  }, [detailId, runs]);
+    const since = runFilter.days > 0 ? Math.floor(Date.now() / 1000) - runFilter.days * 86_400 : undefined;
+    void api
+      .runsFor(detailId, { status: runFilter.status, ...(since ? { since } : {}) })
+      .then(setAgentRuns)
+      .catch(() => setAgentRuns([]));
+  }, [detailId, runs, runFilter]);
 
   // Refetched when runs change so a delivery that just fired shows up without a reload.
   useEffect(() => {
@@ -1494,14 +1499,39 @@ export function App() {
 
               <div className="grid min-w-0 content-start gap-8">
               <section className="min-w-0">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  Runs
-                </h3>
+                <div className="flex items-baseline gap-3">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Runs
+                  </h3>
+                  <select
+                    value={runFilter.status}
+                    onChange={(e) => setRunFilter((f) => ({ ...f, status: e.target.value }))}
+                    className="rounded border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-xs text-neutral-400"
+                  >
+                    <option value="">Any status</option>
+                    <option value="failed">Failed</option>
+                    <option value="completed">Completed</option>
+                    <option value="running,awaiting_approval,queued">Active</option>
+                    <option value="cancelled,interrupted">Stopped</option>
+                  </select>
+                  <select
+                    value={runFilter.days}
+                    onChange={(e) => setRunFilter((f) => ({ ...f, days: Number(e.target.value) }))}
+                    className="rounded border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-xs text-neutral-400"
+                  >
+                    <option value={0}>Any time</option>
+                    <option value={1}>Last 24 hours</option>
+                    <option value={7}>Last 7 days</option>
+                    <option value={30}>Last 30 days</option>
+                  </select>
+                </div>
                 {agentRuns === null ? null : agentRuns.length === 0 ? (
-                  <p className="mt-2 text-sm text-neutral-600">Nothing has run yet.</p>
+                  <p className="mt-2 text-sm text-neutral-600">
+                    {runFilter.status || runFilter.days ? "No runs match." : "Nothing has run yet."}
+                  </p>
                 ) : (
                   <ul className="mt-2 space-y-1">
-                    {agentRuns.slice(0, 15).map((r) => (
+                    {agentRuns.map((r) => (
                       <li key={r.id}>
                         <button
                           onClick={() => setView({ kind: "run", id: r.id })}
