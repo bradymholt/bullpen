@@ -626,10 +626,9 @@ export function TriggerSettings({
       {kind === "poll" && (
         <div className="space-y-3 rounded-lg border border-neutral-800 p-3">
           <p className="text-xs leading-relaxed text-neutral-500">
-            Bullpen fetches this URL on the schedule below and hashes the response. The agent runs
-            only when that hash changes, so a quiet endpoint costs nothing. The first check just
-            records what&rsquo;s there — it never fires on the backlog. Outbound only: nothing needs
-            to reach this machine.
+            The agent runs only when the response changes, so a quiet endpoint costs nothing. The
+            first check just records what&rsquo;s there. Outbound only: nothing needs to reach this
+            machine.
           </p>
 
           <div>
@@ -1133,9 +1132,8 @@ export function TriggerSettings({
               </label>
             </div>
             <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-              Optional. Each delivery waits this long before it runs, and another one about the same thing arriving
-              meanwhile joins it instead of starting a second run. Uses the same <code>{"{{payload.a.b}}"}</code> syntax as
-              the prompt.
+              Optional. A delivery waits this long, and any with the same key that arrive meanwhile join its run.
+              Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
             </p>
           </div>
 
@@ -1175,8 +1173,7 @@ export function TriggerSettings({
                   onChange={(e) => set("labelTemplate", e.target.value || null)}
                 />
                 <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-                  Optional label beside each run in lists, from the delivery &mdash; same{" "}
-                  <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
+                  Shown beside each run in lists. Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
                 </p>
               </div>
             )}
