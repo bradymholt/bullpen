@@ -234,7 +234,7 @@ export function AgentEditor({
 
   const promptBlock = (
     <>
-      <Row title="Prompt" hint="What this agent does every time you run it.">
+      <Row title="Prompt">
         <textarea
           className={`${field} field-sizing-content min-h-52 max-h-[70vh] resize-y font-mono text-xs leading-relaxed`}
           value={draft.prompt ?? ""}
@@ -244,11 +244,7 @@ export function AgentEditor({
 
       <Row
         title="Model"
-        hint={
-          knownModel
-            ? "Aliases follow Anthropic's current model in that tier; a pinned id never moves."
-            : "Any model string Claude Code accepts."
-        }
+        hint={knownModel ? undefined : "Any model string Claude Code accepts."}
       >
         <select
           className={field}
@@ -298,7 +294,7 @@ export function AgentEditor({
                 onChange={(e) => set("name", e.target.value)}
               />
             </Row>
-            <Row title="Space" hint="Groups your agents.">
+            <Row title="Space">
               {naming ? (
                 <input
                   className={field}
@@ -339,7 +335,7 @@ export function AgentEditor({
           </Section>
 
           <Section title="Runs">
-            <Row title="Workspace" hint="The directory each run works in — its cwd, and where the webhook payload is written.">
+            <Row title="Workspace">
               <select
                 className={field}
                 value={wsKind}
@@ -362,15 +358,15 @@ export function AgentEditor({
                 <option value="existing">Existing directory — works in place in a folder you name</option>
                 <option value="clone">Git clone — new clone and branch per run, kept for review</option>
               </select>
-              <p className="mt-1 text-xs text-neutral-600">
-                {wsKind === "scratch"
-                  ? "One directory per agent, reused by every run of it and shared with no other agent. Files left behind are still there next time, so an agent can keep notes, caches, or a checkout it manages itself."
-                  : wsKind === "ephemeral"
-                    ? "A new directory per run, removed a while after the run completes — how long is under Settings. Nothing carries over, which is what lets several runs of this agent work at once."
-                    : wsKind === "existing"
-                      ? "The agent edits that directory directly, on whatever branch is checked out. Nothing isolates it and nothing cleans it up."
-                      : "Isolated per run. The clone stays on disk so you can review the diff and open a PR from the run view."}
-              </p>
+              {wsKind !== "existing" && (
+                <p className="mt-1 text-xs text-neutral-600">
+                  {wsKind === "scratch"
+                    ? "Files left behind are there next time, so the agent can keep notes, caches or its own checkout."
+                    : wsKind === "ephemeral"
+                      ? "Nothing carries over, so runs can overlap. Removed a while after the run completes; how long is under Settings."
+                      : "Kept on disk so you can review the diff and open a PR from the run view."}
+                </p>
+              )}
             </Row>
 
             {wsKind === "existing" && (
@@ -389,9 +385,8 @@ export function AgentEditor({
                   />
                 </Row>
                 <p className="-mt-2 text-xs text-amber-500/80">
-                  Edits land in your working tree immediately — uncommitted changes are real, and the
-                  agent shares this directory with whatever else you&rsquo;re doing in it. A CLAUDE.md
-                  above this path applies to the run.
+                  The agent edits this directory in place, on whatever branch is checked out, and
+                  nothing cleans up after it. A CLAUDE.md above this path applies to the run.
                 </p>
               </>
             )}
@@ -476,21 +471,19 @@ export function AgentEditor({
               {(draft.concurrency ?? "allow") === "allow" &&
               (wsKind === "scratch" || wsKind === "existing") ? (
                 <p className="mt-1 rounded border border-amber-900 bg-amber-950/40 px-2 py-1.5 text-xs leading-relaxed text-amber-300">
-                  Parallel runs share one directory and will overwrite each other&rsquo;s files, including
-                  the webhook payload. Two ways out: set <strong>Workspace</strong> above to{" "}
-                  <strong>Fresh directory</strong> if runs don&rsquo;t need what earlier runs left behind, or
-                  choose <strong>Queue</strong> here if they do &mdash; one run at a time keeps the shared
-                  directory safe.
+                  Parallel runs share this directory and overwrite each other&rsquo;s files, including the
+                  webhook payload. Use a <strong>Fresh directory</strong>, or <strong>Queue</strong> to run one
+                  at a time.
                 </p>
               ) : (
                 <p className="mt-1 text-xs leading-relaxed text-neutral-600">
                   {(draft.concurrency ?? "allow") === "skip"
-                    ? "A trigger that arrives mid-run is dropped for good — two webhooks in quick succession means the second is never handled. A run waiting on an approval counts as active. If every trigger must be handled, choose Queue instead."
+                    ? "A trigger that arrives mid-run, or while one waits on an approval, is lost for good. Choose Queue if every trigger must be handled."
                     : (draft.concurrency ?? "allow") === "queue"
                       ? wsKind === "scratch" || wsKind === "existing"
-                        ? "A trigger that arrives mid-run waits and starts when the current run ends, oldest first — which is what keeps this shared directory safe. Up to 20 can wait; beyond that a trigger is dropped and shows as a refused delivery."
-                        : "A trigger that arrives mid-run waits and starts when the current run ends, oldest first. With a fresh directory per run nothing is shared, so Allow would run these in parallel with no downside — Queue only makes sense here if the runs must not overlap for some other reason. Up to 20 can wait."
-                      : "Runs happen in parallel, each in its own directory."}
+                        ? "Later triggers wait and run in order, which keeps the shared directory safe. Up to 20 can wait; beyond that they are refused."
+                        : "Later triggers wait and run in order, up to 20. Each run has its own directory, so Allow would be safe too."
+                      : "Each run gets its own directory."}
                 </p>
               )}
             </Row>
@@ -533,8 +526,8 @@ export function AgentEditor({
               </label>
               <p className="mt-1 text-xs text-neutral-600">
                 {canAsk
-                  ? "It can stop mid-run to ask. Nobody answering holds the run for 15 minutes before the question is denied — and on a queue or skip agent, that blocks every trigger behind it."
-                  : "It must decide for itself or stop and explain, which is what an unattended run wants."}
+                  ? "An unanswered question is denied after 15 minutes. On a Queue or Skip agent, every trigger waits behind it."
+                  : "It decides for itself or stops and explains. Right for unattended runs."}
               </p>
             </div>
 
@@ -544,8 +537,8 @@ export function AgentEditor({
                 title="Allowed tools"
                 hint={
                   mode === "locked"
-                    ? "Comma separated, and the whole allowance — anything unlisted is denied. MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
-                    : "Comma separated. Anything listed is auto-approved and never reaches the approval prompt, so prefer scoped rules like Bash(ls *). MCP wildcards need a real server name: mcp__linear__* works, mcp__* is ignored."
+                    ? "Anything unlisted is denied. MCP wildcards need a server name: mcp__linear__* works, mcp__* does not."
+                    : "Listed tools run without asking, so prefer scoped rules like Bash(ls *). MCP wildcards need a server name: mcp__linear__* works, mcp__* does not."
                 }
               >
                 <ListInput
@@ -570,9 +563,8 @@ export function AgentEditor({
                 Use the shared MCP servers
               </label>
               <p className="-mt-1 text-xs text-neutral-600">
-                The list is managed under Settings &rarr; MCP servers; this decides whether this agent gets
-                any of it. Off means none &mdash; the safe choice for an agent that doesn&rsquo;t need a browser
-                or Datadog, since a server&rsquo;s credentials go to every agent that can reach it.
+                From Settings &rarr; MCP servers. A server&rsquo;s credentials reach every agent that uses it,
+                so leave this off unless the agent needs one.
               </p>
 
               {(draft.inheritMachineMcp ?? true) && machineMcp && (
@@ -606,7 +598,7 @@ export function AgentEditor({
                     <span>
                       Only these
                       <span className="block text-xs text-neutral-600">
-                        Passed to the run by name, with everything else &mdash; connectors included &mdash; kept out.
+                        Just the ones picked. Connectors are left out.
                         {machineMcp.global.length === 0 ? " No shared servers are configured yet." : ""}
                       </span>
                     </span>
@@ -660,26 +652,23 @@ export function AgentEditor({
                 Use the shared skills and global CLAUDE.md
               </label>
               <p className="-mt-1 text-xs text-neutral-600">
-                Needed for the skills under Settings &rarr; Skills to be invokable. It also brings that
-                directory&rsquo;s settings.json along, including its list of pre-approved tools.
-                {preapproved && preapproved.count > 0 ? (
-                  <>
-                    {" "}Yours pre-approves <strong>{preapproved.count}</strong> tool rule
-                    {preapproved.count === 1 ? "" : "s"}
-                    {preapproved.bare.includes("Bash") ? (
-                      <>
-                        {" "}&mdash; including <code>Bash</code> with no pattern, which is <strong>every shell
-                        command</strong>. An agent with this on will run those without asking, even if its
-                        permission mode is Manual.
-                      </>
-                    ) : (
-                      <> that will run without asking, even if this agent&rsquo;s permission mode is Manual.</>
-                    )}
-                  </>
-                ) : (
-                  <> Anything on that list runs without asking, even on a Manual agent.</>
-                )}
+                Makes the skills under Settings &rarr; Skills invokable, and loads that directory&rsquo;s
+                settings.json with them.
+                {!preapproved && <> Tools it pre-approves run without asking, even in Manual mode.</>}
               </p>
+              {preapproved && preapproved.count > 0 && (
+                <p className="text-xs text-amber-500/80">
+                  Its {preapproved.count} pre-approved tool {preapproved.count === 1 ? "rule runs" : "rules run"} without
+                  asking, even in Manual mode
+                  {preapproved.bare.includes("Bash") ? (
+                    <>
+                      , including bare <code>Bash</code>: <strong>every shell command</strong>.
+                    </>
+                  ) : (
+                    "."
+                  )}
+                </p>
+              )}
 
               {(draft.inheritUserSettings ?? true) && (
                 <p className="text-xs text-neutral-500">
@@ -700,7 +689,7 @@ export function AgentEditor({
                 inherited={inheritedEnv}
               />
               <p className="mt-1 text-xs text-neutral-600">
-                This agent's own variables. It also inherits global and space env; on a clash, these win.
+                Added to global and space env; these win on a clash.
               </p>
             </div>
           </Section>
