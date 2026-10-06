@@ -286,11 +286,12 @@ export const api = {
     allow: boolean,
     reason?: string,
     answers?: Record<string, string | string[]>,
+    remember?: boolean,
   ) =>
     fetch(`/api/approvals/${approvalId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ allow, reason, answers }),
+      body: JSON.stringify({ allow, reason, answers, remember }),
     }).then(json<{ ok: true }>),
   setMode: (runId: string, mode: string) =>
     fetch(`/api/runs/${runId}/permission-mode`, {

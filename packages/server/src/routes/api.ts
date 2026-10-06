@@ -56,7 +56,7 @@ import {
 import { db } from "../db/index.ts";
 import { type Agent, agents, runEvents, runs, spaceSecrets, webhookDeliveries } from "../db/schema.ts";
 import { eventsSince } from "../runs/eventLog.ts";
-import { decideApproval, pendingApprovals } from "../runs/approvals.ts";
+import { decideApproval, pendingApprovals, rememberApproval } from "../runs/approvals.ts";
 import {
   agentHasActiveRun,
   getAgent,
@@ -1426,11 +1426,13 @@ api.get("/runs/:id/approvals", (c) => c.json(pendingApprovals(c.req.param("id"))
 
 api.post("/approvals/:approvalId", async (c) => {
   const body = await c.req
-    .json<{ allow: boolean; reason?: string; answers?: Record<string, string | string[]> }>()
+    .json<{ allow: boolean; reason?: string; answers?: Record<string, string | string[]>; remember?: boolean }>()
     .catch(() => null);
   if (!body || typeof body.allow !== "boolean") return c.json({ error: "allow must be a boolean" }, 400);
-  const ok = decideApproval(c.req.param("approvalId"), body.allow, body.reason, body.answers);
-  return ok ? c.json({ ok: true }) : c.json({ error: "no pending approval with that id" }, 409);
+  const id = c.req.param("approvalId");
+  const rule = body.allow && body.remember ? rememberApproval(id) : null;
+  const ok = decideApproval(id, body.allow, body.reason, body.answers);
+  return ok ? c.json({ ok: true, rule }) : c.json({ error: "no pending approval with that id" }, 409);
 });
 
 api.post("/runs/:id/permission-mode", async (c) => {
