@@ -47,6 +47,8 @@ export type Agent = {
   filterPath: string | null;
   filters: FilterCondition[];
   labelTemplate: string | null;
+  mergeKey: string | null;
+  mergeWaitSeconds: number | null;
   filterValues: string[];
   webhookSignatureHeader: string | null;
   webhookSignaturePrefix: string | null;
@@ -71,6 +73,8 @@ export type Run = {
   costUsd: number | null;
   /** What the run is about, from the agent's labelTemplate. */
   label: string | null;
+  /** While set, the run is waiting out its merge window until this time. */
+  startAfter: number | null;
   numTurns: number | null;
   error: string | null;
   startedAt: number;

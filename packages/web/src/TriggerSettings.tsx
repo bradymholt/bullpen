@@ -447,6 +447,7 @@ export function TriggerSettings({
   const [showNotes, setShowNotes] = useState(!agent);
   const [showFilterHelp, setShowFilterHelp] = useState(false);
   const [showLabel, setShowLabel] = useState(!!draft.labelTemplate);
+  const [showMerge, setShowMerge] = useState(!!draft.mergeKey);
   const [saved, setSaved] = useState<string | null>(null);
   const [pollNote, setPollNote] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -456,6 +457,7 @@ export function TriggerSettings({
   useEffect(() => {
     setKind(initialKind(agent, draft));
     setShowLabel(!!draft.labelTemplate);
+    setShowMerge(!!draft.mergeKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent?.id, draft.id]);
 
@@ -1121,6 +1123,13 @@ export function TriggerSettings({
               </button>
               <button
                 type="button"
+                onClick={() => setShowMerge((v) => !v)}
+                className="text-xs text-neutral-500 hover:text-neutral-300"
+              >
+                {showMerge ? "▾" : "▸"} Merge deliveries
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowExample((v) => !v)}
                 className="text-xs text-neutral-500 hover:text-neutral-300"
               >
@@ -1148,6 +1157,32 @@ export function TriggerSettings({
                 <p className="mt-1 text-xs leading-relaxed text-neutral-600">
                   Optional label beside each run in lists, from the delivery &mdash; same{" "}
                   <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
+                </p>
+              </div>
+            )}
+
+            {showMerge && (
+              <div className="mt-2">
+                <div className="flex gap-2">
+                  <input
+                    className={field}
+                    placeholder="{{payload.pull_request.html_url}}"
+                    value={draft.mergeKey ?? ""}
+                    onChange={(e) => set("mergeKey", e.target.value || null)}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={3600}
+                    className={field.replace("w-full", "w-28 shrink-0")}
+                    placeholder="seconds"
+                    value={draft.mergeWaitSeconds ?? ""}
+                    onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
+                  />
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                  Each delivery waits this many seconds before it runs. Another one whose key renders the same while it
+                  waits joins it instead of starting a second run, and the run uses the latest payload.
                 </p>
               </div>
             )}

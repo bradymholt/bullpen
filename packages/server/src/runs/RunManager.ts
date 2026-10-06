@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { config } from "../config.ts";
 import { writePayload } from "../triggers/webhook.ts";
 import { startTelegramTyping } from "../triggers/telegram.ts";
-import { and, asc, eq, inArray, isNull, like, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
 import { hub } from "../hub.ts";
@@ -73,6 +73,8 @@ export type RunRequest = {
   rawPayload?: string;
   /** Names this run in lists. The caller renders it; the payload lives there. */
   label?: string;
+  /** Wait this long before starting; a later request with the same key replaces this one's payload instead of running too. */
+  merge?: { key: string; waitSeconds: number };
 };
 
 export class QueueFullError extends Error {
@@ -101,8 +103,25 @@ function queuedCount(agentId: string): number {
  * record why); this handles `queue`: while the agent has an active run, the
  * request is parked as a `queued` row and starts when that run ends.
  */
-export function requestRun(opts: RunRequest): { runId: string; queued: boolean } {
-  const { agent } = opts;
+export function requestRun(opts: RunRequest): { runId: string; queued: boolean; merged?: boolean } {
+  const { agent, merge } = opts;
+  if (merge) {
+    const waiting = db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.agentId, agent.id), eq(runs.status, "queued"), eq(runs.mergeKey, merge.key), isNotNull(runs.startAfter)))
+      .get();
+    if (waiting) {
+      mergeInto(waiting.id, opts);
+      return { runId: waiting.id, queued: true, merged: true };
+    }
+    const depth = queuedCount(agent.id);
+    if (depth >= QUEUE_DEPTH) throw new QueueFullError(agent.name, depth);
+    const startAfter = Math.floor(Date.now() / 1000) + merge.waitSeconds;
+    const runId = enqueueRun(opts, { mergeKey: merge.key, startAfter });
+    scheduleRelease(runId, startAfter);
+    return { runId, queued: true };
+  }
   if (agent.concurrency === "queue" && agentHasActiveRun(agent.id)) {
     const depth = queuedCount(agent.id);
     if (depth >= QUEUE_DEPTH) throw new QueueFullError(agent.name, depth);
@@ -115,14 +134,10 @@ export function requestRun(opts: RunRequest): { runId: string; queued: boolean }
  * Everything startRun would need later, spooled to disk rather than the DB: a
  * webhook body can be a megabyte, and the row already holds prompt and mode.
  */
-function enqueueRun(opts: RunRequest): string {
+function enqueueRun(opts: RunRequest, wait?: { mergeKey: string; startAfter: number }): string {
   const { agent, trigger } = opts;
   const runId = randomUUID();
-  mkdirSync(queueDir(), { recursive: true });
-  writeFileSync(
-    spoolPath(runId),
-    JSON.stringify({ ephemeralWorkspace: opts.ephemeralWorkspace ?? false, rawPayload: opts.rawPayload ?? null }),
-  );
+  writeSpool(runId, opts);
   db.insert(runs)
     .values({
       id: runId,
@@ -132,10 +147,61 @@ function enqueueRun(opts: RunRequest): string {
       prompt: opts.prompt ?? agent.prompt,
       permissionMode: opts.permissionMode ?? agent.permissionMode,
       ...(opts.label ? { label: opts.label } : {}),
+      ...wait,
     })
     .run();
-  appendEvent(runId, "run.queued", { agentId: agent.id, trigger, behind: queuedCount(agent.id) - 1 });
+  appendEvent(
+    runId,
+    "run.queued",
+    wait ? { agentId: agent.id, trigger, startAfter: wait.startAfter } : { agentId: agent.id, trigger, behind: queuedCount(agent.id) - 1 },
+  );
   return runId;
+}
+
+function writeSpool(runId: string, opts: RunRequest): void {
+  mkdirSync(queueDir(), { recursive: true });
+  writeFileSync(
+    spoolPath(runId),
+    JSON.stringify({ ephemeralWorkspace: opts.ephemeralWorkspace ?? false, rawPayload: opts.rawPayload ?? null }),
+  );
+}
+
+/** The latest delivery wins: it describes the thing as it is now. */
+function mergeInto(runId: string, opts: RunRequest): void {
+  writeSpool(runId, opts);
+  db.update(runs)
+    .set({ prompt: opts.prompt ?? opts.agent.prompt, label: opts.label ?? null })
+    .where(eq(runs.id, runId))
+    .run();
+  appendEvent(runId, "run.merged", { trigger: opts.trigger });
+}
+
+const releaseTimers = new Map<string, NodeJS.Timeout>();
+
+function scheduleRelease(runId: string, startAfter: number): void {
+  clearTimeout(releaseTimers.get(runId));
+  const delay = Math.max(0, startAfter * 1000 - Date.now());
+  releaseTimers.set(
+    runId,
+    setTimeout(() => {
+      releaseTimers.delete(runId);
+      releaseWaiting(runId);
+    }, delay).unref(),
+  );
+}
+
+/**
+ * Ends a run's merge window. A `queue` agent's run joins the ordinary queue, so
+ * it still waits its turn; any other agent's starts now.
+ */
+export function releaseWaiting(runId: string, start: (opts: RunRequest, existingId: string) => string = startRun): void {
+  const row = db.select().from(runs).where(eq(runs.id, runId)).get();
+  if (row?.status !== "queued" || row.startAfter == null) return;
+  db.update(runs).set({ startAfter: null }).where(eq(runs.id, runId)).run();
+  const agent = getAgent(row.agentId);
+  if (!agent) return;
+  if (agent.concurrency === "queue") drainQueue(agent.id, start);
+  else startQueued(row, agent, start);
 }
 
 /**
@@ -148,13 +214,20 @@ export function drainQueue(agentId: string, start: (opts: RunRequest, existingId
   const next = db
     .select()
     .from(runs)
-    .where(and(eq(runs.agentId, agentId), eq(runs.status, "queued")))
+    .where(and(eq(runs.agentId, agentId), eq(runs.status, "queued"), isNull(runs.startAfter)))
     .orderBy(asc(runs.startedAt), asc(runs.id))
     .get();
   if (!next) return;
   const agent = getAgent(agentId);
   if (!agent) return;
+  startQueued(next, agent, start);
+}
 
+function startQueued(
+  next: typeof runs.$inferSelect,
+  agent: Agent,
+  start: (opts: RunRequest, existingId: string) => string,
+): void {
   let spool: { ephemeralWorkspace?: boolean; rawPayload?: string | null } = {};
   try {
     spool = JSON.parse(readFileSync(spoolPath(next.id), "utf8"));
@@ -179,7 +252,7 @@ export function drainQueue(agentId: string, start: (opts: RunRequest, existingId
   } catch (err) {
     // A workspace that can't be prepared fails this run and moves on to the next.
     setStatus(next.id, "failed", { error: String(err), endedAt: Math.floor(Date.now() / 1000) });
-    drainQueue(agentId, start);
+    drainQueue(agent.id, start);
   }
 }
 
@@ -187,6 +260,8 @@ export function drainQueue(agentId: string, start: (opts: RunRequest, existingId
 export function cancelQueued(runId: string): boolean {
   const row = db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).get();
   if (row?.status !== "queued") return false;
+  clearTimeout(releaseTimers.get(runId));
+  releaseTimers.delete(runId);
   rmSync(spoolPath(runId), { force: true });
   db.delete(runs).where(eq(runs.id, runId)).run();
   return true;
@@ -468,6 +543,12 @@ export function recoverOrphanedRuns(): number {
     .where(eq(runs.status, "queued"))
     .all();
   for (const { agentId } of waiting) drainQueue(agentId);
+  const merging = db
+    .select({ id: runs.id, startAfter: runs.startAfter })
+    .from(runs)
+    .where(and(eq(runs.status, "queued"), isNotNull(runs.startAfter)))
+    .all();
+  for (const { id, startAfter } of merging) scheduleRelease(id, startAfter!);
   return orphans.length;
 }
 
