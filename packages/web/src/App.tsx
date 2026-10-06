@@ -1470,7 +1470,7 @@ export function App() {
                   Prompt
                 </h3>
                 {detailAgent.prompt ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-neutral-400">
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-400">
                     {detailAgent.prompt}
                   </p>
                 ) : (
