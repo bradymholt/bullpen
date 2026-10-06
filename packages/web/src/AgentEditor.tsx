@@ -421,6 +421,38 @@ export function AgentEditor({
         )}
       </Row>
 
+      {draft.trigger === "webhook" && (
+        <Row title="Merge deliveries">
+          <div className="flex gap-2">
+            <label className="min-w-0 flex-1">
+              <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
+              <input
+                className={field}
+                placeholder="{{payload.pull_request.html_url}}"
+                value={draft.mergeKey ?? ""}
+                onChange={(e) => set("mergeKey", e.target.value || null)}
+              />
+            </label>
+            <label className="w-28 shrink-0">
+              <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
+              <input
+                type="number"
+                min={0}
+                max={3600}
+                className={field}
+                value={draft.mergeWaitSeconds ?? ""}
+                onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
+              />
+            </label>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+            Optional. Each delivery waits this long before it runs, and another one about the same thing arriving
+            meanwhile joins it instead of starting a second run. Uses the same <code>{"{{payload.a.b}}"}</code> syntax as
+            the prompt.
+          </p>
+        </Row>
+      )}
+
         </div>
 
         {/* The prompt is the agent; give it a column rather than a slot in the form. */}
