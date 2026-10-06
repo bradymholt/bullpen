@@ -425,6 +425,15 @@ function initialKind(agent: Agent | null, draft: AgentInput): TriggerKind {
   return draft.trigger ?? agent?.trigger ?? "manual";
 }
 
+function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-4 border-t border-neutral-800 pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-xs font-semibold text-neutral-300">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
 export function TriggerSettings({
   agent,
   draft,
@@ -446,7 +455,6 @@ export function TriggerSettings({
   const [showTest, setShowTest] = useState(false);
   const [showNotes, setShowNotes] = useState(!agent);
   const [showFilterHelp, setShowFilterHelp] = useState(false);
-  const [showLabel, setShowLabel] = useState(!!draft.labelTemplate);
   const [saved, setSaved] = useState<string | null>(null);
   const [pollNote, setPollNote] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -455,7 +463,6 @@ export function TriggerSettings({
   // filled in a tick later, so keying on agent alone would read the empty one.
   useEffect(() => {
     setKind(initialKind(agent, draft));
-    setShowLabel(!!draft.labelTemplate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent?.id, draft.id]);
 
@@ -763,466 +770,464 @@ export function TriggerSettings({
       )}
 
       {kind === "webhook" && hookUrl && (
-        <div className="space-y-4 rounded-lg border border-neutral-800 p-3">
-          <div>
-            <span className={label}>Sender</span>
-            <div className="flex flex-wrap gap-1.5">
-              {PROVIDERS.map(([v, name]) => {
-                const on = mode === v;
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => {
-                      set("webhookMode", v);
-                      // Only mint a secret for senders that expect us to choose one.
-                      if (!agent) set("webhookSecret", v === "asana" ? null : randomSecret());
-                    }}
-                    className={`rounded border px-2.5 py-1 text-xs transition ${
-                      on
-                        ? "border-neutral-400 bg-neutral-900 text-neutral-100"
-                        : "border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-1.5 text-xs text-neutral-600">{PROVIDERS.find(([v]) => v === mode)?.[2]}</p>
-          </div>
+        <div className="space-y-5 rounded-lg border border-neutral-800 p-3">
+          <PanelSection title="Connection">
+                      <div>
+                        <span className={label}>Sender</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {PROVIDERS.map(([v, name]) => {
+                            const on = mode === v;
+                            return (
+                              <button
+                                key={v}
+                                type="button"
+                                aria-pressed={on}
+                                onClick={() => {
+                                  set("webhookMode", v);
+                                  // Only mint a secret for senders that expect us to choose one.
+                                  if (!agent) set("webhookSecret", v === "asana" ? null : randomSecret());
+                                }}
+                                className={`rounded border px-2.5 py-1 text-xs transition ${
+                                  on
+                                    ? "border-neutral-400 bg-neutral-900 text-neutral-100"
+                                    : "border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                                }`}
+                              >
+                                {name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-1.5 text-xs text-neutral-600">{PROVIDERS.find(([v]) => v === mode)?.[2]}</p>
+                      </div>
 
-          {mode === "custom" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className={label}>Signature header</span>
-                <input
-                  className={field}
-                  placeholder="blank — plain token"
-                  value={draft.webhookSignatureHeader ?? ""}
-                  onChange={(e) => {
-                    // A header only counts under `custom`; the older `token` spelling ignores it.
-                    set("webhookMode", "custom");
-                    set("webhookSignatureHeader", e.target.value || null);
-                  }}
-                />
-              </div>
-              <div>
-                <span className={label}>Prefix</span>
-                <input
-                  className={field}
-                  placeholder="sha256="
-                  disabled={!draft.webhookSignatureHeader?.trim()}
-                  value={draft.webhookSignaturePrefix ?? ""}
-                  onChange={(e) => set("webhookSignaturePrefix", e.target.value || null)}
-                />
-              </div>
-            </div>
-          )}
+                      {mode === "custom" && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <span className={label}>Signature header</span>
+                            <input
+                              className={field}
+                              placeholder="blank — plain token"
+                              value={draft.webhookSignatureHeader ?? ""}
+                              onChange={(e) => {
+                                // A header only counts under `custom`; the older `token` spelling ignores it.
+                                set("webhookMode", "custom");
+                                set("webhookSignatureHeader", e.target.value || null);
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <span className={label}>Prefix</span>
+                            <input
+                              className={field}
+                              placeholder="sha256="
+                              disabled={!draft.webhookSignatureHeader?.trim()}
+                              value={draft.webhookSignaturePrefix ?? ""}
+                              onChange={(e) => set("webhookSignaturePrefix", e.target.value || null)}
+                            />
+                          </div>
+                        </div>
+                      )}
 
-          <div>
-            <span className={label}>Webhook URL</span>
-            <div className="flex gap-2">
-              <input readOnly value={shownUrl ?? ""} className={`${field} font-mono text-xs text-neutral-400`} />
-              <button
-                onClick={() => shownUrl && void navigator.clipboard.writeText(shownUrl)}
-                className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-              >
-                Copy
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-neutral-600">
-              {secretInUrl
-                ? "The secret is in the URL, so anyone who sees it can trigger this agent. Rotate the secret to revoke it."
-                : agent
-                  ? "Reachable by anything that can route here. Its secret is what protects it."
-                  : "This is the URL this agent will answer on — it starts working when you create it."}
-            </p>
-          </div>
+                      <div>
+                        <span className={label}>Webhook URL</span>
+                        <div className="flex gap-2">
+                          <input readOnly value={shownUrl ?? ""} className={`${field} font-mono text-xs text-neutral-400`} />
+                          <button
+                            onClick={() => shownUrl && void navigator.clipboard.writeText(shownUrl)}
+                            className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-600">
+                          {secretInUrl
+                            ? "The secret is in the URL, so anyone who sees it can trigger this agent. Rotate the secret to revoke it."
+                            : agent
+                              ? "Reachable by anything that can route here. Its secret is what protects it."
+                              : "This is the URL this agent will answer on — it starts working when you create it."}
+                        </p>
+                      </div>
 
-          {shape.pasted ? (
+                      {shape.pasted ? (
+                        <div>
+                          <span className={label}>Signing secret</span>
+                          <div className="flex gap-2">
+                            <input
+                              value={draft.webhookSecret ?? ""}
+                              onChange={(e) => set("webhookSecret", e.target.value || null)}
+                              placeholder={agent ? "unchanged" : "paste the sender's secret"}
+                              className={`${field} font-mono text-xs`}
+                            />
+                            {agent && (
+                              <button
+                                disabled={!draft.webhookSecret?.trim()}
+                                onClick={async () => {
+                                  await api.setSecret(agent.id, draft.webhookSecret!.trim());
+                                  setSecret(draft.webhookSecret!.trim());
+                                  setSaved("Secret saved.");
+                                }}
+                                className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800 disabled:opacity-40"
+                              >
+                                Save
+                              </button>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-neutral-600">
+                            {agent && secret
+                              ? "A secret is already stored. Save replaces it right away, without saving the agent."
+                              : "The sender issues this one — bullpen can't generate it."}
+                          </p>
+                          {saved && <p className="mt-1 text-xs text-emerald-500">{saved}</p>}
+                        </div>
+                      ) : shape.handshake ? (
+                        <div>
+                          <span className={label}>Secret</span>
+                          {!agent ? (
+                            <p className="text-xs text-neutral-500">Set by Asana when you register the webhook.</p>
+                          ) : shownSecret ? (
+                            <div className="flex items-center gap-3 text-xs">
+                              <span className="text-emerald-500">Handshake complete &mdash; Asana set this agent&rsquo;s secret.</span>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm("Clear the secret? The current Asana webhook stops working until you re-register it.")) return;
+                                  await api.clearSecret(agent.id);
+                                  setSecret(null);
+                                }}
+                                className="rounded border border-neutral-700 px-2 py-0.5 text-amber-400 hover:bg-neutral-800"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-amber-400">
+                              Waiting for Asana&rsquo;s handshake &mdash; the first request sets the secret.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <span className={label}>Secret</span>
+                          <div className="flex gap-2">
+                            <input
+                              readOnly
+                              value={revealed ? (shownSecret ?? "") : "•".repeat(24)}
+                              className={`${field} font-mono text-xs text-neutral-400`}
+                            />
+                            <button
+                              onClick={() => setRevealed((r) => !r)}
+                              className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                            >
+                              {revealed ? "Hide" : "Reveal"}
+                            </button>
+                            <button
+                              onClick={() => shownSecret && void navigator.clipboard.writeText(shownSecret)}
+                              className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
+                            >
+                              Copy
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!agent) {
+                                  set("webhookSecret", randomSecret());
+                                  setRevealed(true);
+                                  return;
+                                }
+                                if (!confirm("Rotate the secret? Anything already using the old one stops working.")) return;
+                                const { webhookSecret } = await api.rotateSecret(agent.id);
+                                setSecret(webhookSecret);
+                                setRevealed(true);
+                              }}
+                              className="shrink-0 rounded border border-neutral-700 px-2 text-xs text-amber-400 hover:bg-neutral-800"
+                            >
+                              Rotate
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setShowNotes((v) => !v)}
+                          className="text-xs text-neutral-500 hover:text-neutral-300"
+                        >
+                          {showNotes ? "▾" : "▸"} Set up {PROVIDERS.find(([v]) => v === mode)?.[1] ?? "the sender"}
+                        </button>
+                        {showNotes && (
+                          <div className="mt-2 space-y-2 text-xs leading-relaxed text-neutral-500">
+                            <ol className="list-decimal space-y-1.5 pl-5">
+                              {setup.steps.map((step, i) => (
+                                <li key={i}>{step}</li>
+                              ))}
+                            </ol>
+                            {setup.note && <p className="text-neutral-600">{setup.note}</p>}
+                          </div>
+                        )}
+                      </div>
+
+                      {draft.space && (
+                        <p className="text-xs leading-relaxed text-neutral-600">
+                          This agent also answers the <strong>{draft.space}</strong> space&rsquo;s shared webhook,
+                          set up under &ldquo;Space settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
+                        </p>
+                      )}
+
             <div>
-              <span className={label}>Signing secret</span>
-              <div className="flex gap-2">
-                <input
-                  value={draft.webhookSecret ?? ""}
-                  onChange={(e) => set("webhookSecret", e.target.value || null)}
-                  placeholder={agent ? "unchanged" : "paste the sender's secret"}
-                  className={`${field} font-mono text-xs`}
-                />
-                {agent && (
-                  <button
-                    disabled={!draft.webhookSecret?.trim()}
-                    onClick={async () => {
-                      await api.setSecret(agent.id, draft.webhookSecret!.trim());
-                      setSecret(draft.webhookSecret!.trim());
-                      setSaved("Secret saved.");
-                    }}
-                    className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800 disabled:opacity-40"
-                  >
-                    Save
-                  </button>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-neutral-600">
-                {agent && secret
-                  ? "A secret is already stored. Save replaces it right away, without saving the agent."
-                  : "The sender issues this one — bullpen can't generate it."}
-              </p>
-              {saved && <p className="mt-1 text-xs text-emerald-500">{saved}</p>}
-            </div>
-          ) : shape.handshake ? (
-            <div>
-              <span className={label}>Secret</span>
-              {!agent ? (
-                <p className="text-xs text-neutral-500">Set by Asana when you register the webhook.</p>
-              ) : shownSecret ? (
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-emerald-500">Handshake complete &mdash; Asana set this agent&rsquo;s secret.</span>
-                  <button
-                    onClick={async () => {
-                      if (!confirm("Clear the secret? The current Asana webhook stops working until you re-register it.")) return;
-                      await api.clearSecret(agent.id);
-                      setSecret(null);
-                    }}
-                    className="rounded border border-neutral-700 px-2 py-0.5 text-amber-400 hover:bg-neutral-800"
-                  >
-                    Clear
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs text-amber-400">
-                  Waiting for Asana&rsquo;s handshake &mdash; the first request sets the secret.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div>
-              <span className={label}>Secret</span>
-              <div className="flex gap-2">
-                <input
-                  readOnly
-                  value={revealed ? (shownSecret ?? "") : "•".repeat(24)}
-                  className={`${field} font-mono text-xs text-neutral-400`}
-                />
-                <button
-                  onClick={() => setRevealed((r) => !r)}
-                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-                >
-                  {revealed ? "Hide" : "Reveal"}
-                </button>
-                <button
-                  onClick={() => shownSecret && void navigator.clipboard.writeText(shownSecret)}
-                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs hover:bg-neutral-800"
-                >
-                  Copy
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!agent) {
-                      set("webhookSecret", randomSecret());
-                      setRevealed(true);
-                      return;
-                    }
-                    if (!confirm("Rotate the secret? Anything already using the old one stops working.")) return;
-                    const { webhookSecret } = await api.rotateSecret(agent.id);
-                    setSecret(webhookSecret);
-                    setRevealed(true);
-                  }}
-                  className="shrink-0 rounded border border-neutral-700 px-2 text-xs text-amber-400 hover:bg-neutral-800"
-                >
-                  Rotate
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowNotes((v) => !v)}
-              className="text-xs text-neutral-500 hover:text-neutral-300"
-            >
-              {showNotes ? "▾" : "▸"} Set up {PROVIDERS.find(([v]) => v === mode)?.[1] ?? "the sender"}
-            </button>
-            {showNotes && (
-              <div className="mt-2 space-y-2 text-xs leading-relaxed text-neutral-500">
-                <ol className="list-decimal space-y-1.5 pl-5">
-                  {setup.steps.map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                </ol>
-                {setup.note && <p className="text-neutral-600">{setup.note}</p>}
-              </div>
-            )}
-          </div>
-
-          {draft.space && (
-            <p className="text-xs leading-relaxed text-neutral-600">
-              This agent also answers the <strong>{draft.space}</strong> space&rsquo;s shared webhook,
-              set up under &ldquo;Space settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
-            </p>
-          )}
-
-          {shape.eventHeader && (
-            <div>
-              <span className={label}>Only these events</span>
-              <ListInput
-                key={`events-${agent?.id ?? "new"}`}
-                placeholder="any event"
-                value={draft.webhookEvents ?? []}
-                onChange={(next) => set("webhookEvents", next)}
-              />
-              {EVENT_SUGGESTIONS[mode] && (
-                <Pills
-                  mono
-                  options={EVENT_SUGGESTIONS[mode]!.map((e) => [e, e] as const)}
-                  isOn={(v) => (draft.webhookEvents ?? []).includes(v)}
-                  onPick={(v) => {
-                    const on = draft.webhookEvents ?? [];
-                    set("webhookEvents", on.includes(v) ? on.filter((x) => x !== v) : [...on, v]);
-                  }}
-                />
-              )}
-              <p className="mt-1 text-xs text-neutral-600">Matched against {shape.eventHeader}.</p>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <span className={label}>Only run when</span>
-              <button
-                type="button"
-                onClick={() => setShowFilterHelp((v) => !v)}
-                className="text-xs text-neutral-500 hover:text-neutral-300"
-              >
-                {showFilterHelp ? "Hide help" : "How filtering works"}
-              </button>
-            </div>
-            {showFilterHelp && (
-              <div className="space-y-2 text-xs leading-relaxed text-neutral-600">
-                <p>
-                  Dot paths into the body, all of which must hold, checked before the agent starts —
-                  nothing runs and nothing is spent when one doesn&rsquo;t match. For this sender,{" "}
-                  <code>{example.path}</code> is {example.what}. Use <code>0</code> as a path segment
-                  to index an array. A path the payload doesn&rsquo;t have counts as absent:{" "}
-                  <em>is one of</em> drops the delivery, <em>is not one of</em> lets it through.
-                  Split the conditions into sets when different kinds of delivery need different
-                  rules: the agent runs when any one set holds.
-                </p>
-                <p>
-                  The payload reaches the agent as data, never as instructions: pull fields into
-                  this agent&rsquo;s prompt with <code>{"{{payload.a.b}}"}</code>, and read the whole
-                  body from <code>.bullpen/payload.json</code> in the workspace.
-                </p>
-              </div>
-            )}
-            {conditions.length === 0 && (
-              <p className="text-xs text-neutral-600">No conditions yet.</p>
-            )}
-            {groupIds.map((g, gi) => (
-              <div key={g} className="space-y-2">
-                {gi > 0 && (
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-600">
-                    <span className="h-px flex-1 bg-neutral-800" />
-                    or
-                    <span className="h-px flex-1 bg-neutral-800" />
-                  </div>
-                )}
-                {conditions.map((cond, i) =>
-                  (cond.group ?? 0) !== g ? null : (
-                  <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
-                    <input
-                      className={field}
-                      placeholder={example.path}
-                      value={cond.path}
-                      onFocus={() => setActiveCond(i)}
-                      onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
-                    />
-                    <select
-                      className={field}
-                      value={cond.op}
-                      onChange={(e) =>
-                        setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
-                      }
-                    >
-                      <option value="in">is one of</option>
-                      <option value="not_in">is not one of</option>
-                      <option value="contains">contains</option>
-                      <option value="not_contains">does not contain</option>
-                    </select>
-                    <ListInput
-                      key={`filter-${agent?.id ?? "new"}-${i}`}
-                      placeholder={example.values}
-                      value={cond.values}
-                      onChange={(next) => setCondition(i, { ...cond, values: next })}
-                    />
-                    <button
-                      onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
-                      title="Remove this condition"
-                      className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                  ),
-                )}
-                {grouped && (
-                  <button
-                    onClick={() => addCondition(g)}
-                    className="text-xs text-neutral-400 hover:text-neutral-100"
-                  >
-                    + Add a condition to this set
-                  </button>
-                )}
-              </div>
-            ))}
-            {suggest && conditions[pillTarget] && (
-              <Pills
-                mono
-                options={suggest.paths.map((pth) => [pth, pth] as const)}
-                isOn={(v) => conditions[pillTarget]!.path === v}
-                onPick={(v) => setCondition(pillTarget, { ...conditions[pillTarget]!, path: v })}
-              />
-            )}
-            <div className="flex flex-wrap items-baseline gap-4">
-              {!grouped && (
-                <button
-                  onClick={() => addCondition(groupIds[0] ?? 0)}
-                  className="text-xs text-neutral-400 hover:text-neutral-100"
-                >
-                  {conditions.length === 0 ? "+ Add a condition" : "+ Add another condition"}
-                </button>
-              )}
-              {conditions.length > 0 && (
-                <button
-                  onClick={() => addCondition(Math.max(...groupIds) + 1)}
-                  title="Run when either this set or another one holds"
-                  className="text-xs text-neutral-600 hover:text-neutral-300"
-                >
-                  {grouped ? "+ Add another set" : "or run on a different set of conditions"}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <span className={label}>Merge deliveries</span>
-            <div className="flex gap-2">
-              <label className="min-w-0 flex-1">
-                <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
-                <input
-                  className={field}
-                  placeholder="{{payload.pull_request.html_url}}"
-                  value={draft.mergeKey ?? ""}
-                  onChange={(e) => set("mergeKey", e.target.value || null)}
-                />
-              </label>
-              <label className="w-28 shrink-0">
-                <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={3600}
-                  className={field}
-                  value={draft.mergeWaitSeconds ?? ""}
-                  onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
-                />
-              </label>
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-              Optional. A delivery waits this long, and any with the same key that arrive meanwhile join its run.
-              Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
-            </p>
-          </div>
-
-          <div>
-            <div className="flex flex-wrap gap-4">
-              <button
-                type="button"
-                onClick={() => setShowLabel((v) => !v)}
-                className="text-xs text-neutral-500 hover:text-neutral-300"
-              >
-                {showLabel ? "▾" : "▸"} Name each run
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowExample((v) => !v)}
-                className="text-xs text-neutral-500 hover:text-neutral-300"
-              >
-                {showExample ? "▾" : "▸"} Example request
-              </button>
-              {agent && (
+              <div className="flex flex-wrap gap-4">
                 <button
                   type="button"
-                  onClick={() => setShowTest((v) => !v)}
+                  onClick={() => setShowExample((v) => !v)}
                   className="text-xs text-neutral-500 hover:text-neutral-300"
                 >
-                  {showTest ? "▾" : "▸"} Test fire
+                  {showExample ? "▾" : "▸"} Example request
                 </button>
-              )}
-            </div>
-
-            {showLabel && (
-              <div className="mt-2">
-                <input
-                  className={field}
-                  placeholder={example.label}
-                  value={draft.labelTemplate ?? ""}
-                  onChange={(e) => set("labelTemplate", e.target.value || null)}
-                />
-                <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-                  Shown beside each run in lists. Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
-                </p>
-              </div>
-            )}
-
-            {showExample && (
-              <div className="mt-2">
-                <pre className="overflow-x-auto rounded border border-neutral-800 bg-neutral-950 p-2.5 font-mono text-xs leading-relaxed text-neutral-400">
-                  {exampleRequest(hookUrl, draft)}
-                </pre>
-                <button
-                  onClick={() => void navigator.clipboard.writeText(exampleRequest(hookUrl, draft))}
-                  className="mt-1 rounded border border-neutral-700 px-2 py-0.5 text-xs hover:bg-neutral-800"
-                >
-                  Copy
-                </button>
-              </div>
-            )}
-
-            {showTest && agent && (
-              <div className="mt-2">
-                <div className="flex gap-2">
-                  <input
-                    value={testBody}
-                    onChange={(e) => setTestBody(e.target.value)}
-                    className={`${field} font-mono text-xs`}
-                  />
+                {agent && (
                   <button
-                    onClick={async () => {
-                      setTestResult("firing…");
-                      try {
-                        const r = await api.testFire(agent.id, testBody);
-                        setTestResult(`${r.status} ${JSON.stringify(r.body)}`);
-                      } catch (e) {
-                        setTestResult(String(e));
-                      }
-                    }}
-                    className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-800"
+                    type="button"
+                    onClick={() => setShowTest((v) => !v)}
+                    className="text-xs text-neutral-500 hover:text-neutral-300"
                   >
-                    Send
+                    {showTest ? "▾" : "▸"} Test fire
+                  </button>
+                )}
+              </div>
+
+              {showExample && (
+                <div className="mt-2">
+                  <pre className="overflow-x-auto rounded border border-neutral-800 bg-neutral-950 p-2.5 font-mono text-xs leading-relaxed text-neutral-400">
+                    {exampleRequest(hookUrl, draft)}
+                  </pre>
+                  <button
+                    onClick={() => void navigator.clipboard.writeText(exampleRequest(hookUrl, draft))}
+                    className="mt-1 rounded border border-neutral-700 px-2 py-0.5 text-xs hover:bg-neutral-800"
+                  >
+                    Copy
                   </button>
                 </div>
-                <p className="mt-1 text-xs text-neutral-600">
-                  Signed the way this sender signs, from the saved settings &mdash; save first if you
-                  just changed them. Filters apply, so a body that doesn&rsquo;t match is dropped.
-                </p>
-                {testResult && <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>}
+              )}
+
+              {showTest && agent && (
+                <div className="mt-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={testBody}
+                      onChange={(e) => setTestBody(e.target.value)}
+                      className={`${field} font-mono text-xs`}
+                    />
+                    <button
+                      onClick={async () => {
+                        setTestResult("firing…");
+                        try {
+                          const r = await api.testFire(agent.id, testBody);
+                          setTestResult(`${r.status} ${JSON.stringify(r.body)}`);
+                        } catch (e) {
+                          setTestResult(String(e));
+                        }
+                      }}
+                      className="shrink-0 rounded border border-neutral-700 px-3 text-sm hover:bg-neutral-800"
+                    >
+                      Send
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    Signed the way this sender signs, from the saved settings &mdash; save first if you
+                    just changed them. Filters apply, so a body that doesn&rsquo;t match is dropped.
+                  </p>
+                  {testResult && <p className="mt-1 font-mono text-xs text-neutral-400">{testResult}</p>}
+                </div>
+              )}
+            </div>
+          </PanelSection>
+
+          <PanelSection title="Which deliveries run">
+            {shape.eventHeader && (
+              <div>
+                <span className={label}>Only these events</span>
+                <ListInput
+                  key={`events-${agent?.id ?? "new"}`}
+                  placeholder="any event"
+                  value={draft.webhookEvents ?? []}
+                  onChange={(next) => set("webhookEvents", next)}
+                />
+                {EVENT_SUGGESTIONS[mode] && (
+                  <Pills
+                    mono
+                    options={EVENT_SUGGESTIONS[mode]!.map((e) => [e, e] as const)}
+                    isOn={(v) => (draft.webhookEvents ?? []).includes(v)}
+                    onPick={(v) => {
+                      const on = draft.webhookEvents ?? [];
+                      set("webhookEvents", on.includes(v) ? on.filter((x) => x !== v) : [...on, v]);
+                    }}
+                  />
+                )}
+                <p className="mt-1 text-xs text-neutral-600">Matched against {shape.eventHeader}.</p>
               </div>
             )}
-          </div>
+
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className={label}>Only run when</span>
+                <button
+                  type="button"
+                  onClick={() => setShowFilterHelp((v) => !v)}
+                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                >
+                  {showFilterHelp ? "Hide help" : "How filtering works"}
+                </button>
+              </div>
+              {showFilterHelp && (
+                <div className="space-y-2 text-xs leading-relaxed text-neutral-600">
+                  <p>
+                    Dot paths into the body, all of which must hold, checked before the agent starts —
+                    nothing runs and nothing is spent when one doesn&rsquo;t match. For this sender,{" "}
+                    <code>{example.path}</code> is {example.what}. Use <code>0</code> as a path segment
+                    to index an array. A path the payload doesn&rsquo;t have counts as absent:{" "}
+                    <em>is one of</em> drops the delivery, <em>is not one of</em> lets it through.
+                    Split the conditions into sets when different kinds of delivery need different
+                    rules: the agent runs when any one set holds.
+                  </p>
+                  <p>
+                    The payload reaches the agent as data, never as instructions: pull fields into
+                    this agent&rsquo;s prompt with <code>{"{{payload.a.b}}"}</code>, and read the whole
+                    body from <code>.bullpen/payload.json</code> in the workspace.
+                  </p>
+                </div>
+              )}
+              {conditions.length === 0 && (
+                <p className="text-xs text-neutral-600">No conditions yet.</p>
+              )}
+              {groupIds.map((g, gi) => (
+                <div key={g} className="space-y-2">
+                  {gi > 0 && (
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-600">
+                      <span className="h-px flex-1 bg-neutral-800" />
+                      or
+                      <span className="h-px flex-1 bg-neutral-800" />
+                    </div>
+                  )}
+                  {conditions.map((cond, i) =>
+                    (cond.group ?? 0) !== g ? null : (
+                    <div key={i} className="grid grid-cols-[1fr_9rem_1fr_auto] items-start gap-2">
+                      <input
+                        className={field}
+                        placeholder={example.path}
+                        value={cond.path}
+                        onFocus={() => setActiveCond(i)}
+                        onChange={(e) => setCondition(i, { ...cond, path: e.target.value })}
+                      />
+                      <select
+                        className={field}
+                        value={cond.op}
+                        onChange={(e) =>
+                          setCondition(i, { ...cond, op: e.target.value as FilterCondition["op"] })
+                        }
+                      >
+                        <option value="in">is one of</option>
+                        <option value="not_in">is not one of</option>
+                        <option value="contains">contains</option>
+                        <option value="not_contains">does not contain</option>
+                      </select>
+                      <ListInput
+                        key={`filter-${agent?.id ?? "new"}-${i}`}
+                        placeholder={example.values}
+                        value={cond.values}
+                        onChange={(next) => setCondition(i, { ...cond, values: next })}
+                      />
+                      <button
+                        onClick={() => setConditions(conditions.filter((_, j) => j !== i))}
+                        title="Remove this condition"
+                        className="px-1 py-1.5 text-sm text-neutral-600 hover:text-red-400"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                    ),
+                  )}
+                  {grouped && (
+                    <button
+                      onClick={() => addCondition(g)}
+                      className="text-xs text-neutral-400 hover:text-neutral-100"
+                    >
+                      + Add a condition to this set
+                    </button>
+                  )}
+                </div>
+              ))}
+              {suggest && conditions[pillTarget] && (
+                <Pills
+                  mono
+                  options={suggest.paths.map((pth) => [pth, pth] as const)}
+                  isOn={(v) => conditions[pillTarget]!.path === v}
+                  onPick={(v) => setCondition(pillTarget, { ...conditions[pillTarget]!, path: v })}
+                />
+              )}
+              <div className="flex flex-wrap items-baseline gap-4">
+                {!grouped && (
+                  <button
+                    onClick={() => addCondition(groupIds[0] ?? 0)}
+                    className="text-xs text-neutral-400 hover:text-neutral-100"
+                  >
+                    {conditions.length === 0 ? "+ Add a condition" : "+ Add another condition"}
+                  </button>
+                )}
+                {conditions.length > 0 && (
+                  <button
+                    onClick={() => addCondition(Math.max(...groupIds) + 1)}
+                    title="Run when either this set or another one holds"
+                    className="text-xs text-neutral-600 hover:text-neutral-300"
+                  >
+                    {grouped ? "+ Add another set" : "or run on a different set of conditions"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </PanelSection>
+
+          <PanelSection title="Each run">
+            <div>
+              <span className={label}>Run label</span>
+              <input
+                className={field}
+                placeholder={example.label}
+                value={draft.labelTemplate ?? ""}
+                onChange={(e) => set("labelTemplate", e.target.value || null)}
+              />
+              <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                Optional. Shown beside each run in lists. Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
+              </p>
+            </div>
+
+                      <div>
+                        <span className={label}>Merge deliveries</span>
+                        <div className="flex gap-2">
+                          <label className="min-w-0 flex-1">
+                            <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
+                            <input
+                              className={field}
+                              placeholder="{{payload.pull_request.html_url}}"
+                              value={draft.mergeKey ?? ""}
+                              onChange={(e) => set("mergeKey", e.target.value || null)}
+                            />
+                          </label>
+                          <label className="w-28 shrink-0">
+                            <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={3600}
+                              className={field}
+                              value={draft.mergeWaitSeconds ?? ""}
+                              onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
+                            />
+                          </label>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                          Optional. A delivery waits this long, and any with the same key that arrive meanwhile join its run.
+                          Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
+                        </p>
+                      </div>
+          </PanelSection>
         </div>
       )}
     </div>
