@@ -64,3 +64,24 @@ export async function openPullRequest(opts: {
   const pr = (await res.json()) as { html_url: string; number: number };
   return { url: pr.html_url, number: pr.number };
 }
+
+export type PullState = "open" | "closed" | "none";
+
+/** Whether any pull request for this branch is still open. "closed" covers merged. */
+export async function pullState(cwd: string, branch: string): Promise<PullState> {
+  if (!githubToken()) throw new Error("GITHUB_TOKEN is not set");
+  const repo = parseRepo(git(cwd, ["remote", "get-url", "origin"]).trim());
+  if (!repo) throw new Error("origin is not a GitHub remote");
+
+  const url = new URL(`https://api.github.com/repos/${repo.owner}/${repo.repo}/pulls`);
+  url.searchParams.set("head", `${repo.owner}:${branch}`);
+  url.searchParams.set("state", "all");
+  url.searchParams.set("per_page", "10");
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${githubToken()}`, accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) throw new Error(`GitHub pulls lookup failed: ${res.status}`);
+  const pulls = (await res.json()) as { state: string }[];
+  if (pulls.length === 0) return "none";
+  return pulls.some((p) => p.state === "open") ? "open" : "closed";
+}

@@ -13,6 +13,7 @@ import { selectMcp } from "../mcp.ts";
 import { exportMachineMcp } from "../machineMcp.ts";
 import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
 import { collectArtifacts } from "../artifacts.ts";
+import { pullState, type PullState } from "../git.ts";
 import { systemNote } from "./systemNote.ts";
 import { dropPending, makeCanUseTool } from "./approvals.ts";
 import { claudeRunner } from "./ClaudeRunner.ts";
@@ -592,11 +593,54 @@ export function sweepWorkspaces(): number {
   return removed;
 }
 
+/** Clones found to have no pull request; not asked about again until the next boot. */
+const unpulled = new Set<string>();
+
+/**
+ * A clone is kept for its diff, but once its branch's pull request is merged
+ * or closed that diff lives on GitHub. A clone that never got a PR is kept,
+ * since the directory is the only copy. Needs a GitHub token; without one
+ * nothing is swept.
+ */
+export async function sweepMergedClones(lookup: (cwd: string, branch: string) => Promise<PullState> = pullState): Promise<number> {
+  const cutoff = Math.floor(Date.now() / 1000) - workspaceRetentionHours() * 3600;
+  const due = db
+    .select({ id: runs.id, path: runs.workspacePath, branch: runs.branch })
+    .from(runs)
+    .where(
+      and(
+        isNotNull(runs.branch),
+        like(runs.workspacePath, `${config.workspacesDir}/%`),
+        inArray(runs.status, ["completed", "failed", "cancelled", "interrupted"]),
+        lte(runs.endedAt, cutoff),
+      ),
+    )
+    .all();
+  let removed = 0;
+  for (const { id, path, branch } of due) {
+    if (path !== join(config.workspacesDir, id) || !existsSync(path) || unpulled.has(id)) continue;
+    let state: PullState;
+    try {
+      state = await lookup(path, branch!);
+    } catch {
+      continue;
+    }
+    if (state === "none") unpulled.add(id);
+    if (state !== "closed") continue;
+    removeWorkspace(path);
+    removed++;
+  }
+  return removed;
+}
+
 let sweepTimer: NodeJS.Timeout | null = null;
 
 export function startWorkspaceSweep(): void {
   if (sweepTimer) clearInterval(sweepTimer);
-  sweepTimer = setInterval(sweepWorkspaces, 60 * 60 * 1000);
+  sweepTimer = setInterval(() => {
+    sweepWorkspaces();
+    void sweepMergedClones();
+  }, 60 * 60 * 1000);
   sweepTimer.unref();
 }
 

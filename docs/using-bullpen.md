@@ -28,7 +28,9 @@ Each agent has a **workspace**, one of:
 - **Existing directory** — a folder you name, such as your real checkout, edited in place and
   never cleaned up.
 - **Git clone** — a fresh clone on its own branch per run. Review the diff a run produced, then
-  commit, push, and open a PR from the run page.
+  commit, push, and open a PR from the run page. The clone is kept until its pull request is
+  merged or closed and the retention window has passed; one that never got a PR is kept, since
+  the directory is the only copy of its diff.
 
 **Overlapping runs** decides what happens when a trigger arrives while a run is active:
 
