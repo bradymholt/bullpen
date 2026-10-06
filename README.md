@@ -9,8 +9,8 @@
 <br/>
 
 A self-hosted dashboard for a roster of Claude Code agents — code agents that clone a repo and
-open a PR, and non-code agents that fetch data and report back. Run them by hand, on a cron, or
-from a webhook, and watch them work.  **[Using bullpen](docs/using-bullpen.md)** covers setting agents up: workspaces, permission modes,
+open a PR, and non-code agents that fetch data and report back. Run them by hand, on a cron, when
+a URL changes, or from a webhook, and watch them work.  **[Using bullpen](docs/using-bullpen.md)** covers setting agents up: workspaces, permission modes,
 webhooks, env and secrets, and MCP servers.
 
 
@@ -20,6 +20,8 @@ which drives the real `claude` binary, so a Claude subscription works without an
 ![Bullpen dashboard: a space's agents, recent runs, and what needs attention](docs/screenshot.png)
 
 ![A run in progress: the agent's messages, tool calls and their output as they stream in](docs/run-view.png)
+
+![The agent editor's webhook trigger: sender, URL and secret, delivery filters, and per-run merging](docs/agent-editor.png)
 
 ## Run it locally
 
