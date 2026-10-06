@@ -92,4 +92,15 @@ describe("merging deliveries", () => {
     releaseWaiting(runId, start);
     expect(started).toEqual([runId]);
   });
+
+  it("drops a skip agent's merged run if another run is active when its wait ends", () => {
+    db.update(agents).set({ concurrency: "skip" }).where(eq(agents.id, "q1")).run();
+    const { runId } = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", merge: merge("pr/1") });
+    const started: string[] = [];
+
+    releaseWaiting(runId, (_, id) => (started.push(id), id));
+
+    expect(started).toEqual([]);
+    expect(db.select().from(runs).all().find((r) => r.id === runId)?.status).toBe("cancelled");
+  });
 });

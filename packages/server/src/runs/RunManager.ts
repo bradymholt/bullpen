@@ -192,7 +192,9 @@ function scheduleRelease(runId: string, startAfter: number): void {
 
 /**
  * Ends a run's merge window. A `queue` agent's run joins the ordinary queue, so
- * it still waits its turn; any other agent's starts now.
+ * it still waits its turn; a `skip` agent's is dropped if a run is active now,
+ * since that check at delivery time is a window too old to mean anything; any
+ * other agent's starts now.
  */
 export function releaseWaiting(runId: string, start: (opts: RunRequest, existingId: string) => string = startRun): void {
   const row = db.select().from(runs).where(eq(runs.id, runId)).get();
@@ -201,7 +203,11 @@ export function releaseWaiting(runId: string, start: (opts: RunRequest, existing
   const agent = getAgent(row.agentId);
   if (!agent) return;
   if (agent.concurrency === "queue") drainQueue(agent.id, start);
-  else startQueued(row, agent, start);
+  else if (agent.concurrency === "skip" && agentHasActiveRun(agent.id)) {
+    rmSync(spoolPath(runId), { force: true });
+    appendEvent(runId, "run.skipped", { reason: "run already active" });
+    setStatus(runId, "cancelled", { error: "skipped: another run was active", endedAt: Math.floor(Date.now() / 1000) });
+  } else startQueued(row, agent, start);
 }
 
 /**
