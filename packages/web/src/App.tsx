@@ -849,6 +849,22 @@ export function App() {
   };
   useEffect(refresh, []);
 
+  // Switching tabs fires both visibilitychange and focus.
+  useEffect(() => {
+    let last = 0;
+    const onReturn = () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 1000) return;
+      last = Date.now();
+      refresh();
+    };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, []);
+
   // Polled on its own rather than through `runs`, which would refetch the open agent's history every tick.
   const [waitingAgents, setWaitingAgents] = useState(0);
   useEffect(() => {
