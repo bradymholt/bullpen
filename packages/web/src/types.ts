@@ -209,6 +209,8 @@ export type Stats = {
   latest: Record<string, { id: string; status: string; startedAt: number }>;
   /** Count of running / awaiting-approval runs per agent. */
   active: Record<string, number>;
+  /** Runs stopped on a permission prompt, per agent. */
+  awaiting: Record<string, number>;
   /** Runs waiting behind an active one, per agent. */
   queued: Record<string, number>;
 };

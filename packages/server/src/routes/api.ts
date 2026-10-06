@@ -1219,6 +1219,9 @@ api.get("/stats", (c) => {
     select agent_id as agentId, count(*) as n from runs
     where status in ('running', 'awaiting_approval') group by agent_id
   `);
+  const awaiting = db.all<{ agentId: string; n: number }>(sql`
+    select agent_id as agentId, count(*) as n from runs where status = 'awaiting_approval' group by agent_id
+  `);
   const queued = db.all<{ agentId: string; n: number }>(sql`
     select agent_id as agentId, count(*) as n from runs where status = 'queued' group by agent_id
   `);
@@ -1231,6 +1234,7 @@ api.get("/stats", (c) => {
     total: db.select({ n: sql<number>`count(*)` }).from(runs).get()?.n ?? 0,
     latest: Object.fromEntries(latest.map((r) => [r.agentId, r])),
     active: Object.fromEntries(active.map((r) => [r.agentId, r.n])),
+    awaiting: Object.fromEntries(awaiting.map((r) => [r.agentId, r.n])),
     queued: Object.fromEntries(queued.map((r) => [r.agentId, r.n])),
   });
 });
