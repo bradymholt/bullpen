@@ -1178,6 +1178,7 @@ api.get("/system-prompt", (c) => {
   return c.json({
     files: SYSTEM_NOTE.files,
     delivery: SYSTEM_NOTE.delivery("webhook"),
+    telegram: SYSTEM_NOTE.telegram(true),
     config: configDir ? SYSTEM_NOTE.config(configDir) : null,
   });
 });

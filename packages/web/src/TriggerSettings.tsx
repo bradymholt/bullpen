@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
+import { TELEGRAM_ASSISTANT_PROMPT } from "./templates.ts";
 import type { Agent, AgentInput, FilterCondition } from "./types.ts";
 
 const field =
@@ -255,9 +256,8 @@ function setupFor(mode: string, url: string): Setup {
         ],
         note: (
           <>
-            While a message is being worked on, bullpen shows <em>typing&hellip;</em> in the chat. The
-            reply is the agent&rsquo;s to send, with <code>sendMessage</code> to{" "}
-            <code>message.chat.id</code>. Retries share an <code>update_id</code> and run once.
+            While a message is being worked on, bullpen shows <em>typing&hellip;</em> in the chat, and
+            the agent is told what Telegram can show. Retries share an <code>update_id</code> and run once.
           </>
         ),
       };
@@ -800,6 +800,45 @@ export function TriggerSettings({
                         </div>
                         <p className="mt-1.5 text-xs text-neutral-600">{PROVIDERS.find(([v]) => v === mode)?.[2]}</p>
                       </div>
+
+                      {mode === "telegram" && (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="flex items-center gap-2 text-sm text-neutral-300">
+                              <input
+                                type="checkbox"
+                                checked={draft.webhookReply ?? false}
+                                onChange={(e) => set("webhookReply", e.target.checked)}
+                              />
+                              Reply with the agent&rsquo;s final message
+                            </label>
+                            <p className="mt-1 text-xs text-neutral-600">
+                              {draft.webhookReply
+                                ? "Bullpen posts the run's last message to the chat, then any files saved to .bullpen/out/. The prompt needs no sendMessage of its own."
+                                : "The agent sends its own reply with the Bot API; the system note tells it how."}
+                            </p>
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (draft.prompt?.trim() && !confirm("Replace the current prompt with the personal-assistant template?")) return;
+                                set("prompt", TELEGRAM_ASSISTANT_PROMPT);
+                                set("webhookReply", true);
+                                set("workspaceConfig", { kind: "scratch" });
+                                set("concurrency", "queue");
+                              }}
+                              className="rounded border border-neutral-700 px-3 py-1 text-xs hover:bg-neutral-800"
+                            >
+                              Start from the personal-assistant prompt
+                            </button>
+                            <p className="mt-1 text-xs text-neutral-600">
+                              A chat assistant that keeps a daily log and notes in its workspace. Also turns Reply on, sets the
+                              workspace to a scratch directory, and queues messages so they run one at a time.
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
                       {mode === "custom" && (
                         <div className="grid grid-cols-2 gap-3">

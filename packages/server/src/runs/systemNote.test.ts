@@ -34,6 +34,12 @@ describe("systemNote", () => {
     expect(noteworthyConfigDir({ CLAUDE_CONFIG_DIR: "/data/other" })).toBe("/data/other");
   });
 
+  it("tells a Telegram run who sends the reply, and says nothing about Telegram otherwise", () => {
+    expect(systemNote("webhook", {}, { telegram: { reply: true } })).toContain("Your final message is posted to the chat");
+    expect(systemNote("webhook", {}, { telegram: { reply: false } })).toContain("The reply is yours to send");
+    expect(systemNote("webhook", {})).not.toContain("Telegram");
+  });
+
   it("keeps the delivery and files sections regardless", () => {
     const note = systemNote("webhook", {});
     expect(note).toContain("payload.json");

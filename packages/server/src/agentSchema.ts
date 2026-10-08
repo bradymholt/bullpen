@@ -86,6 +86,7 @@ const fields = {
   // "hmac" is the pre-preset spelling of "github"; kept so old records round-trip.
   trigger: z.enum(["manual", "schedule", "poll", "webhook"]),
   webhookMode: z.enum(["token", "github", "slack", "asana", "groupme", "telegram", "custom", "hmac"]),
+  webhookReply: z.boolean(),
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
   filters: z.array(filterConditionSchema).max(30),
@@ -132,6 +133,7 @@ export const AGENT_DEFAULTS = {
   pollHeaders: {},
   trigger: "manual",
   webhookMode: "custom",
+  webhookReply: false,
   webhookEvents: [],
   filterValues: [],
   filters: [],
