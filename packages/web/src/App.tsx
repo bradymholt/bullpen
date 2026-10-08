@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AgentEditor } from "./AgentEditor.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { GitPanel } from "./GitPanel.tsx";
@@ -288,7 +288,42 @@ const SPACE_ICON_STYLES: Record<string, string> = {
 };
 const DEFAULT_SPACE_ICON = "slate";
 
-type SpaceOption = { name: string; icon: string | null; agents: number; running: number; paused: number };
+type SpaceOption = {
+  name: string;
+  icon: string | null;
+  agents: number;
+  running: number;
+  awaiting: number;
+  paused: number;
+};
+
+/** One status line for a space, the same under the trigger and in each row: what needs
+ *  you first. Two segments at most, which is what fits beside the tile in the rail. */
+function SpaceStatus({ s }: { s: SpaceOption }) {
+  const parts: ReactNode[] = [];
+  if (s.awaiting > 0) parts.push(<span key="a" className="text-amber-400">{s.awaiting} need{s.awaiting === 1 ? "s" : ""} you</span>);
+  else if (s.running > 0) parts.push(<span key="r" className="text-sky-400">{s.running} running</span>);
+  parts.push(<span key="n">{s.agents} agent{s.agents === 1 ? "" : "s"}</span>);
+  if (parts.length === 1 && s.paused > 0) parts.push(<span key="p">{s.paused} paused</span>);
+  return (
+    <>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {i > 0 && " \u00b7 "}
+          {part}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+      <path d="M3 8.5l3 3 7-7" />
+    </svg>
+  );
+}
 
 const spaceTile = (icon: string | null | undefined) =>
   SPACE_ICON_STYLES[icon ?? DEFAULT_SPACE_ICON] ?? SPACE_ICON_STYLES[DEFAULT_SPACE_ICON]!;
@@ -296,24 +331,37 @@ const spaceTile = (icon: string | null | undefined) =>
 function SpaceSwitcher({
   spaces,
   current,
-  subtitle,
+  defaultSpace,
   onPick,
   onNew,
   onOpen,
+  onSettings,
   icon,
   className = "",
 }: {
   spaces: SpaceOption[];
   current: string;
-  subtitle: string;
+  /** The space the box opens on load, if one is set. */
+  defaultSpace: string | null;
   icon?: string | null;
   onPick: (next: string) => void;
   onNew: () => void;
   onOpen: () => void;
+  onSettings: () => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const item = "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-neutral-800";
+  const here = spaces.find((s) => s.name === current) ?? {
+    name: current,
+    icon: icon ?? null,
+    agents: 0,
+    running: 0,
+    awaiting: 0,
+    paused: 0,
+  };
+  // Only other spaces light the dot: it always means "look elsewhere".
+  const elsewhere = spaces.filter((s) => s.name !== current && s.awaiting > 0).length;
   return (
     <div className={`relative ${className}`}>
       <div className="flex w-full items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 p-1.5 focus-within:border-neutral-600 hover:border-neutral-600">
@@ -329,17 +377,22 @@ function SpaceSwitcher({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{current}</span>
-            <span className="block truncate text-xs text-neutral-500">{subtitle}</span>
+            <span className="block truncate text-xs text-neutral-500">
+              <SpaceStatus s={here} />
+            </span>
           </span>
         </button>
         <button
           onClick={() => setOpen((o) => !o)}
-          title="Switch space"
+          title={elsewhere > 0 ? "Switch space \u2014 another space needs you" : "Switch space"}
           aria-label="Switch space"
           aria-expanded={open}
-          className="flex h-8 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-neutral-500 hover:border-neutral-600 hover:bg-neutral-800 hover:text-neutral-200"
+          className="relative flex h-8 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-neutral-500 hover:border-neutral-600 hover:bg-neutral-800 hover:text-neutral-200"
         >
           <ChevronUpDownIcon />
+          {elsewhere > 0 && (
+            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-neutral-950 bg-amber-500" />
+          )}
         </button>
       </div>
       {open && (
@@ -361,17 +414,31 @@ function SpaceSwitcher({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{s.name}</span>
                   <span className="block truncate text-xs text-neutral-500">
-                    {s.agents} agent{s.agents === 1 ? "" : "s"}
-                    {s.running > 0 && ` \u00b7 ${s.running} running`}
-                    {s.paused > 0 && ` \u00b7 ${s.paused} paused`}
+                    <SpaceStatus s={s} />
                   </span>
                 </span>
-                {s.name === current && <span className="shrink-0 text-xs text-neutral-300">&bull;</span>}
+                {s.name === defaultSpace && (
+                  <span
+                    title="Bullpen opens this space"
+                    className="shrink-0 rounded-full border border-neutral-700 px-1.5 text-[10px] uppercase tracking-wide text-neutral-400"
+                  >
+                    default
+                  </span>
+                )}
+                {s.name === current && <CheckIcon />}
               </button>
             ))}
             <div className="my-1 border-t border-neutral-800" />
+            <button
+              onClick={() => { setOpen(false); onSettings(); }}
+              title="Name, environment, shared webhook"
+              className={`${item} text-neutral-400`}
+            >
+              <span className="flex w-7 shrink-0 justify-center"><GearIcon /></span>
+              Space settings
+            </button>
             <button onClick={() => { setOpen(false); onNew(); }} className={`${item} text-neutral-400`}>
-              <span className="w-7 shrink-0" />
+              <span className="w-7 shrink-0 text-center">+</span>
               New space&hellip;
             </button>
           </div>
@@ -944,7 +1011,8 @@ export function App() {
       name,
       icon: spaceIcons[name] ?? null,
       agents: members.length,
-      running: runs.filter((r) => ids.has(r.agentId) && ACTIVE.has(r.status)).length,
+      running: runs.filter((r) => ids.has(r.agentId) && r.status === "running").length,
+      awaiting: runs.filter((r) => ids.has(r.agentId) && r.status === "awaiting_approval").length,
       paused: members.filter((a) => !a.enabled).length,
     };
   });
@@ -1158,9 +1226,10 @@ export function App() {
           <SpaceSwitcher
             spaces={spaceOptions}
             current={active}
-            subtitle={`${visibleAgents.length} agent${visibleAgents.length === 1 ? "" : "s"}`}
+            defaultSpace={configuredDefault}
             onPick={pickSpace}
             onOpen={() => setView({ kind: "home" })}
+            onSettings={() => setView({ kind: "space", name: active })}
             icon={spaceIcons[active]}
             onNew={() => setNewSpaceOpen(true)}
             className="mt-4"
