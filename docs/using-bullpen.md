@@ -108,9 +108,11 @@ Under **Which deliveries run**, a delivery has to pass filters before anything s
   sets when different kinds of delivery need different rules; the agent runs when any one set
   holds. Nothing is spent on a delivery that doesn't match.
 
-Under **Each run**, **Merge deliveries** folds bursts into one run. Give it a key such as
-`{{payload.pull_request.html_url}}` and a wait in seconds: a delivery waits that long, and any
-with the same key that arrive meanwhile join its run. GitHub, for one, sends two
+Under **Each run**, **Delay** holds each run that many seconds before it starts, counted from
+the delivery that created it — useful when the sender is about to send more, like an author
+pushing a few commits in a row. Add a **Merge key** such as `{{payload.pull_request.html_url}}`
+and any delivery with the same key that arrives during the delay joins the waiting run instead
+of starting another, with the latest payload winning. GitHub, for one, sends two
 `review_requested` deliveries when you request a person and a team together.
 
 The sender has to be able to reach bullpen, so `/api/hooks` needs a public route — on a deployed

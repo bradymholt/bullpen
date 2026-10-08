@@ -353,12 +353,12 @@ function renderRunLabel(agent: Agent, payload: unknown): string | undefined {
   return rendered.length > 0 ? rendered.slice(0, 200) : undefined;
 }
 
-/** A key that renders blank can't be matched against anything, so that delivery runs on its own. */
-function mergeFor(agent: Agent, payload: unknown): RunRequest["merge"] {
+/** A key that renders blank can't be matched against anything, so that delivery waits on its own. */
+function delayFor(agent: Agent, payload: unknown): RunRequest["delay"] {
+  if (!agent.mergeWaitSeconds) return undefined;
   const template = agent.mergeKey?.trim();
-  if (!template || !agent.mergeWaitSeconds) return undefined;
-  const key = renderPrompt(template, payload).trim();
-  return key ? { key, waitSeconds: agent.mergeWaitSeconds } : undefined;
+  const mergeKey = template ? renderPrompt(template, payload).trim() : "";
+  return { seconds: agent.mergeWaitSeconds, ...(mergeKey ? { mergeKey } : {}) };
 }
 
 type DeliveryOutcome =
@@ -405,12 +405,12 @@ function deliverToAgent(opts: {
   }
 
   let started: ReturnType<typeof requestRun>;
-  const merge = mergeFor(agent, payload);
+  const delay = delayFor(agent, payload);
   try {
     started = requestRun({
       agent, trigger: "webhook", prompt: decision.prompt, rawPayload: rawBody,
       ...(label ? { label } : {}),
-      ...(merge ? { merge } : {}),
+      ...(delay ? { delay } : {}),
     });
   } catch (e) {
     if (!(e instanceof QueueFullError)) throw e;
@@ -419,7 +419,7 @@ function deliverToAgent(opts: {
   }
   recordDelivery({
     agentId, sourceIp, deliveryKey, event: shownEvent, label, viaSpace, accepted: true, runId: started.runId,
-    ...(started.merged ? { reason: "merged" } : started.queued ? { reason: merge ? "waiting to merge" : "queued" } : {}),
+    ...(started.merged ? { reason: "merged" } : started.queued ? { reason: delay ? "delayed" : "queued" } : {}),
   });
   return { ok: true, agentId, runId: started.runId, queued: started.queued };
 }
