@@ -65,14 +65,14 @@ describe("queue concurrency", () => {
   });
 });
 
-describe("merging deliveries", () => {
-  const merge = (key: string) => ({ key, waitSeconds: 60 });
+describe("delayed deliveries", () => {
+  const merge = (mergeKey: string) => ({ seconds: 60, mergeKey });
   const spooled = (id: string) => JSON.parse(readFileSync(join(process.env.BULLPEN_DATA!, "queue", `${id}.json`), "utf8")).rawPayload;
 
   it("folds a second delivery with the same key into the waiting run, keeping the latest payload", () => {
-    const first = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "one", rawPayload: "P1", merge: merge("pr/1") });
-    const second = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "two", rawPayload: "P2", merge: merge("pr/1") });
-    const other = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "three", rawPayload: "P3", merge: merge("pr/2") });
+    const first = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "one", rawPayload: "P1", delay: merge("pr/1") });
+    const second = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "two", rawPayload: "P2", delay: merge("pr/1") });
+    const other = requestRun({ agent: agent() as never, trigger: "webhook", prompt: "three", rawPayload: "P3", delay: merge("pr/2") });
 
     expect(second).toEqual({ runId: first.runId, queued: true, merged: true });
     expect(other.runId).not.toBe(first.runId);
@@ -80,8 +80,16 @@ describe("merging deliveries", () => {
     expect(db.select().from(runs).all().find((r) => r.id === first.runId)?.prompt).toBe("two");
   });
 
+  it("delays each delivery on its own when there is no merge key", () => {
+    const first = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", delay: { seconds: 60 } });
+    const second = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P2", delay: { seconds: 60 } });
+
+    expect(second.runId).not.toBe(first.runId);
+    expect(db.select().from(runs).all().find((r) => r.id === second.runId)?.startAfter).not.toBeNull();
+  });
+
   it("leaves a waiting run alone until its window ends, then hands it to the queue", () => {
-    const { runId } = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", merge: merge("pr/1") });
+    const { runId } = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", delay: merge("pr/1") });
     db.delete(runs).where(eq(runs.id, "active")).run();
     const started: string[] = [];
     const start = (_: unknown, id: string) => (started.push(id), id);
@@ -95,7 +103,7 @@ describe("merging deliveries", () => {
 
   it("drops a skip agent's merged run if another run is active when its wait ends", () => {
     db.update(agents).set({ concurrency: "skip" }).where(eq(agents.id, "q1")).run();
-    const { runId } = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", merge: merge("pr/1") });
+    const { runId } = requestRun({ agent: agent() as never, trigger: "webhook", rawPayload: "P1", delay: merge("pr/1") });
     const started: string[] = [];
 
     releaseWaiting(runId, (_, id) => (started.push(id), id));

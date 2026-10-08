@@ -53,7 +53,7 @@ export const agents = sqliteTable("agents", {
   labelTemplate: text("label_template"),
   /** Template naming what a delivery is about; deliveries that render the same key while one waits become one run. */
   mergeKey: text("merge_key"),
-  /** How long a delivery waits before starting, so later ones with the same mergeKey can join it. */
+  /** How long a delivery waits before starting; later ones with the same mergeKey join it meanwhile. */
   mergeWaitSeconds: integer("merge_wait_seconds"),
   webhookSignatureHeader: text("webhook_signature_header"),
   webhookSignaturePrefix: text("webhook_signature_prefix"),
@@ -117,7 +117,7 @@ export const runs = sqliteTable(
     label: text("label"),
     /** The rendered mergeKey of a run still waiting out its window. */
     mergeKey: text("merge_key"),
-    /** Set while a queued run waits out its merge window; drainQueue leaves it alone until then. */
+    /** Set while a queued run waits out its delay; drainQueue leaves it alone until then. */
     startAfter: integer("start_after"),
     numTurns: integer("num_turns"),
     error: text("error"),

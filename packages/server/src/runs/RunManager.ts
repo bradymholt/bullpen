@@ -74,8 +74,8 @@ export type RunRequest = {
   rawPayload?: string;
   /** Names this run in lists. The caller renders it; the payload lives there. */
   label?: string;
-  /** Wait this long before starting; a later request with the same key replaces this one's payload instead of running too. */
-  merge?: { key: string; waitSeconds: number };
+  /** Wait this long before starting; a later request with the same mergeKey replaces this one's payload instead of running too. */
+  delay?: { seconds: number; mergeKey?: string };
 };
 
 export class QueueFullError extends Error {
@@ -105,21 +105,23 @@ function queuedCount(agentId: string): number {
  * request is parked as a `queued` row and starts when that run ends.
  */
 export function requestRun(opts: RunRequest): { runId: string; queued: boolean; merged?: boolean } {
-  const { agent, merge } = opts;
-  if (merge) {
-    const waiting = db
-      .select({ id: runs.id })
-      .from(runs)
-      .where(and(eq(runs.agentId, agent.id), eq(runs.status, "queued"), eq(runs.mergeKey, merge.key), isNotNull(runs.startAfter)))
-      .get();
+  const { agent, delay } = opts;
+  if (delay) {
+    const waiting = delay.mergeKey
+      ? db
+          .select({ id: runs.id })
+          .from(runs)
+          .where(and(eq(runs.agentId, agent.id), eq(runs.status, "queued"), eq(runs.mergeKey, delay.mergeKey), isNotNull(runs.startAfter)))
+          .get()
+      : undefined;
     if (waiting) {
       mergeInto(waiting.id, opts);
       return { runId: waiting.id, queued: true, merged: true };
     }
     const depth = queuedCount(agent.id);
     if (depth >= QUEUE_DEPTH) throw new QueueFullError(agent.name, depth);
-    const startAfter = Math.floor(Date.now() / 1000) + merge.waitSeconds;
-    const runId = enqueueRun(opts, { mergeKey: merge.key, startAfter });
+    const startAfter = Math.floor(Date.now() / 1000) + delay.seconds;
+    const runId = enqueueRun(opts, { mergeKey: delay.mergeKey ?? null, startAfter });
     scheduleRelease(runId, startAfter);
     return { runId, queued: true };
   }
@@ -135,7 +137,7 @@ export function requestRun(opts: RunRequest): { runId: string; queued: boolean; 
  * Everything startRun would need later, spooled to disk rather than the DB: a
  * webhook body can be a megabyte, and the row already holds prompt and mode.
  */
-function enqueueRun(opts: RunRequest, wait?: { mergeKey: string; startAfter: number }): string {
+function enqueueRun(opts: RunRequest, wait?: { mergeKey: string | null; startAfter: number }): string {
   const { agent, trigger } = opts;
   const runId = randomUUID();
   writeSpool(runId, opts);
@@ -192,7 +194,7 @@ function scheduleRelease(runId: string, startAfter: number): void {
 }
 
 /**
- * Ends a run's merge window. A `queue` agent's run joins the ordinary queue, so
+ * Ends a run's delay. A `queue` agent's run joins the ordinary queue, so
  * it still waits its turn; a `skip` agent's is dropped if a run is active now,
  * since that check at delivery time is a window too old to mean anything; any
  * other agent's starts now.

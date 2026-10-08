@@ -1198,35 +1198,34 @@ export function TriggerSettings({
               </p>
             </div>
 
-                      <div>
-                        <span className={label}>Merge deliveries</span>
-                        <div className="flex gap-2">
-                          <label className="min-w-0 flex-1">
-                            <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
-                            <input
-                              className={field}
-                              placeholder="{{payload.pull_request.html_url}}"
-                              value={draft.mergeKey ?? ""}
-                              onChange={(e) => set("mergeKey", e.target.value || null)}
-                            />
-                          </label>
-                          <label className="w-28 shrink-0">
-                            <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={3600}
-                              className={field}
-                              value={draft.mergeWaitSeconds ?? ""}
-                              onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
-                            />
-                          </label>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-                          Optional. A delivery waits this long, and any with the same key that arrive meanwhile join its run.
-                          Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
-                        </p>
-                      </div>
+            <div>
+              <div className="flex gap-2">
+                <label className="w-28 shrink-0">
+                  <span className={label}>Delay (seconds)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3600}
+                    className={field}
+                    value={draft.mergeWaitSeconds ?? ""}
+                    onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
+                  />
+                </label>
+                <label className="min-w-0 flex-1">
+                  <span className={label}>Merge key</span>
+                  <input
+                    className={field}
+                    placeholder="{{payload.pull_request.html_url}}"
+                    value={draft.mergeKey ?? ""}
+                    onChange={(e) => set("mergeKey", e.target.value || null)}
+                  />
+                </label>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                Optional. Each run waits this long before starting. With a merge key, deliveries with the same key
+                that arrive meanwhile join the waiting run instead of starting another.
+              </p>
+            </div>
           </PanelSection>
         </div>
       )}
