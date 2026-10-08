@@ -178,8 +178,10 @@ specific servers. Otherwise an agent sees only the servers defined on it.
 (global, space, or agent). The API never returns their values.
 
 **OAuth servers** (Datadog, Cloudflare, …) get an **Authorize** button under Settings: open the
-link, approve, and paste back the `localhost` URL the browser lands on. claude.ai connectors need
-no setup — they come with the login.
+link, approve, and paste back the `localhost` URL the browser lands on. This only works for servers
+that support dynamic client registration. One that needs a pre-registered OAuth app (Asana, for
+example) fails with "does not support dynamic client registration"; give the agent an API token in
+its env instead. claude.ai connectors need no setup — they come with the login.
 
 **Moving servers to a headless box:** under Settings → Export / import, export with a
 passphrase on your Mac — the servers ride
