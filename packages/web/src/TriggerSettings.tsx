@@ -966,7 +966,13 @@ export function TriggerSettings({
                         )}
                       </div>
 
-                      {draft.space && (
+                      {draft.space && mode === "asana" && (
+                        <p className="text-xs leading-relaxed text-neutral-600">
+                          Point Asana at the URL above, not the <strong>{draft.space}</strong> space&rsquo;s
+                          shared webhook &mdash; only this agent&rsquo;s own URL completes Asana&rsquo;s handshake.
+                        </p>
+                      )}
+                      {draft.space && mode !== "asana" && (
                         <p className="text-xs leading-relaxed text-neutral-600">
                           This agent also answers the <strong>{draft.space}</strong> space&rsquo;s shared webhook,
                           set up under &ldquo;Space settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
