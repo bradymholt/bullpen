@@ -154,6 +154,16 @@ function toItems(events: RunEvent[], meteredBilling: boolean): Item[] {
         kind: "meta",
         body: e.payload.resumed ? "Restarted — resuming the session" : "Restarted — starting over on the original prompt",
       });
+    } else if (e.type === "telegram.reply") {
+      const { messages = 0, files = 0, errors = [] } = e.payload as { messages?: number; files?: number; errors?: string[] };
+      const sent = [messages > 0 && `${messages} message${messages === 1 ? "" : "s"}`, files > 0 && `${files} file${files === 1 ? "" : "s"}`]
+        .filter(Boolean)
+        .join(" and ");
+      items.push({
+        key: k,
+        kind: errors.length > 0 ? "error" : "meta",
+        body: `${sent ? `Replied on Telegram with ${sent}` : "Nothing was sent to Telegram"}${errors.length > 0 ? ` — ${errors.join("; ")}` : ""}`,
+      });
     } else if (e.type === "user.message") {
       items.push({ key: k, kind: "user", body: e.payload.text });
     } else if (e.type === "assistant") {

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { config } from "../config.ts";
 import { writePayload } from "../triggers/webhook.ts";
-import { startTelegramTyping } from "../triggers/telegram.ts";
+import { sendTelegramReply, startTelegramTyping } from "../triggers/telegram.ts";
 import { and, asc, eq, inArray, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { agents, approvals, runs, type Agent } from "../db/schema.ts";
@@ -12,9 +12,9 @@ import { claudeAttribution, resolveEnv, workspaceRetentionHours } from "../env.t
 import { selectMcp } from "../mcp.ts";
 import { exportMachineMcp } from "../machineMcp.ts";
 import { removeWorkspace, resolveWorkspace, type WorkspaceSpec } from "../workspaces.ts";
-import { collectArtifacts } from "../artifacts.ts";
+import { artifactPath, collectArtifacts, listArtifacts } from "../artifacts.ts";
 import { pullState, type PullState } from "../git.ts";
-import { systemNote } from "./systemNote.ts";
+import { systemNote, type NoteOptions } from "./systemNote.ts";
 import { dropPending, makeCanUseTool } from "./approvals.ts";
 import { claudeRunner } from "./ClaudeRunner.ts";
 import { MODE_NAMES, type ModeName, type Runner, type RunnerHandle } from "./runner.ts";
@@ -286,7 +286,7 @@ export function startRun(opts: RunRequest, existingId?: string): string {
   const env = resolveEnv(agent);
   // Where the delivery body lives is bullpen's business, not something every
   // prompt should have to restate.
-  const payloadNote = systemNote(trigger, env);
+  const payloadNote = systemNote(trigger, env, noteOptions(agent, trigger));
 
   const spec: WorkspaceSpec = opts.ephemeralWorkspace
     ? { kind: "ephemeral" }
@@ -321,6 +321,15 @@ export function startRun(opts: RunRequest, existingId?: string): string {
   return runId;
 }
 
+/** A Telegram message started this run: the note explains the chat, and the reply may be bullpen's to send. */
+function isTelegramRun(agent: Agent, trigger: string): boolean {
+  return agent.webhookMode === "telegram" && trigger === "webhook";
+}
+
+function noteOptions(agent: Agent, trigger: string): NoteOptions {
+  return isTelegramRun(agent, trigger) ? { telegram: { reply: agent.webhookReply } } : {};
+}
+
 type Launch = {
   trigger: RunRequest["trigger"];
   cwd: string;
@@ -340,8 +349,8 @@ function launch(runId: string, agent: Agent, l: Launch): void {
   const workspace = { path: l.cwd };
   const payloadNote = l.systemNote;
   const mcp = selectMcp(agent, exportMachineMcp(), env);
-  const stopTyping =
-    agent.webhookMode === "telegram" && l.trigger === "webhook" ? startTelegramTyping(l.cwd, env) : () => {};
+  const telegram = isTelegramRun(agent, l.trigger);
+  const stopTyping = telegram ? startTelegramTyping(l.cwd, env) : () => {};
   let closed = false;
   const handle = runner.start(
     {
@@ -374,7 +383,7 @@ function launch(runId: string, agent: Agent, l: Launch): void {
       onMcpStatus: (servers) => {
         if (servers.length > 0) appendEvent(runId, "mcp.status", { servers });
       },
-      onResult: ({ numTurns, costUsd, isError }) => {
+      onResult: ({ numTurns, costUsd, isError, text }) => {
         stopTyping();
         db.update(runs)
           .set({
@@ -392,12 +401,22 @@ function launch(runId: string, agent: Agent, l: Launch): void {
         live.delete(runId);
         handle.close();
         keepArtifacts();
+        if (telegram && agent.webhookReply) void reply(isError ? "Sorry, something went wrong and I couldn't finish that." : (text ?? ""));
         drainQueue(agent.id);
       },
     },
   );
 
   live.set(runId, handle);
+
+  // Artifacts are already moved out of the workspace by now, so they are read from where they were kept.
+  const reply = async (text: string) => {
+    const files = listArtifacts(runId)
+      .map((a) => ({ name: a.name, path: artifactPath(runId, a.name) }))
+      .filter((f): f is { name: string; path: string } => f.path !== null);
+    const outcome = await sendTelegramReply(l.cwd, env, text, files);
+    appendEvent(runId, "telegram.reply", outcome);
+  };
 
   // Idempotent: the second call finds an empty directory.
   const keepArtifacts = () => {
@@ -473,7 +492,7 @@ function relaunch(runId: string, prompt: string, resumeSessionId: string | undef
     prompt,
     permissionMode: run.permissionMode ?? agent.permissionMode,
     env,
-    systemNote: systemNote(run.trigger as RunRequest["trigger"], env),
+    systemNote: systemNote(run.trigger, env, noteOptions(agent, run.trigger)),
     ephemeral: !run.branch && run.workspacePath === join(config.workspacesDir, runId),
     resumeSessionId,
     prior: { numTurns: run.numTurns ?? 0, costUsd: run.costUsd ?? 0 },

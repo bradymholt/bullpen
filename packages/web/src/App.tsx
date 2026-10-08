@@ -613,7 +613,7 @@ export function App() {
   const [configuredDefault, setConfiguredDefault] = useState<string | null>(null);
   /** The setting only steers the first load; after that the URL and the switcher do. */
   const defaultApplied = useRef(false);
-  const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string; config: string | null } | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState<{ files: string; delivery: string; telegram: string; config: string | null } | null>(null);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [showClaudeMd, setShowClaudeMd] = useState(false);
   const [setupGeneration, setSetupGeneration] = useState(0);
@@ -2268,6 +2268,8 @@ export function App() {
                       )}
                       <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Webhook and poll runs, additionally</span>
                       <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.delivery}</pre>
+                      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">Telegram runs, additionally (as shown with Reply on; off, it says to send the reply itself)</span>
+                      <pre className="whitespace-pre-wrap rounded border border-neutral-800 bg-neutral-950 px-3 py-2 font-sans text-xs leading-relaxed text-neutral-400">{systemPrompt.telegram}</pre>
                     </div>
                   )}
 

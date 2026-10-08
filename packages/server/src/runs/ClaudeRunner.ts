@@ -101,6 +101,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
             numTurns: message.num_turns,
             costUsd: message.total_cost_usd,
             isError: message.is_error,
+            ...(message.subtype === "success" ? { text: message.result } : {}),
           });
         }
       }

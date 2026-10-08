@@ -99,6 +99,16 @@ else. Every request lands in the agent's **Recent webhook deliveries**, includin
 dropped and why. **Test fire** in the agent editor sends a request signed exactly as the
 configured sender would, using the saved settings.
 
+**Telegram** gets a little more. While a message is being worked on, bullpen shows *typing…* in the
+chat, and the agent's system prompt explains what Telegram can show: where the text and any
+attachment are in the payload, plain text only, the length limit. Turn on **Reply with the agent's
+final message** and bullpen posts the run's last message to the chat itself, then any files the
+agent saved to `.bullpen/out/` (images as photos, the rest as documents), so the prompt needs no
+`sendMessage` of its own; the run page records what was sent. **Start from the personal-assistant
+prompt** fills in a chat assistant that keeps a daily log and notes in a scratch workspace, with
+Reply on and messages queued one at a time. Either way, add a filter on `message.from.id`: anyone
+can message a bot.
+
 Under **Which deliveries run**, a delivery has to pass filters before anything starts:
 
 - **Only these events** — the event names to accept (GitHub only, since it is the one sender

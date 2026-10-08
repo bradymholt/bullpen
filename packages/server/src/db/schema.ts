@@ -43,6 +43,8 @@ export const agents = sqliteTable("agents", {
   /** Which of the four trigger cards the agent is on. Explicit — the old inference from other fields misfired. */
   trigger: text("trigger").notNull().default("manual"),
   webhookMode: text("webhook_mode").notNull().default("token"),
+  /** Bullpen posts the run's final message back to the chat that sent the delivery; Telegram only, so far. */
+  webhookReply: integer("webhook_reply", { mode: "boolean" }).notNull().default(false),
   webhookEvents: text("webhook_events", { mode: "json" }).notNull().default(sql`'[]'`),
   /** Superseded by `filters`; still read so old records keep working. */
   filterPath: text("filter_path"),
