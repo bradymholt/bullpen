@@ -184,7 +184,7 @@ export const agentCreateSchema = z.preprocess(
     id: z.uuid().optional(),
     // Either the 43-char base64url the server mints or a secret the sender
     // issued — Slack's signing secret is 32 hex, so shape can't be assumed.
-    webhookSecret: z.string().min(16).max(200).optional(),
+    webhookSecret: z.string().min(16).max(200).nullish(),
   }),
 ).transform((v) => ({
   ...AGENT_DEFAULTS,
