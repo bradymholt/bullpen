@@ -46,6 +46,7 @@ const mimeOf = (name: string) => MIME[extname(name).toLowerCase()] ?? "applicati
  */
 const INLINE_TYPES = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".txt", ".md", ".json", ".csv", ".html"]);
 import { foldMcpHealth } from "../mcp.ts";
+import { pidsUsage } from "../processes.ts";
 import {
   commit as gitCommit,
   diff as gitDiff,
@@ -162,6 +163,7 @@ function publicUrlFor(c: Context): string | null {
 
 api.get("/health", (c) => {
   const credential = claudeCredential();
+  const pids = pidsUsage();
   return c.json({
     ok: credential.source !== "none",
     dataDir: config.dataDir,
@@ -173,6 +175,8 @@ api.get("/health", (c) => {
     defaultSpace: defaultSpace(),
     workspaceRetentionHours: workspaceRetentionHours(),
     claudeAttribution: claudeAttribution(),
+    // Read by the image's HEALTHCHECK.
+    pids: pids && { ...pids, nearLimit: pids.current >= pids.max * 0.9 },
   });
 });
 

@@ -122,7 +122,7 @@ VOLUME /data
 EXPOSE 4322
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD node -e "fetch('http://localhost:4322/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:4322/api/health').then(r=>r.ok?r.json():{pids:{nearLimit:true}}).then(b=>process.exit(b.pids?.nearLimit?1:0)).catch(()=>process.exit(1))"
 
 # Agents orphan processes (backgrounded shells, MCP servers, Chromium helpers)
 # that get reparented to PID 1. Node never reaps them, and the zombies fill the
