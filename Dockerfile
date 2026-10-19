@@ -41,7 +41,7 @@ ENV NODE_ENV=production BULLPEN_DATA=/data \
 # no ensurepip: without it `python3 -m venv` fails, and a skill with a
 # dependency of its own has no way to install one.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg python3 python3-venv jq \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl gnupg python3 python3-venv jq tini \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
@@ -124,4 +124,8 @@ EXPOSE 4322
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD node -e "fetch('http://localhost:4322/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+# Agents orphan processes (backgrounded shells, MCP servers, Chromium helpers)
+# that get reparented to PID 1. Node never reaps them, and the zombies fill the
+# PID table until every spawn fails with EAGAIN or the harness aborts at start.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "--experimental-strip-types", "packages/server/src/index.ts"]

@@ -20,7 +20,7 @@ change in progress. Don't use `--admin`, and stop rather than merge when somethi
 Dependabot opens weekly npm, Actions and Docker PRs. The routine npm bumps come grouped;
 `@anthropic-ai/claude-agent-sdk` is deliberately excluded from that group and arrives on its
 own, because it carries the harness binary — an SDK bump is a Claude Code upgrade, and it is
-the one dependency that can break the invariants below without failing a test.
+the one dependency that can break the invariants below (and in `docs/dev/`) without failing a test.
 
 ## Commands
 
@@ -89,96 +89,6 @@ deserves a look at `sdk.d.ts` first.
 string. The SDK exposes `interrupt()`, `setPermissionMode()` and `setModel()` *only* in that
 mode, so a string prompt silently costs the stop button and mid-run mode changes.
 
-**Three workspace kinds, two old spellings.** `scratch` (a per-agent directory kept between runs,
-and the answer for agents that never touch code), `existing` (a path you name, used in place — the
-agent edits a live working tree and is never cleaned up), and `clone` (fresh clone on a new branch
-per run, kept for its diff). Stored records may still say `persistent` and `git`; both parse and mean
-`scratch` and `clone`. `removeWorkspace` only deletes below `workspacesDir`, which is what keeps an
-`existing` directory safe.
-
-**Agent workspaces must live outside any checkout.** `dataDir` defaults to `~/.bullpen`, not
-`./data`. Claude Code collects CLAUDE.md from every parent of its cwd, so a workspace under
-`packages/server/data/` hands an agent cloned into some other repo *bullpen's own* instructions
-as project context — it then reports being in the wrong directory, and it's right.
-
-**Skills need `settingSources: ["project", "user"]`, and that switches off approvals.** Skills in
-`~/.claude/skills` are invisible under `["project"]` alone, but adding `"user"` also loads
-`~/.claude/settings.json` — and a `permissions.allow` entry there auto-approves that tool without
-ever reaching `canUseTool`. Measured on a bare `Bash` allow rule: 1 approval prompt became 0.
-`inheritUserSettings` is on by default because the skills are the point, so an agent's real
-permission surface is `~/.claude/settings.json` plus its own — turn it off for an agent whose
-approvals must actually be asked.
-
-**`auto` never reaches the approval UI.** A classifier decides each call and a denial is final —
-the agent is told to stop and explain, and `canUseTool` is never invoked. Measured: the same curl
-that `default` escalated, `auto` approved with zero escalations. So it is closer to `full` than to
-`supervised`, and it is the only sane mode for an unattended run, since a pending approval has no
-timeout and a cron agent has nobody to answer it.
-
-**A run cannot widen into `full` mid-flight.** The harness rejects
-`setPermissionMode("bypassPermissions")` unless the session was launched with
-`--dangerously-skip-permissions` — "Cannot set permission mode to bypassPermissions because the
-session was not launched with ...". Every other mode switches fine. The run-view dropdown
-therefore offers `full` only when the run already started there, and `setRunPermissionMode`
-returns the refusal instead of a bare boolean so the UI can't claim a mode the run never entered.
-
-**An unanswered approval expires rather than wedging the agent.** There is no timeout in the
-SDK, so a prompt nobody answers holds the run in `awaiting_approval` forever — and a
-`concurrency: skip` agent then refuses every later trigger with a 409, which is how one stuck
-`AskUserQuestion` silenced a webhook agent for hours. `makeCanUseTool` denies after
-`approvalTimeoutMs` (15 minutes, `BULLPEN_APPROVAL_TIMEOUT_MS`) with a message telling the agent
-to continue without the tool or stop.
-
-**`canUseTool` must never resolve to `null`.** There is no timeout on a permission prompt; a
-null reply blocks that tool for the life of the process. An abort resolves to an explicit deny.
-
-**Auto-approved tools never reach `canUseTool`.** A bare `allowedTools: ["Read"]` entry, or
-`bypassPermissions`, skips the approval UI entirely. Prefer scoped rules like `Bash(ls *)`.
-Separately, Claude Code auto-approves commands it classifies as trivially safe — a supervised
-agent running `echo` never prompts, but a file write does. Test approval changes with a write.
-
-**`queue` serializes; it is the mode for a scratch-workspace agent.** `requestRun()` is the one
-entry point every trigger uses. With `concurrency: queue` and an active run, the request becomes a
-`runs` row with status `queued` and its payload spooled to `dataDir/queue/<runId>.json` — bodies
-can be a megabyte, and the row already holds prompt and mode. `drainQueue()` starts the oldest one
-when a run reaches its result — not when its session's process exits a moment later — and at boot, promoting the existing row rather than inserting a new one, so the id
-a webhook delivery recorded is the id that eventually runs. Depth is capped at `QUEUE_DEPTH`;
-beyond it a trigger is refused and recorded as a `queue full` delivery drop. `queued` is not an
-active status: it must never count toward `agentHasActiveRun`, or the queue would block itself.
-
-**Merged deliveries are queued rows with a `startAfter`.** An agent with `mergeKey` and
-`mergeWaitSeconds` parks each webhook delivery as a `queued` row carrying the rendered key; a
-later one with the same key overwrites that row's spool and prompt rather than adding a run —
-GitHub sends two `review_requested` for one person-plus-team request, and each used to be its own
-run. `drainQueue()` skips a row while `startAfter` is set; a timer clears it (rescheduled at boot),
-then a `queue` agent's run waits its turn, a `skip` agent's is cancelled if a run is active
-by then, and any other starts at once. A key that renders blank
-runs unmerged.
-
-**New agents default to `allow` + `ephemeral`, and the two go together.** A dropped trigger is
-lost for good — there is no queue — so `skip` silently loses the second of two webhooks that land
-close together. Running in parallel is only safe when runs do not share a directory, which is why
-the workspace default moved with it. `allow` on a `scratch` or `existing` workspace means parallel
-runs overwrite each other's files, `.bullpen/payload.json` included; the editor warns on that pair.
-An ephemeral directory is now kept when a run does not reach `completed`, since it is the only
-evidence a failure leaves. A completed one is kept for `workspaceRetentionHours` (global, default 24) and
-removed by `sweepWorkspaces()` at boot and hourly; 0 restores removal at run end. A `failed`,
-`cancelled` or `interrupted` one goes in the same sweep after `failedWorkspaceRetentionHours`
-(7 days, `BULLPEN_FAILED_WORKSPACE_RETENTION_HOURS`), never sooner than a completed one. Clones are
-kept for their diff until GitHub reports their branch's pull request closed (`sweepMergedClones`).
-
-**Files an agent hands back live in `.bullpen/out/`, and only there.** Every run's system prompt
-says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under
-the data dir *before* an ephemeral workspace is deleted — that ordering is the whole point — and
-appends an `artifacts` event. The run page lists them from disk (nothing in the database) and the
-download route resolves names inside that one directory, refusing `..` outright. `?inline=1`
-previews a web type in place instead of downloading — an agent's `report.html` is usually the
-email it just sent, and downloading a file to find out what went out is a poor way to read it.
-That response is served `Content-Security-Policy: sandbox` plus `nosniff`: the markup is an
-agent's, it renders on the dashboard's own origin, and an opaque origin with no scripts is what
-keeps a preview from reaching the API that origin serves. Anything not in `INLINE_TYPES` ignores
-the parameter and downloads.
-
 **Write to `run_events` before broadcasting.** A client asking for `sinceSeq` must never be
 able to miss an event a live subscriber already saw.
 
@@ -188,93 +98,6 @@ without defaults and applies `AGENT_DEFAULTS` only on create. The schema is `.st
 misspelled field errors instead of vanishing — that is how the webhook allowlist was silently
 dead for a while. Server-owned fields are stripped before that check, since the UI round-trips
 whole agent records.
-
-**Env is three layers, and the mask rule applies to all of them.** A run's env is
-`process.env` → global (`global_config`, one row) → the agent's space (`space_secrets.env`) →
-the agent's own, later winning; `resolveEnv()` in `env.ts` is the one place that order lives, and
-MCP `${NAME}` interpolation uses the same result. All three are stored plaintext and masked as
-`••••` in every response. A PUT or PATCH that sends the mask back keeps the stored value, a typed
-value replaces it, an omitted key deletes it — `mergeMaskedEnv()` is the one implementation, so
-don't hand-roll it for a new scope. The server's own GitHub calls read `githubToken()`, and
-credential detection reads `claudeCredential()`; both put **global env above the process**, the
-same order a run sees, so the dashboard and the agents can never disagree about which token is
-in force. That is also what lets a fresh install with no `.env` at all be set up from the
-browser: health reports `none`, the app renders `SetupView` instead of the dashboard, and the
-tokens it collects go to global env. Setting env on a space with no row yet mints a webhook secret and id it may never use;
-that's fine — neither is ever shown.
-
-**Every agent is in a space, and `General` is the one that is always there.** `agents.space` is
-still a nullable column, but the API never writes null: the schema requires a name, new agents
-default to `DEFAULT_SPACE`, imports coerce a missing or null space, and migration 0017 backfilled
-the old "unassigned" rows. Spaces are otherwise a GROUP BY over that column plus a `space_secrets`
-side row, so removing a space (`DELETE /spaces/:name`) is "move the members to General and drop
-the row". General itself cannot be renamed or removed — it is where those members go — but has a
-shared webhook URL and env like any other. It shows in the rail only while it has agents.
-
-**An export carries the shared MCP servers, and import writes them only in standalone mode.** The
-`SecretsBundle` has an optional `mcp` (older exports lack it) holding `mcpServers` verbatim, headers
-and env included — which is why it lives inside the sealed part. `importMachineMcp` refuses without
-`CLAUDE_CONFIG_DIR`, and the import route turns that refusal into `mcpNote` rather than failing the
-import: on a laptop the agents still land, and the note says what did not. Onboarding has no MCP
-step for the same reason there is nothing to list there: connectors come with the login, and the
-config cache that names them is empty until an agent has run.
-
-**MCP OAuth goes through `claude mcp login --no-browser`, under a pty, with bullpen delivering
-the redirect.** Writing tokens ourselves would mean matching the harness's credential-store format
-(`mcpOAuth["name|hash"]`, keychain on a Mac, `.credentials.json` elsewhere), so `mcpLogin.ts` runs
-the CLI instead and relays: parse the authorization URL out of its output (an OSC 8 hyperlink
-printed twice back to back — `parseAuthUrl`), show it, and when the user pastes the
-`http://localhost:<port>/callback?code=…` URL their browser died on, write it to the CLI's stdin
-*and* GET it against `127.0.0.1:<port>`, which reaches the CLI's callback listener because bullpen
-shares its network namespace. The CLI refuses a non-tty stdin, hence the pty: util-linux `script`
-in the container, Python's `pty` on macOS (BSD `script` wants a real tty of its own). Everything
-else — token storage, refresh, the "needs-auth" status — stays the harness's.
-
-**`strictMcpConfig` is on unless the agent opts out — and a pick keeps it on.** Without it a run
-inherits MCP servers from `~/.claude.json` (read regardless of `settingSources`), the cloned repo's
-`.mcp.json`, and claude.ai connectors. That makes agents non-deterministic and leaks one agent's
-MCP credentials to another. `selectMcp()` in `mcp.ts` is the one place this is decided: sharing off
-→ own servers, strict; sharing on with `sharedMcpPick: null` → strict off, the harness reads
-everything (the only way connectors reach a run, since they exist in no config file); sharing on
-with a pick → the named shared configs are read by bullpen, `${NAME}`-interpolated from the run's
-env, and passed explicitly with strict on, so nothing unpicked leaks in. Settings shows each
-server's last-known state folded from runs' `mcp.status` events (`foldMcpHealth`), which is the
-only health signal there is — the harness never fails a run for a server that won't connect.
-
-**Webhook shape is per-agent, and header names are lowercased before lookup.** `presetFor()`
-resolves `webhookMode` to a signature header, prefix, event header and handshake header — `github`
-(`x-hub-signature-256`, `sha256=`), `asana` (`x-hook-signature`, bare hex, echoes `x-hook-secret`),
-`telegram` (`x-telegram-bot-api-secret-token`, compared verbatim), `token`, or `custom` from the
-agent's own fields. The route now forwards every request header, so
-a configured name that isn't lowercased silently matches nothing — that cost a debugging round.
-`hmac` is the pre-preset spelling of `github` and `token` of a bare `custom`; both still parse, so
-old records round-trip. The event allowlist is GitHub's alone — it is the only sender that names
-its event in a header — so `webhookEvents` does nothing for the others.
-
-**Slack signs `v0:{timestamp}:{body}`, not the body.** Same algorithm, different input, so a
-body-only HMAC never matches — that is why a generic custom preset can't carry Slack. It also needs
-a five-minute skew window, `X-Slack-Retry-Num` dropped rather than run twice, `event_id` as the
-dedup key (Slack puts it in the body), the event name read from `event.type`, and the
-`url_verification` challenge echoed *in the body* where Asana echoes a header. Signature is checked
-before the challenge is answered, so the signing secret must be pasted in first.
-
-**A Telegram agent's typing indicator is bullpen's, not the agent's.** Asking the agent to send
-it cost a full model turn before any work, and it then went out beside the reply, which clears
-it at once. `startTelegramTyping` sends `sendChatAction` when a webhook run launches and every
-4s until the result — not until the session's process exits, which `handle.done` waits for — reading the
-chat from `.bullpen/payload.json` and the token from the run's `TELEGRAM_BOT_TOKEN`. Retries
-dedup on the body's `update_id`, as Slack's do on `event_id`.
-
-**An Asana handshake is only honoured while the agent has no secret.** Asana picks the secret and
-asks for it back; accepting that unconditionally would let anyone who knows the URL replace a live
-hook's secret and then sign their own payloads. Clear the secret to re-register.
-
-**MCP allow rules need a literal server name.** `mcp__linear__*` works; `mcp__*` is ignored with
-a startup warning and grants nothing.
-
-**MCP startup is non-blocking.** A server that fails to connect does not fail the run — the
-agent just quietly lacks those tools. That's why the init message's per-server status is logged
-as an `mcp.status` event and rendered.
 
 **`handle.done` is not "the run finished."** In streaming-input mode the session stays open after
 the `result` message until its input is closed, so `done` resolves only then. `RunManager` closes it
@@ -302,75 +125,25 @@ before the process exits, or a `docker stop` leaves agents running against the A
 can't be caught — boot-time `recoverOrphanedRuns()` covers that by marking orphaned runs
 interrupted and denying their pending approvals.
 
-## Build and packaging
-
-**`better-sqlite3` publishes no prebuilt binaries at all.** It always compiles from source, so
-the Dockerfile has a build stage with python3/make/g++ and the runtime stage ships no compiler.
-
-**The container's Claude config is `/data/claude`, not `~/.claude`.** `CLAUDE_CONFIG_DIR` is
-set in the image and honoured by both the harness and `detectClaudeCredential()`, so skills and
-`settings.json` live in the data volume as files you can version, and `~/.claude.json` (machine
-MCP) is simply absent — agents own their MCP config anyway. `GOG_HOME=/data/gog` does the same
-for gog. **Never put a `CLAUDE.md` under `/data`**: workspaces live there, and the harness
-collects `CLAUDE.md` from every parent of cwd — the same trap as `packages/server/data/`, one
-level up. Because `HOME` is still `/home/node`, an agent reaching for `~/.claude/skills` — which
-is the reflex — gets `No such file or directory` and burns a turn finding the real path, so
-`systemNote` names the config dir whenever it is not `~/.claude`; it stays silent on a laptop,
-where the default is already right.
-
-**Shared MCP servers on a box come from a catalog the operator picks from, never from boot.**
-`mcpCatalog`/`applyMcpCatalog` in `machineMcp.ts` offer Playwright (when the image has the wrapper)
-and the reference memory server, pre-selected at onboarding step 4 and as "Suggested" chips under
-Settings; applying is declarative over catalog keys only, so a hand-added server is never touched.
-`NPM_CONFIG_CACHE=/data/npm-cache` keeps an npx-run server's download on the volume across deploys.
-
-**A browser is in the image by default (`WITH_BROWSER=0` opts out), and the binary is lazy.** `npx
-@playwright/mcp` fetches the server, never a browser, and Chromium needs OS libraries the slim image
-lacks — so the image installs `@playwright/mcp` globally plus those libraries (root-only), and
-`/usr/local/bin/playwright-mcp` is a wrapper that downloads Chromium into
-`PLAYWRIGHT_BROWSERS_PATH=/data/browsers` on first use (the full build, not the headless shell —
-`--browser chromium` selects Playwright's chromium channel, which runs the full binary headless), through the Playwright version the package
-pins (a mismatched Playwright looks for a different Chromium build). The volume keeps it across
-deploys; an image nobody browses from never carries it. The MCP server
-defaults to the `chrome` channel — Google Chrome at /opt/google/chrome, which is not there — so the
-config needs `--browser chromium`; and under Docker's default seccomp profile Chromium's sandbox
-cannot start, hence `--no-sandbox`.
-
-**`gh`, `gog`, `python3` and `jq` are all in the image, and none of them arrive on their own.**
-The SDK brings the `claude` binary and nothing else, so the agents' `gh api` calls need the CLI
-installed separately. Plain `git` ignores `GITHUB_TOKEN`, so an agent's own `git clone` (or
-`gh repo clone`, which shells out to it) of a private repo died on "could not read Username" until
-`/etc/gitconfig` got `gh auth git-credential` as the github.com helper. Bullpen's own git calls
-still pass their helper per command in `gitEnv()`, and the process env has no token on the box,
-so the system helper finds nothing there and git falls through to it. `python3` and `jq` are there because agents reach for them unprompted to read
-a payload, and a `command not found` costs a turn. `gog` used to install only when `GOG_URL` was
-passed at build — but CI builds with no build args at all, so the deployed image never had it and
-the email-archiving skill failed every run. It is now a wrapper that downloads the 44MB binary into
-`/data/bin` on first use, the same trade the Chromium wrapper makes; `GOG_VERSION` and `GOG_URL` are
-`ENV`, not `ARG`, because the wrapper reads them at run time. There is no npx path — `openclaw/gogcli`
-publishes to GitHub releases, not npm — and `gog mcp` is a subcommand of that binary, so the MCP
-server needs the wrapper too. Being a static Go binary with no OS library dependencies is what lets
-the wrapper alone suffice, where Chromium also needed a root-time apt install.
-
-**A gog `GOG_HOME` is portable, but its layout is not the Mac's.** The file keyring is encrypted
-with `GOG_KEYRING_PASSWORD`, so copying the directory carries the OAuth tokens and no browser flow
-runs on the box — but `credentials.json` sits at `$GOG_HOME/data/`, not beside `config.json` in
-`$GOG_HOME/config/`, and a copy that puts it in the obvious place reports "No OAuth client
-credentials stored" while `auth list` still shows both accounts, which reads like a token problem
-and isn't. The client secret lives in the keyring, never in `credentials.json`. `GOG_KEYRING_PASSWORD`
-belongs in the agent's own env; nothing else reads it. `file` is the only backend that works on
-the box at all — `keychain` errors with "Specified keyring backend not available" and `auto` lands
-on `file` — but it is not required on the *source* machine: `gog auth tokens export/import` reads
-any backend and is the way in from one still on Keychain. It moves tokens only, so that route also
-needs `gog auth credentials set`; the copy route carries the client secret with it.
-
-**Don't add a global `@anthropic-ai/claude-code`.** The Agent SDK spawns the harness binary it
-bundles; a global install is a second 200MB copy nothing runs. The build also deletes the musl
-variants, which a glibc base never executes.
-
 **The server runs TypeScript directly** via `node --experimental-strip-types`. That means type
 annotations only — no enums, namespaces, or parameter properties — and relative imports must
 carry the `.ts` extension.
+
+## Subsystem notes
+
+The rest of the invariants are kept per area. Read the matching file before changing that area.
+
+- [`docs/dev/permissions.md`](docs/dev/permissions.md) — permission modes, approvals,
+  `canUseTool`, `settingSources`
+- [`docs/dev/workspaces.md`](docs/dev/workspaces.md) — workspace kinds, retention, `.bullpen/out`
+  artifacts
+- [`docs/dev/triggers.md`](docs/dev/triggers.md) — concurrency, the queue, merged deliveries,
+  webhook presets (GitHub, Slack, Telegram, Asana)
+- [`docs/dev/mcp.md`](docs/dev/mcp.md) — `strictMcpConfig` and picks, MCP OAuth, export/import,
+  the catalog
+- [`docs/dev/env-and-spaces.md`](docs/dev/env-and-spaces.md) — env layers, masking, spaces
+- [`docs/dev/container.md`](docs/dev/container.md) — the Docker image, `/data` layout, the
+  browser and gog wrappers
 
 ## Known gaps
 

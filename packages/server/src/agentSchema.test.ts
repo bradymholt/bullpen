@@ -77,6 +77,7 @@ describe("agent schema", () => {
       webhookSecret: secret,
     });
     expect(agentCreateSchema.safeParse({ name: "Fresh", webhookSecret: "short" }).success).toBe(false);
+    expect(agentCreateSchema.safeParse({ name: "Fresh", webhookSecret: null }).success).toBe(true);
     expect(agentPatchSchema.parse({ webhookSecret: secret, name: "Renamed" })).toEqual({ name: "Renamed" });
   });
 

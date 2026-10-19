@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
+import { TELEGRAM_ASSISTANT_PROMPT } from "./templates.ts";
 import type { Agent, AgentInput, FilterCondition } from "./types.ts";
 
 const field =
@@ -255,9 +256,8 @@ function setupFor(mode: string, url: string): Setup {
         ],
         note: (
           <>
-            While a message is being worked on, bullpen shows <em>typing&hellip;</em> in the chat. The
-            reply is the agent&rsquo;s to send, with <code>sendMessage</code> to{" "}
-            <code>message.chat.id</code>. Retries share an <code>update_id</code> and run once.
+            While a message is being worked on, bullpen shows <em>typing&hellip;</em> in the chat, and
+            the agent is told what Telegram can show. Retries share an <code>update_id</code> and run once.
           </>
         ),
       };
@@ -801,6 +801,45 @@ export function TriggerSettings({
                         <p className="mt-1.5 text-xs text-neutral-600">{PROVIDERS.find(([v]) => v === mode)?.[2]}</p>
                       </div>
 
+                      {mode === "telegram" && (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="flex items-center gap-2 text-sm text-neutral-300">
+                              <input
+                                type="checkbox"
+                                checked={draft.webhookReply ?? false}
+                                onChange={(e) => set("webhookReply", e.target.checked)}
+                              />
+                              Reply with the agent&rsquo;s final message
+                            </label>
+                            <p className="mt-1 text-xs text-neutral-600">
+                              {draft.webhookReply
+                                ? "Bullpen posts the run's last message to the chat, then any files saved to .bullpen/out/. The prompt needs no sendMessage of its own."
+                                : "The agent sends its own reply with the Bot API; the system note tells it how."}
+                            </p>
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (draft.prompt?.trim() && !confirm("Replace the current prompt with the personal-assistant template?")) return;
+                                set("prompt", TELEGRAM_ASSISTANT_PROMPT);
+                                set("webhookReply", true);
+                                set("workspaceConfig", { kind: "scratch" });
+                                set("concurrency", "queue");
+                              }}
+                              className="rounded border border-neutral-700 px-3 py-1 text-xs hover:bg-neutral-800"
+                            >
+                              Start from the personal-assistant prompt
+                            </button>
+                            <p className="mt-1 text-xs text-neutral-600">
+                              A chat assistant that keeps a daily log and notes in its workspace. Also turns Reply on, sets the
+                              workspace to a scratch directory, and queues messages so they run one at a time.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {mode === "custom" && (
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -966,7 +1005,13 @@ export function TriggerSettings({
                         )}
                       </div>
 
-                      {draft.space && (
+                      {draft.space && mode === "asana" && (
+                        <p className="text-xs leading-relaxed text-neutral-600">
+                          Point Asana at the URL above, not the <strong>{draft.space}</strong> space&rsquo;s
+                          shared webhook &mdash; only this agent&rsquo;s own URL completes Asana&rsquo;s handshake.
+                        </p>
+                      )}
+                      {draft.space && mode !== "asana" && (
                         <p className="text-xs leading-relaxed text-neutral-600">
                           This agent also answers the <strong>{draft.space}</strong> space&rsquo;s shared webhook,
                           set up under &ldquo;Space settings&hellip;&rdquo; in the sidebar&rsquo;s space menu.
@@ -1198,35 +1243,34 @@ export function TriggerSettings({
               </p>
             </div>
 
-                      <div>
-                        <span className={label}>Merge deliveries</span>
-                        <div className="flex gap-2">
-                          <label className="min-w-0 flex-1">
-                            <span className="mb-1 block text-xs text-neutral-500">Same thing when this matches</span>
-                            <input
-                              className={field}
-                              placeholder="{{payload.pull_request.html_url}}"
-                              value={draft.mergeKey ?? ""}
-                              onChange={(e) => set("mergeKey", e.target.value || null)}
-                            />
-                          </label>
-                          <label className="w-28 shrink-0">
-                            <span className="mb-1 block text-xs text-neutral-500">Wait (seconds)</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={3600}
-                              className={field}
-                              value={draft.mergeWaitSeconds ?? ""}
-                              onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
-                            />
-                          </label>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-                          Optional. A delivery waits this long, and any with the same key that arrive meanwhile join its run.
-                          Same <code>{"{{payload.a.b}}"}</code> syntax as the prompt.
-                        </p>
-                      </div>
+            <div>
+              <div className="flex gap-2">
+                <label className="w-28 shrink-0">
+                  <span className={label}>Delay (seconds)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3600}
+                    className={field}
+                    value={draft.mergeWaitSeconds ?? ""}
+                    onChange={(e) => set("mergeWaitSeconds", e.target.value === "" ? null : Number(e.target.value))}
+                  />
+                </label>
+                <label className="min-w-0 flex-1">
+                  <span className={label}>Merge key</span>
+                  <input
+                    className={field}
+                    placeholder="{{payload.pull_request.html_url}}"
+                    value={draft.mergeKey ?? ""}
+                    onChange={(e) => set("mergeKey", e.target.value || null)}
+                  />
+                </label>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+                Optional. Each run waits this long before starting. With a merge key, deliveries with the same key
+                that arrive meanwhile join the waiting run instead of starting another.
+              </p>
+            </div>
           </PanelSection>
         </div>
       )}

@@ -43,8 +43,8 @@ export type RunnerEvents = {
   /** The backend's id for this session, for resuming it later. */
   onSession(sessionId: string): void;
   onMcpStatus(servers: ReturnType<typeof summarizeMcpStatus>): void;
-  /** The run finished. `costUsd` is in dollars; storage decides the unit. */
-  onResult(result: { numTurns: number | undefined; costUsd: number | undefined; isError: boolean }): void;
+  /** The run finished. `costUsd` is in dollars; storage decides the unit. `text` is the agent's last message, when it ended with one. */
+  onResult(result: { numTurns: number | undefined; costUsd: number | undefined; isError: boolean; text?: string }): void;
 };
 
 export type RunnerHandle = {

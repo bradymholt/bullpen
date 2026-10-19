@@ -99,6 +99,16 @@ else. Every request lands in the agent's **Recent webhook deliveries**, includin
 dropped and why. **Test fire** in the agent editor sends a request signed exactly as the
 configured sender would, using the saved settings.
 
+**Telegram** gets a little more. While a message is being worked on, bullpen shows *typing…* in the
+chat, and the agent's system prompt explains what Telegram can show: where the text and any
+attachment are in the payload, plain text only, the length limit. Turn on **Reply with the agent's
+final message** and bullpen posts the run's last message to the chat itself, then any files the
+agent saved to `.bullpen/out/` (images as photos, the rest as documents), so the prompt needs no
+`sendMessage` of its own; the run page records what was sent. **Start from the personal-assistant
+prompt** fills in a chat assistant that keeps a daily log and notes in a scratch workspace, with
+Reply on and messages queued one at a time. Either way, add a filter on `message.from.id`: anyone
+can message a bot.
+
 Under **Which deliveries run**, a delivery has to pass filters before anything starts:
 
 - **Only these events** — the event names to accept (GitHub only, since it is the one sender
@@ -108,9 +118,11 @@ Under **Which deliveries run**, a delivery has to pass filters before anything s
   sets when different kinds of delivery need different rules; the agent runs when any one set
   holds. Nothing is spent on a delivery that doesn't match.
 
-Under **Each run**, **Merge deliveries** folds bursts into one run. Give it a key such as
-`{{payload.pull_request.html_url}}` and a wait in seconds: a delivery waits that long, and any
-with the same key that arrive meanwhile join its run. GitHub, for one, sends two
+Under **Each run**, **Delay** holds each run that many seconds before it starts, counted from
+the delivery that created it — useful when the sender is about to send more, like an author
+pushing a few commits in a row. Add a **Merge key** such as `{{payload.pull_request.html_url}}`
+and any delivery with the same key that arrives during the delay joins the waiting run instead
+of starting another, with the latest payload winning. GitHub, for one, sends two
 `review_requested` deliveries when you request a person and a team together.
 
 The sender has to be able to reach bullpen, so `/api/hooks` needs a public route — on a deployed
@@ -176,8 +188,10 @@ specific servers. Otherwise an agent sees only the servers defined on it.
 (global, space, or agent). The API never returns their values.
 
 **OAuth servers** (Datadog, Cloudflare, …) get an **Authorize** button under Settings: open the
-link, approve, and paste back the `localhost` URL the browser lands on. claude.ai connectors need
-no setup — they come with the login.
+link, approve, and paste back the `localhost` URL the browser lands on. This only works for servers
+that support dynamic client registration. One that needs a pre-registered OAuth app (Asana, for
+example) fails with "does not support dynamic client registration"; give the agent an API token in
+its env instead. claude.ai connectors need no setup — they come with the login.
 
 **Moving servers to a headless box:** under Settings → Export / import, export with a
 passphrase on your Mac — the servers ride

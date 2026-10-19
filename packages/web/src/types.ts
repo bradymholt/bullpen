@@ -43,6 +43,8 @@ export type Agent = {
   webhookSecret: string | null;
   trigger: "manual" | "schedule" | "poll" | "webhook";
   webhookMode: string;
+  /** Bullpen posts the run's final message back to the chat; Telegram only. */
+  webhookReply: boolean;
   webhookEvents: string[];
   filterPath: string | null;
   filters: FilterCondition[];

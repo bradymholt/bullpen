@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `webhook_reply` integer DEFAULT false NOT NULL;

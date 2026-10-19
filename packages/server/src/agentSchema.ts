@@ -86,6 +86,7 @@ const fields = {
   // "hmac" is the pre-preset spelling of "github"; kept so old records round-trip.
   trigger: z.enum(["manual", "schedule", "poll", "webhook"]),
   webhookMode: z.enum(["token", "github", "slack", "asana", "groupme", "telegram", "custom", "hmac"]),
+  webhookReply: z.boolean(),
   filterPath: z.string().max(200).nullish(),
   filterValues: z.array(z.string().max(200)).max(100),
   filters: z.array(filterConditionSchema).max(30),
@@ -132,6 +133,7 @@ export const AGENT_DEFAULTS = {
   pollHeaders: {},
   trigger: "manual",
   webhookMode: "custom",
+  webhookReply: false,
   webhookEvents: [],
   filterValues: [],
   filters: [],
@@ -184,7 +186,7 @@ export const agentCreateSchema = z.preprocess(
     id: z.uuid().optional(),
     // Either the 43-char base64url the server mints or a secret the sender
     // issued — Slack's signing secret is 32 hex, so shape can't be assumed.
-    webhookSecret: z.string().min(16).max(200).optional(),
+    webhookSecret: z.string().min(16).max(200).nullish(),
   }),
 ).transform((v) => ({
   ...AGENT_DEFAULTS,
