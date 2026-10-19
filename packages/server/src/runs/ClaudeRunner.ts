@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { query, type PermissionMode, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "../config.ts";
 import { summarizeMcpStatus } from "../mcp.ts";
+import { killLeftovers, PROCESS_TAG_VAR } from "../processes.ts";
 import { InputQueue } from "./inputQueue.ts";
 import { ResultGate } from "./resultGate.ts";
 import type { ModeName, Runner, RunnerEvents, RunnerHandle, RunnerSpec } from "./runner.ts";
@@ -43,6 +45,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
   const abort = new AbortController();
   let sessionId: string | undefined;
   let q: Query | undefined;
+  const tag = randomUUID();
   const gate = new ResultGate((r) => events.onResult(r), config.backgroundWaitMs);
 
   input.push(spec.prompt);
@@ -70,7 +73,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
         ...(spec.attribution === false ? { settings: { attribution: { commit: "", pr: "" } } } : {}),
         includePartialMessages: true,
         abortController: abort,
-        env: { ...process.env, ...spec.env } as Record<string, string>,
+        env: { ...process.env, ...spec.env, [PROCESS_TAG_VAR]: tag } as Record<string, string>,
         stderr: (data) => console.error(`[claude] ${data.trimEnd()}`),
       },
     });
@@ -108,6 +111,7 @@ function start(spec: RunnerSpec, events: RunnerEvents): RunnerHandle {
     } finally {
       gate.flush();
       input.close();
+      killLeftovers(tag);
     }
   })();
 

@@ -125,6 +125,19 @@ before the process exits, or a `docker stop` leaves agents running against the A
 can't be caught — boot-time `recoverOrphanedRuns()` covers that by marking orphaned runs
 interrupted and denying their pending approvals.
 
+**A session's leftovers are killed when its stream ends.** The harness kills a background task's
+shell, not what the shell started: a `git log -S` on a `blob:none` clone, backgrounded after its
+120s timeout, kept running under tini after the kill. A task count that climbed from the moment
+such a command started ran the container into its pids cap (4653), and every spawn — the harness
+included — failed for four days. An earlier run's timed-out `git log -S` left ~265 tasks behind
+that outlived its normal finish. Each runner process carries `BULLPEN_PROCESS_TAG` in its env, and
+`killLeftovers()` SIGKILLs anything still carrying it, sparing the harness itself (our direct
+child). The env survives what a process group would not: the harness gives background shells
+their own group, and git's auto-maintenance calls setsid. This does nothing about a runaway inside
+a live session, which the ResultGate can hold open for 30 minutes. `/api/health` reports the
+cgroup's pids and the image's HEALTHCHECK fails at 90%, but Docker only marks the container
+unhealthy and never restarts it.
+
 **The server runs TypeScript directly** via `node --experimental-strip-types`. That means type
 annotations only — no enums, namespaces, or parameter properties — and relative imports must
 carry the `.ts` extension.
