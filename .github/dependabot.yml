@@ -6,6 +6,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    groups:
+      # React refuses to render when react and react-dom differ (error #527),
+      # so they must never land in separate PRs.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
     ignore:
       # These types must match the Node we run. Take a new major only when the
       # Dockerfile moves off node:22.
