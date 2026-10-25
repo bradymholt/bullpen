@@ -1017,6 +1017,9 @@ export function App() {
     };
   });
   const visibleAgents = agents.filter((a) => a.space === active);
+  const enabledAgents = visibleAgents.filter((a) => a.enabled);
+  const pausedAgents = visibleAgents.filter((a) => !a.enabled);
+  const [pausedOpen, setPausedOpen] = useState(false);
 
   // Drag state lives in refs as well: the handlers read it between renders.
   const [dragId, setDragIdState] = useState<string | null>(null);
@@ -1037,16 +1040,113 @@ export function App() {
   };
   /** Optimistic: the roster moves at once and the server order is pushed behind it. */
   function reorderAgents(id: string, to: number) {
-    const ids = visibleAgents.map((a) => a.id);
+    const ids = enabledAgents.map((a) => a.id);
     const from = ids.indexOf(id);
     if (from < 0) return;
     ids.splice(from, 1);
     ids.splice(to > from ? to - 1 : to, 0, id);
+    ids.push(...pausedAgents.map((a) => a.id));
     if (ids.every((x, i) => x === visibleAgents[i]?.id)) return;
     const byId = new Map(agents.map((a) => [a.id, a]));
     setAgents([...agents.filter((a) => a.space !== active), ...ids.map((x, i) => ({ ...byId.get(x)!, sortOrder: i }))]);
     api.reorderAgents(active, ids).catch(() => api.agents().then(setAgents));
   }
+
+  /** `i` is the card's slot among enabled agents; null for a paused one, which doesn't reorder. */
+  const agentCard = (a: Agent, i: number | null) => {
+    const live = stats?.active[a.id] ?? 0;
+    const waiting = stats?.awaiting[a.id] ?? 0;
+    const last = stats?.latest[a.id];
+    const dropLine = i !== null && dragId !== null && dropAt === i;
+    return (
+      <button
+        key={a.id}
+        draggable={i !== null && enabledAgents.length > 1}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", a.id);
+          e.dataTransfer.effectAllowed = "move";
+          setDragId(a.id);
+        }}
+        onDragOver={(e) => {
+          if (dragRef.current === null || i === null) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const box = e.currentTarget.getBoundingClientRect();
+          setDropAt(e.clientY < box.top + box.height / 2 ? i : i + 1);
+        }}
+        onDragEnd={endDrag}
+        onClick={() => setView({ kind: "detail", id: a.id })}
+        className={`relative mt-2 block w-full shrink-0 rounded border p-3 text-left transition ${
+          waiting > 0
+            ? "border-amber-500/70 bg-amber-500/5 hover:border-amber-400"
+            : selectedAgentId === a.id
+              ? "border-neutral-600 bg-neutral-900"
+              : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700"
+        } ${a.enabled ? "" : "opacity-60"} ${dragId === a.id ? "opacity-30" : ""} ${
+          dropLine ? "before:absolute before:-top-1.5 before:left-0 before:right-0 before:h-0.5 before:rounded before:bg-sky-400" : ""
+        }`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate font-medium" title={a.name}>{a.name}</div>
+            {/* Status wins the row: the trigger truncates around it. */}
+            <div className="mt-1 flex items-center gap-1.5 text-xs">
+              <span
+                title={triggerLines(a).join(" · ")}
+                className="flex min-w-0 items-center gap-1 text-neutral-500"
+              >
+                <TriggerIcon trigger={a.trigger} />
+                <span className="truncate">{triggerLabel(a)}</span>
+              </span>
+              <span className="shrink-0 text-neutral-700">·</span>
+              {waiting > 0 ? (
+                <span className="shrink-0 font-medium text-amber-400">
+                  <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400 align-middle" />
+                  {waiting > 1 ? `${waiting} need approval` : "needs approval"}
+                </span>
+              ) : !a.enabled && live === 0 ? (
+                <span className="shrink-0 text-amber-500">paused</span>
+              ) : live > 0 ? (
+                <span className="shrink-0 text-sky-400">
+                  {live} running
+                  {(stats?.queued[a.id] ?? 0) > 0 ? ` · ${stats!.queued[a.id]} queued` : ""}
+                </span>
+              ) : last ? (
+                <span className="shrink-0 text-neutral-500">
+                  <span className={STATUS_COLOR[last.status] ?? "text-neutral-400"}>●</span>{" "}
+                  ran {ago(last.startedAt)}
+                </span>
+              ) : (
+                <span className="shrink-0 text-neutral-600">never run</span>
+              )}
+            </div>
+          </div>
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              setView({ kind: "detail", id: a.id, tab: "settings" });
+            }}
+            title="Edit"
+            className="shrink-0 rounded p-0.5 text-neutral-500 hover:text-neutral-100"
+          >
+            <PencilIcon />
+          </span>
+        </div>
+        {/* A webhook or poll agent reads its payload from disk; run bare, there is none. */}
+        {a.enabled && (a.trigger === "manual" || a.trigger === "schedule") && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              void start(a.id);
+            }}
+            className="mt-2 inline-block rounded bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-900 hover:bg-white"
+          >
+            Run
+          </span>
+        )}
+      </button>
+    );
+  };
 
 
   /** The space's landing: the home view filtered to it. Bypasses the guard — callers have settled that. */
@@ -1255,7 +1355,7 @@ export function App() {
           onDragOver={(e) => {
             if (dragRef.current === null) return;
             e.preventDefault();
-            setDropAt(visibleAgents.length);
+            setDropAt(enabledAgents.length);
           }}
           onDrop={(e) => {
             e.preventDefault();
@@ -1263,102 +1363,27 @@ export function App() {
             endDrag();
           }}
         >
-        {visibleAgents.map((a, i) => {
-          const live = stats?.active[a.id] ?? 0;
-          const waiting = stats?.awaiting[a.id] ?? 0;
-          const last = stats?.latest[a.id];
-          const dropLine = dragId !== null && dropAt === i;
-          return (
+        {enabledAgents.map((a, i) => agentCard(a, i))}
+        {dragId !== null && dropAt === enabledAgents.length && <div className="mt-1.5 h-0.5 rounded bg-sky-400" />}
+        </div>
+        {pausedAgents.length > 0 && (
+          <div className="mt-4">
             <button
-              key={a.id}
-              draggable={visibleAgents.length > 1}
-              onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", a.id);
-                e.dataTransfer.effectAllowed = "move";
-                setDragId(a.id);
-              }}
-              onDragOver={(e) => {
-                if (dragRef.current === null) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const box = e.currentTarget.getBoundingClientRect();
-                setDropAt(e.clientY < box.top + box.height / 2 ? i : i + 1);
-              }}
-              onDragEnd={endDrag}
-              onClick={() => setView({ kind: "detail", id: a.id })}
-              className={`relative mt-2 block w-full shrink-0 rounded border p-3 text-left transition ${
-                waiting > 0
-                  ? "border-amber-500/70 bg-amber-500/5 hover:border-amber-400"
-                  : selectedAgentId === a.id
-                    ? "border-neutral-600 bg-neutral-900"
-                    : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700"
-              } ${a.enabled ? "" : "opacity-60"} ${dragId === a.id ? "opacity-30" : ""} ${
-                dropLine ? "before:absolute before:-top-1.5 before:left-0 before:right-0 before:h-0.5 before:rounded before:bg-sky-400" : ""
-              }`}
+              onClick={() => setPausedOpen(!pausedOpen)}
+              className="flex w-full items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate font-medium" title={a.name}>{a.name}</div>
-                  {/* Status wins the row: the trigger truncates around it. */}
-                  <div className="mt-1 flex items-center gap-1.5 text-xs">
-                    <span
-                      title={triggerLines(a).join(" · ")}
-                      className="flex min-w-0 items-center gap-1 text-neutral-500"
-                    >
-                      <TriggerIcon trigger={a.trigger} />
-                      <span className="truncate">{triggerLabel(a)}</span>
-                    </span>
-                    <span className="shrink-0 text-neutral-700">·</span>
-                    {waiting > 0 ? (
-                      <span className="shrink-0 font-medium text-amber-400">
-                        <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400 align-middle" />
-                        {waiting > 1 ? `${waiting} need approval` : "needs approval"}
-                      </span>
-                    ) : !a.enabled && live === 0 ? (
-                      <span className="shrink-0 text-amber-500">paused</span>
-                    ) : live > 0 ? (
-                      <span className="shrink-0 text-sky-400">
-                        {live} running
-                        {(stats?.queued[a.id] ?? 0) > 0 ? ` · ${stats!.queued[a.id]} queued` : ""}
-                      </span>
-                    ) : last ? (
-                      <span className="shrink-0 text-neutral-500">
-                        <span className={STATUS_COLOR[last.status] ?? "text-neutral-400"}>●</span>{" "}
-                        ran {ago(last.startedAt)}
-                      </span>
-                    ) : (
-                      <span className="shrink-0 text-neutral-600">never run</span>
-                    )}
-                  </div>
-                </div>
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setView({ kind: "detail", id: a.id, tab: "settings" });
-                  }}
-                  title="Edit"
-                  className="shrink-0 rounded p-0.5 text-neutral-500 hover:text-neutral-100"
-                >
-                  <PencilIcon />
-                </span>
-              </div>
-              {/* A webhook or poll agent reads its payload from disk; run bare, there is none. */}
-              {a.enabled && (a.trigger === "manual" || a.trigger === "schedule") && (
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void start(a.id);
-                  }}
-                  className="mt-2 inline-block rounded bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-900 hover:bg-white"
-                >
-                  Run
+              <span className={`inline-block transition-transform ${pausedOpen ? "rotate-90" : ""}`}>▸</span>
+              Paused ({pausedAgents.length})
+              {!pausedOpen && pausedAgents.some((a) => (stats?.awaiting[a.id] ?? 0) > 0) && (
+                <span className="ml-auto normal-case tracking-normal text-amber-400">
+                  <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400 align-middle" />
+                  needs approval
                 </span>
               )}
             </button>
-          );
-        })}
-        {dragId !== null && dropAt === visibleAgents.length && <div className="mt-1.5 h-0.5 rounded bg-sky-400" />}
-        </div>
+            {pausedOpen && pausedAgents.map((a) => agentCard(a, null))}
+          </div>
+        )}
         </div>
         <div className="flex shrink-0 items-center gap-1 border-t border-neutral-800 px-3 py-2">
           <button
