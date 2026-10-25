@@ -140,4 +140,10 @@ describe("PUT /spaces/:name/order", () => {
     expect((await order("work", { ids: ["a2", "a1", "a3"] })).status).toBe(409);
     expect(await listed("work")).toEqual(["a1", "a2"]);
   });
+
+  it("counts a null-space agent as a member of the default space", async () => {
+    db.insert(agents).values({ id: "a5", name: "scratch", space: null }).run();
+    expect((await order("General", { ids: ["a5", "a4"] })).status).toBe(200);
+    expect(await listed("General")).toEqual(["a5", "a4"]);
+  });
 });
