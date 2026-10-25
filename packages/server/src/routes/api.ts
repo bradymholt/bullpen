@@ -1045,7 +1045,7 @@ api.put("/spaces/:name/order", async (c) => {
   const body = await c.req.json<{ ids?: unknown }>().catch(() => null);
   const ids = Array.isArray(body?.ids) && body.ids.every((x) => typeof x === "string") ? (body.ids as string[]) : null;
   if (!ids) return c.json({ error: "expected { ids: string[] }" }, 400);
-  const members = listAgents().filter((a) => a.space === name);
+  const members = listAgents().filter((a) => (a.space ?? DEFAULT_SPACE) === name);
   if (members.length === 0) return c.json({ error: "not found" }, 404);
   const expected = new Set(members.map((a) => a.id));
   if (ids.length !== expected.size || !ids.every((id) => expected.has(id))) {
