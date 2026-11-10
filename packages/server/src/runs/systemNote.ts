@@ -45,6 +45,12 @@ export const SYSTEM_NOTE = {
     `To wait for a background command (a \`sleep\`, a build), end your turn: you are re-invoked ` +
     `when it finishes. Shell \`wait\` and \`jobs\` do not see background commands, and polling ` +
     `its output file only tells you it has not finished yet.`,
+  /** Every run: the image's python3 has no pip, so a missing library reads as "can't be done". */
+  python:
+    `To use a Python library that is not installed (PyMuPDF, Pillow, pandas...), make a venv ` +
+    `in your working directory and install into it: \`python3 -m venv .venv && .venv/bin/pip ` +
+    `install <pkg>\`, then run scripts with \`.venv/bin/python\`. There may be no global pip, ` +
+    `and no sudo; reuse an existing .venv rather than rebuilding it.`,
   /**
    * Only when the config dir is not `~/.claude`. Agents reach for
    * `~/.claude/skills` by reflex, and in the container HOME is /home/node
@@ -82,6 +88,7 @@ export function systemNote(trigger: string, env: Record<string, string> = {}, op
     opts.telegram ? SYSTEM_NOTE.telegram(opts.telegram.reply) : null,
     SYSTEM_NOTE.files,
     SYSTEM_NOTE.waiting,
+    SYSTEM_NOTE.python,
     configDir ? SYSTEM_NOTE.config(configDir) : null,
   ]
     .filter(Boolean)
