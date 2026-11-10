@@ -18,6 +18,10 @@ describe("systemNote", () => {
     expect(note).toContain(join("/data/claude", "skills"));
   });
 
+  it("tells every run how to install a Python library without a global pip", () => {
+    expect(systemNote("manual", {})).toContain("python3 -m venv .venv");
+  });
+
   it("says nothing about a config dir that is already ~/.claude", () => {
     process.env.CLAUDE_CONFIG_DIR = join(homedir(), ".claude");
     expect(systemNote("manual", {})).not.toContain("configuration directory");
