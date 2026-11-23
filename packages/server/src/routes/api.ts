@@ -1180,7 +1180,7 @@ api.get("/system-prompt", (c) => {
   // as prose every box gets: on a laptop `~/.claude` is right and saying so is noise.
   const configDir = noteworthyConfigDir();
   return c.json({
-    files: SYSTEM_NOTE.files,
+    files: SYSTEM_NOTE.files(false),
     delivery: SYSTEM_NOTE.delivery("webhook"),
     telegram: SYSTEM_NOTE.telegram(true),
     config: configDir ? SYSTEM_NOTE.config(configDir) : null,
