@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +33,15 @@ describe("artifacts", () => {
 
     expect(collectArtifacts("run-4", ws)).toBe(0);
     expect(existsSync(join(ws, ".bullpen", "kept", "budget.xlsx"))).toBe(true);
+  });
+
+  it("leaves no copy in a git checkout", () => {
+    const ws = mkdtempSync(join(tmpdir(), "ws-"));
+    execFileSync("git", ["init", "-q"], { cwd: ws });
+    mkdirSync(join(ws, ".bullpen", "out"), { recursive: true });
+    writeFileSync(join(ws, ".bullpen", "out", "report.txt"), "hello");
+    expect(collectArtifacts("run-5", ws)).toBe(1);
+    expect(existsSync(join(ws, ".bullpen", "kept"))).toBe(false);
   });
 
   it("is a no-op without the directory", () => {
