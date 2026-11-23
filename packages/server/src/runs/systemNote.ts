@@ -32,16 +32,25 @@ export const SYSTEM_NOTE = {
       : `The reply is yours to send: POST to https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage ` +
         `with chat_id set to message.chat.id from the payload, at most ${MAX_MESSAGE_CHARS} characters ` +
         `per message. A file goes with sendPhoto (images) or sendDocument (anything else).`),
-  /** Every run: the workspace may be deleted when the run ends; this directory is the one thing kept. */
-  files:
+  /**
+   * Every run. `kept` is a scratch workspace, which outlives the run: telling it the directory is
+   * deleted sent a chat agent looking nowhere for a file it made the message before.
+   */
+  files: (kept: boolean) =>
     `Rule for files: anything the user should end up with — a screenshot, a report, an export, ` +
     `a download — must be written to ${OUT_DIR}/ inside your working directory (mkdir -p it first). ` +
-    `Not the working directory itself, not /tmp, not your home directory: those are deleted or ` +
-    `unreachable when the run ends, and only ${OUT_DIR}/ is kept and offered to the user for ` +
-    `download. When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming ` +
-    `the files you saved there. ${OUT_DIR}/ is emptied when a run ends, so it never holds an ` +
-    `earlier run's files: outside a git checkout a copy of each stays in ${KEPT_DIR}/, which is ` +
-    `where to look for a file you made before.`,
+    (kept
+      ? `This working directory is kept between runs, but only ${OUT_DIR}/ is offered to the user ` +
+        `for download, and /tmp and your home directory are not kept at all. `
+      : `Not the working directory itself, not /tmp, not your home directory: those are deleted or ` +
+        `unreachable when the run ends, and only ${OUT_DIR}/ is kept and offered to the user for ` +
+        `download. `) +
+    `When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming the files you ` +
+    `saved there.` +
+    (kept
+      ? ` ${OUT_DIR}/ is emptied when a run ends, so it never holds an earlier run's files: a copy ` +
+        `of each stays in ${KEPT_DIR}/, which is where to look for a file you made before.`
+      : ""),
   /** Every run: the shell's `wait` and `jobs` never see a harness background task. */
   waiting:
     `To wait for a background command (a \`sleep\`, a build), end your turn: you are re-invoked ` +
@@ -81,6 +90,8 @@ export function noteworthyConfigDir(env: Record<string, string> = {}): string | 
 export type NoteOptions = {
   /** Set when a Telegram message started the run; `reply` is the agent's webhookReply setting. */
   telegram?: { reply: boolean };
+  /** Set for a scratch workspace, which outlives the run. */
+  keptWorkspace?: boolean;
 };
 
 export function systemNote(trigger: string, env: Record<string, string> = {}, opts: NoteOptions = {}): string {
@@ -88,7 +99,7 @@ export function systemNote(trigger: string, env: Record<string, string> = {}, op
   return [
     trigger === "webhook" || trigger === "poll" ? SYSTEM_NOTE.delivery(trigger) : null,
     opts.telegram ? SYSTEM_NOTE.telegram(opts.telegram.reply) : null,
-    SYSTEM_NOTE.files,
+    SYSTEM_NOTE.files(opts.keptWorkspace ?? false),
     SYSTEM_NOTE.waiting,
     SYSTEM_NOTE.python,
     configDir ? SYSTEM_NOTE.config(configDir) : null,

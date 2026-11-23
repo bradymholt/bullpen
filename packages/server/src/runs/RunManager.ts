@@ -286,12 +286,11 @@ export function startRun(opts: RunRequest, existingId?: string): string {
   const env = resolveEnv(agent);
   // Where the delivery body lives is bullpen's business, not something every
   // prompt should have to restate.
-  const payloadNote = systemNote(trigger, env, noteOptions(agent, trigger));
-
   const spec: WorkspaceSpec = opts.ephemeralWorkspace
     ? { kind: "ephemeral" }
     : (agent.workspaceConfig as WorkspaceSpec);
   const ephemeral = spec.kind === "ephemeral";
+  const payloadNote = systemNote(trigger, env, noteOptions(agent, trigger, ephemeral));
   const workspace = resolveWorkspace(spec, {
     agentId: agent.id,
     agentName: agent.name,
@@ -326,8 +325,12 @@ function isTelegramRun(agent: Agent, trigger: string): boolean {
   return agent.webhookMode === "telegram" && trigger === "webhook";
 }
 
-function noteOptions(agent: Agent, trigger: string): NoteOptions {
-  return isTelegramRun(agent, trigger) ? { telegram: { reply: agent.webhookReply } } : {};
+function noteOptions(agent: Agent, trigger: string, ephemeral: boolean): NoteOptions {
+  const kind = (agent.workspaceConfig as WorkspaceSpec).kind;
+  return {
+    ...(isTelegramRun(agent, trigger) ? { telegram: { reply: agent.webhookReply } } : {}),
+    keptWorkspace: !ephemeral && (kind === "scratch" || kind === "persistent"),
+  };
 }
 
 type Launch = {
@@ -484,6 +487,7 @@ function relaunch(runId: string, prompt: string, resumeSessionId: string | undef
 
   mkdirSync(run.workspacePath, { recursive: true });
   const env = resolveEnv(agent);
+  const ephemeral = !run.branch && run.workspacePath === join(config.workspacesDir, runId);
   record();
   setStatus(runId, "running", { endedAt: null });
   launch(runId, agent, {
@@ -492,8 +496,8 @@ function relaunch(runId: string, prompt: string, resumeSessionId: string | undef
     prompt,
     permissionMode: run.permissionMode ?? agent.permissionMode,
     env,
-    systemNote: systemNote(run.trigger, env, noteOptions(agent, run.trigger)),
-    ephemeral: !run.branch && run.workspacePath === join(config.workspacesDir, runId),
+    systemNote: systemNote(run.trigger, env, noteOptions(agent, run.trigger, ephemeral)),
+    ephemeral,
     resumeSessionId,
     prior: { numTurns: run.numTurns ?? 0, costUsd: run.costUsd ?? 0 },
   });

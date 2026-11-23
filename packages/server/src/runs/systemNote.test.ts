@@ -44,6 +44,15 @@ describe("systemNote", () => {
     expect(systemNote("webhook", {})).not.toContain("Telegram");
   });
 
+  it("tells a scratch workspace it is kept and where earlier files are, and others that theirs is not", () => {
+    const kept = systemNote("webhook", {}, { keptWorkspace: true });
+    expect(kept).toContain("kept between runs");
+    expect(kept).toContain(".bullpen/kept");
+    expect(kept).not.toContain("deleted or unreachable");
+    expect(systemNote("webhook", {})).toContain("deleted or unreachable");
+    expect(systemNote("webhook", {})).not.toContain(".bullpen/kept");
+  });
+
   it("keeps the delivery and files sections regardless", () => {
     const note = systemNote("webhook", {});
     expect(note).toContain("payload.json");
