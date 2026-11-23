@@ -29,7 +29,11 @@ kept for their diff until GitHub reports their branch's pull request closed (`sw
 **Files an agent hands back live in `.bullpen/out/`, and only there.** Every run's system prompt
 says so. When a run ends, `collectArtifacts` moves that directory to `artifacts/<runId>/` under
 the data dir *before* an ephemeral workspace is deleted — that ordering is the whole point — and
-appends an `artifacts` event. The run page lists them from disk (nothing in the database) and the
+appends an `artifacts` event. Outside a git checkout a copy stays in `.bullpen/kept/` (a checkout's diff and commit take every
+untracked file), and the system prompt says so: a
+chat agent on a `scratch` workspace is asked about "your spreadsheet" in the next message, which is
+a new run that found `out/` empty and told the person the file was gone. Nothing prunes `kept/`; a
+same-named file replaces the old copy. The run page lists them from disk (nothing in the database) and the
 download route resolves names inside that one directory, refusing `..` outright. `?inline=1`
 previews a web type in place instead of downloading — an agent's `report.html` is usually the
 email it just sent, and downloading a file to find out what went out is a poor way to read it.

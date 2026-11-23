@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, cpSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { config } from "./config.ts";
@@ -12,11 +13,23 @@ import { config } from "./config.ts";
  */
 
 export const OUT_DIR = join(".bullpen", "out");
+/** Where a copy stays behind: a later run in the same directory is often asked about a file an earlier one made. */
+export const KEPT_DIR = join(".bullpen", "kept");
 
 export type Artifact = { name: string; size: number };
 
 export function artifactsDir(runId: string): string {
   return join(config.artifactsDir, runId);
+}
+
+/** A checkout's diff and commit take every untracked file, so nothing extra is left in one. */
+function inGitTree(dir: string): boolean {
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: dir, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Moves `.bullpen/out/*` out of the workspace; returns how many files were kept. */
@@ -25,6 +38,9 @@ export function collectArtifacts(runId: string, workspacePath: string): number {
   if (!existsSync(src) || !statSync(src).isDirectory()) return 0;
   const dest = artifactsDir(runId);
   mkdirSync(dest, { recursive: true });
+  if (readdirSync(src).length > 0 && !inGitTree(workspacePath)) {
+    cpSync(src, join(workspacePath, KEPT_DIR), { recursive: true });
+  }
   try {
     // Same filesystem in the common case; cpSync+rmSync covers a mounted workspace.
     for (const entry of readdirSync(src)) renameSync(join(src, entry), join(dest, entry));
