@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +21,17 @@ describe("artifacts", () => {
     ]);
     expect(existsSync(join(ws, ".bullpen", "out", "report.txt"))).toBe(false);
     expect(existsSync(join(ws, "scratch.txt"))).toBe(true);
+  });
+
+  it("leaves a copy in .bullpen/kept for a later run, and collects each file once", () => {
+    const ws = mkdtempSync(join(tmpdir(), "ws-"));
+    mkdirSync(join(ws, ".bullpen", "out"), { recursive: true });
+    writeFileSync(join(ws, ".bullpen", "out", "budget.xlsx"), "v1");
+    expect(collectArtifacts("run-3", ws)).toBe(1);
+    expect(readFileSync(join(ws, ".bullpen", "kept", "budget.xlsx"), "utf8")).toBe("v1");
+
+    expect(collectArtifacts("run-4", ws)).toBe(0);
+    expect(existsSync(join(ws, ".bullpen", "kept", "budget.xlsx"))).toBe(true);
   });
 
   it("is a no-op without the directory", () => {

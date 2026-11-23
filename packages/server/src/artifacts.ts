@@ -12,6 +12,8 @@ import { config } from "./config.ts";
  */
 
 export const OUT_DIR = join(".bullpen", "out");
+/** Where a copy stays behind: a later run in the same directory is often asked about a file an earlier one made. */
+export const KEPT_DIR = join(".bullpen", "kept");
 
 export type Artifact = { name: string; size: number };
 
@@ -25,6 +27,7 @@ export function collectArtifacts(runId: string, workspacePath: string): number {
   if (!existsSync(src) || !statSync(src).isDirectory()) return 0;
   const dest = artifactsDir(runId);
   mkdirSync(dest, { recursive: true });
+  if (readdirSync(src).length > 0) cpSync(src, join(workspacePath, KEPT_DIR), { recursive: true });
   try {
     // Same filesystem in the common case; cpSync+rmSync covers a mounted workspace.
     for (const entry of readdirSync(src)) renameSync(join(src, entry), join(dest, entry));

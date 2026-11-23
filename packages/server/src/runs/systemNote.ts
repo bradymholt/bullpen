@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { OUT_DIR } from "../artifacts.ts";
+import { KEPT_DIR, OUT_DIR } from "../artifacts.ts";
 import { MAX_MESSAGE_CHARS } from "../triggers/telegram.ts";
 
 /**
@@ -39,7 +39,9 @@ export const SYSTEM_NOTE = {
     `Not the working directory itself, not /tmp, not your home directory: those are deleted or ` +
     `unreachable when the run ends, and only ${OUT_DIR}/ is kept and offered to the user for ` +
     `download. When a tool takes a filename, give it a path under ${OUT_DIR}/. Finish by naming ` +
-    `the files you saved there.`,
+    `the files you saved there. ${OUT_DIR}/ is emptied when a run ends, so it never holds an ` +
+    `earlier run's files: a copy of each stays in ${KEPT_DIR}/, which is where to look for a ` +
+    `file you made before.`,
   /** Every run: the shell's `wait` and `jobs` never see a harness background task. */
   waiting:
     `To wait for a background command (a \`sleep\`, a build), end your turn: you are re-invoked ` +
